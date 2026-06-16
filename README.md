@@ -56,16 +56,32 @@ Copy-Item -Recurse -Force -LiteralPath $source -Destination $target
 /plugin install peace-skillbank@peace-skillbank
 ```
 
-설치 후 스킬은 plugin namespace로 호출된다.
+이미 설치한 경우 marketplace를 갱신한 뒤 plugin을 업데이트한다.
+
+```text
+/plugin marketplace update peace-skillbank
+/plugin update peace-skillbank@peace-skillbank
+```
+
+설치 후 짧은 command alias를 우선 사용한다.
+
+```text
+/diagsession-memory-analysis C:\dumps\leak-test.diagsession
+
+액션은 장비 목록 새로고침 30회 반복.
+시작점은 DeviceRefreshService.RefreshAsync.
+```
+
+Claude Code가 plugin skill namespace만 노출하는 환경에서는 namespaced skill 호출도 사용할 수 있다.
 
 ```text
 /peace-skillbank:diagsession-memory-analysis
 ```
 
-일반적인 작업 지시는 짧게 작성한다.
+두 방식 모두 같은 분석 스킬을 사용한다. 일반적인 작업 지시는 짧게 작성한다.
 
 ```text
-/peace-skillbank:diagsession-memory-analysis C:\dumps\leak-test.diagsession
+/diagsession-memory-analysis C:\dumps\leak-test.diagsession
 
 액션은 장비 목록 새로고침 30회 반복.
 시작점은 DeviceRefreshService.RefreshAsync.
@@ -118,6 +134,16 @@ reports/
 `MANIFEST.txt`에서 입력 순서, `.diagsession` 내부 entry, 생성된 report 경로를 확인한다. 하나의 `.diagsession` 안에 여러 `.gcdump`가 있으면 archive entry 순서가 사용되므로 before/after 의미는 사용자가 직접 확인해야 한다.
 
 이 스킬은 분석 전용이다. 실제 코드 수정, 패치, 커밋은 분석 결과의 handoff summary를 바탕으로 별도 작업에서 진행한다.
+
+## 오픈소스 스킬 레포 관리 방식
+
+이 저장소는 "각자 알아서 쓰라"는 형태를 피하기 위해 다음을 함께 유지한다.
+
+- marketplace/plugin manifest: Claude Code에서 repo 주소로 설치 가능하게 한다.
+- skill metadata: Codex와 Claude가 스킬을 발견하고 설명할 수 있게 한다.
+- command alias: Claude Code에서 짧은 `/diagsession-memory-analysis` 진입점을 제공한다.
+- README quick start: 설치, 호출, 출력물, 프라이버시 주의사항을 문서화한다.
+- validation script: publish 전에 구조와 manifest를 검증한다.
 
 ## 검증
 

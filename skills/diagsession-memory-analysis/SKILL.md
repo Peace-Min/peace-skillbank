@@ -45,6 +45,8 @@ The output directory contains:
 - `MANIFEST.txt`: source file and extracted snapshot mapping.
 - `reports/`: one `.heapstat.txt` per snapshot.
 
+`LLM_MEMORY_INPUT.txt` redacts full local paths by default and keeps only file names. Use `MANIFEST.txt` for local path mapping. Use `-IncludeFullPathsInLlmInput` only when local paths are intentionally part of the model input.
+
 Use `-KeepExtractedGcdump` only when the user wants extracted `.gcdump` files preserved.
 Without `-KeepExtractedGcdump`, only the current run's extracted temporary `.gcdump` folder is removed after reports are generated.
 
@@ -83,6 +85,7 @@ Before relying on the skill after edits:
 2. Run a PowerShell parser check against `scripts/extract-gcdump-reports.ps1`.
 3. Confirm `dotnet-gcdump` resolves from `PATH`, `C:\tools\dotnet-gcdump`, or the supplied `-ToolPath`.
 4. Run one dry failure-mode check with a missing input path or invalid `.gcdump` to confirm errors are explicit.
+5. Run the repository validation script when working from `peace-skillbank`: `tests/validate.ps1`.
 
 ## Expected Output
 

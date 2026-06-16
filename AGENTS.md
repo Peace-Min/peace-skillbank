@@ -12,7 +12,8 @@
 - 반복 실행이 필요한 작업은 `scripts/`에 둔다.
 - 모델 입력용 프롬프트나 세부 설명은 `references/`에 둔다.
 - 생성물, 덤프, 로그, 테스트 산출물은 저장소에 커밋하지 않는다.
-- 스킬은 Codex 전용으로만 작성하지 말고, 로컬 LLM도 사용할 수 있게 입력/출력 파일 기준을 명확히 둔다.
+- 스킬은 Codex 전용으로만 작성하지 말고, Codex 밖의 LLM도 사용할 수 있게 입력/출력 파일 기준을 명확히 둔다.
+- 덤프, 로그, `LLM_MEMORY_INPUT.txt`, `MANIFEST.txt`, `reports/`, `extracted-gcdumps/`는 커밋하지 않는다.
 
 ## 검증
 
@@ -24,3 +25,4 @@ $tokens=$null; $errors=$null
 $errors
 ```
 
+스킬 수정 후에는 가능하면 Codex skill validator도 실행한다.

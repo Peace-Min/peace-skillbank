@@ -4,6 +4,7 @@ param(
 
     [string]$OutputDirectory,
     [string]$ToolPath,
+    [switch]$IncludeFullPathsInLlmInput,
     [switch]$KeepExtractedGcdump
 )
 
@@ -98,6 +99,44 @@ function Invoke-GcdumpReport {
     return $stdout
 }
 
+function Format-LlmPath {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [switch]$IncludeFullPath
+    )
+
+    if ($IncludeFullPath) {
+        return $Path
+    }
+
+    return [System.IO.Path]::GetFileName($Path)
+}
+
+function ConvertTo-LlmSafeText {
+    param(
+        [Parameter(Mandatory = $true)][string]$Text,
+        [Parameter(Mandatory = $true)][object[]]$PathMap,
+        [switch]$IncludeFullPath
+    )
+
+    if ($IncludeFullPath) {
+        return $Text
+    }
+
+    $safeText = $Text
+    foreach ($item in $PathMap) {
+        if ($item.FullPath) {
+            $safeText = [regex]::Replace(
+                $safeText,
+                [regex]::Escape($item.FullPath),
+                [System.Text.RegularExpressions.MatchEvaluator]{ param($match) $item.SafeName }
+            )
+        }
+    }
+
+    return $safeText
+}
+
 function Get-DefaultOutputDirectory {
     param([Parameter(Mandatory = $true)][string[]]$ResolvedInputPath)
 
@@ -140,7 +179,10 @@ function Extract-GcdumpsFromDiagSession {
             $safeName = Get-SafeFileName -Name ("{0:D2}-{1}" -f $index, $baseName)
             $targetPath = Join-Path $ExtractDirectory $safeName
             [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $targetPath, $true)
-            $targetPath
+            [pscustomobject]@{
+                Gcdump = $targetPath
+                ArchiveEntry = $entry.FullName
+            }
         }
 
         return @($extracted)
@@ -151,10 +193,10 @@ function Extract-GcdumpsFromDiagSession {
 }
 
 $resolvedInputs = foreach ($path in $InputPath) {
-    if (-not (Test-Path $path)) {
+    if (-not (Test-Path -LiteralPath $path)) {
         throw "Input file not found: $path"
     }
-    (Resolve-Path $path).Path
+    (Resolve-Path -LiteralPath $path).Path
 }
 
 if (-not $OutputDirectory) {
@@ -180,6 +222,7 @@ foreach ($input in $resolvedInputs) {
         $snapshots.Add([pscustomobject]@{
             Source = $input
             Gcdump = $input
+            ArchiveEntry = $null
         })
         continue
     }
@@ -189,10 +232,11 @@ foreach ($input in $resolvedInputs) {
         $sessionExtractDirectory = Join-Path $extractDirectory $sessionName
         New-Item -ItemType Directory -Force -Path $sessionExtractDirectory | Out-Null
 
-        foreach ($gcdump in (Extract-GcdumpsFromDiagSession -DiagSessionPath $input -ExtractDirectory $sessionExtractDirectory)) {
+        foreach ($extracted in (Extract-GcdumpsFromDiagSession -DiagSessionPath $input -ExtractDirectory $sessionExtractDirectory)) {
             $snapshots.Add([pscustomobject]@{
                 Source = $input
-                Gcdump = $gcdump
+                Gcdump = $extracted.Gcdump
+                ArchiveEntry = $extracted.ArchiveEntry
             })
         }
         continue
@@ -208,8 +252,9 @@ if ($snapshots.Count -eq 0) {
 @(
     "dotnet-gcdump LLM memory input"
     "Generated: $([DateTimeOffset]::Now.ToString("o"))"
-    "Tool: $tool"
-    "Output: $OutputDirectory"
+    "Tool: dotnet-gcdump"
+    "Output: redacted"
+    "PathPolicy: file names only; see MANIFEST.txt for local paths"
     ""
 ) | Out-File -FilePath $combinedReportPath -Encoding utf8
 
@@ -227,13 +272,26 @@ foreach ($snapshot in $snapshots) {
     $gcdumpName = [System.IO.Path]::GetFileNameWithoutExtension($snapshot.Gcdump)
     $reportName = Get-SafeFileName -Name ("{0:D2}-{1}-{2}.heapstat.txt" -f $index, $sourceName, $gcdumpName)
     $reportPath = Join-Path $reportDirectory $reportName
+    $llmSource = Format-LlmPath -Path $snapshot.Source -IncludeFullPath:$IncludeFullPathsInLlmInput
+    $llmGcdump = Format-LlmPath -Path $snapshot.Gcdump -IncludeFullPath:$IncludeFullPathsInLlmInput
+    $llmReport = Format-LlmPath -Path $reportPath -IncludeFullPath:$IncludeFullPathsInLlmInput
+    $pathMap = @(
+        [pscustomobject]@{ FullPath = $snapshot.Source; SafeName = $llmSource }
+        [pscustomobject]@{ FullPath = $snapshot.Gcdump; SafeName = $llmGcdump }
+        [pscustomobject]@{ FullPath = $reportPath; SafeName = $llmReport }
+        [pscustomobject]@{ FullPath = $OutputDirectory; SafeName = "<output-directory>" }
+        [pscustomobject]@{ FullPath = $extractDirectory; SafeName = "<extract-directory>" }
+        [pscustomobject]@{ FullPath = $tool; SafeName = "dotnet-gcdump" }
+    )
 
     $reportOutput = Invoke-GcdumpReport -Tool $tool -GcdumpPath $snapshot.Gcdump
+    $llmReportOutput = ConvertTo-LlmSafeText -Text $reportOutput -PathMap $pathMap -IncludeFullPath:$IncludeFullPathsInLlmInput
     $reportOutput | Out-File -FilePath $reportPath -Encoding utf8
 
     @(
         "[$index]"
         "Source: $($snapshot.Source)"
+        "ArchiveEntry: $($snapshot.ArchiveEntry)"
         "Gcdump: $($snapshot.Gcdump)"
         "Report: $reportPath"
         ""
@@ -243,14 +301,15 @@ foreach ($snapshot in $snapshots) {
         ""
         "================================================================================"
         "Snapshot $index"
-        "Source: $($snapshot.Source)"
-        "Gcdump: $($snapshot.Gcdump)"
-        "Report: $reportPath"
+        "Source: $llmSource"
+        "ArchiveEntry: $($snapshot.ArchiveEntry)"
+        "Gcdump: $llmGcdump"
+        "Report: $llmReport"
         "================================================================================"
         ""
     ) | Out-File -FilePath $combinedReportPath -Encoding utf8 -Append
 
-    Get-Content -LiteralPath $reportPath | Out-File -FilePath $combinedReportPath -Encoding utf8 -Append
+    $llmReportOutput | Out-File -FilePath $combinedReportPath -Encoding utf8 -Append
 }
 
 if (-not $KeepExtractedGcdump) {

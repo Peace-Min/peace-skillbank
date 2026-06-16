@@ -3,7 +3,10 @@
 *.heapstat.txt
 *.log
 *.llm/
+LLM_MEMORY_INPUT.txt
+MANIFEST.txt
+reports/
+extracted-gcdumps/
 TestResults/
 out/
 tmp/
-

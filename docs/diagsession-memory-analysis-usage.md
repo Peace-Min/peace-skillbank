@@ -1,0 +1,141 @@
+# diagsession-memory-analysis 사용 가이드
+
+이 문서는 사람이 읽는 사용 가이드다. 에이전트가 런타임에 참고하는 지침은 `skills/diagsession-memory-analysis/SKILL.md`에 있고, 이 문서는 Claude Code에서 어떤 커맨드를 호출하고 어떤 정보를 함께 적어야 하는지 설명한다.
+
+## 목적
+
+Visual Studio 성능 프로파일러에서 생성한 `.diagsession` 또는 `.gcdump`를 분석해서 .NET managed heap 메모리 누수 후보를 찾는다.
+
+Scope: analysis-only.
+
+이 스킬은 분석 전용이다. 코드 수정, 패치, 커밋은 분석 결과의 handoff summary를 바탕으로 별도 세션이나 별도 작업에서 진행한다.
+
+## Claude Code 설치
+
+```text
+/plugin marketplace add Peace-Min/peace-skillbank
+/plugin install peace-skillbank@peace-skillbank
+```
+
+이미 설치한 경우:
+
+```text
+/plugin marketplace update peace-skillbank
+/plugin update peace-skillbank@peace-skillbank
+```
+
+## 기본 호출
+
+권장 호출은 짧은 command alias다.
+
+```text
+/diagsession-memory-analysis C:\dumps\leak-test.diagsession
+```
+
+Claude Code 환경에 따라 plugin namespace만 보이면 다음 호출도 가능하다.
+
+```text
+/peace-skillbank:diagsession-memory-analysis C:\dumps\leak-test.diagsession
+```
+
+두 호출은 같은 분석 스킬을 사용한다.
+
+## 권장 프롬프트
+
+보통은 긴 체크리스트를 매번 붙이지 않는다. 파일 경로와 누수 재현 맥락만 짧게 적는다.
+
+```text
+/diagsession-memory-analysis C:\dumps\leak-test.diagsession
+
+하나의 diagsession 안에 메모리 스냅샷 2개가 들어있다.
+Snapshot 1 = 액션 반복 전
+Snapshot 2 = 액션 반복 후
+
+반복 액션: 장비 목록 새로고침
+반복 횟수: 30회
+코드 시작점: DeviceRefreshService.RefreshAsync
+관련 파일/클래스: DeviceListViewModel, DeviceCache
+```
+
+최소 입력도 가능하다.
+
+```text
+/diagsession-memory-analysis C:\dumps\leak-test.diagsession
+
+장비 목록 새로고침을 30회 반복한 뒤 찍은 스냅샷이다.
+시작점은 DeviceRefreshService.RefreshAsync.
+```
+
+## 하나의 diagsession에 스냅샷이 여러 개 있는 경우
+
+Visual Studio에서 같은 프로파일링 세션 안에서 스냅샷을 두 번 찍었다면 보통 하나의 `.diagsession` 안에 여러 `.gcdump` entry가 들어있다.
+
+이 경우 사용자는 순서 의미를 알려주는 것이 좋다.
+
+```text
+Snapshot 1 = 반복 전
+Snapshot 2 = 반복 후
+```
+
+스킬은 `.diagsession` 내부 `.gcdump`들을 추출하고 `MANIFEST.txt`에 archive entry 순서를 남긴다. 다만 dump 파일 자체만으로 "어떤 스냅샷이 before인지 after인지"를 항상 확정할 수는 없으므로, 사용자가 의도한 순서를 함께 적는 것이 가장 안전하다.
+
+## gcdump 파일을 직접 넘기는 경우
+
+`.gcdump` 자체를 넘겨도 된다.
+
+```text
+/diagsession-memory-analysis C:\dumps\snapshot1.gcdump C:\dumps\snapshot2.gcdump
+
+Snapshot 1 = 반복 전
+Snapshot 2 = 반복 후
+```
+
+하나의 `.gcdump`만 넘기면 단일 스냅샷 요약과 누수 의심 타입 분석까지만 가능하다. before/after 증가 비교는 두 개 이상의 스냅샷이 있어야 한다.
+
+## 분석과 수정 분리
+
+첫 세션에서는 분석만 요청한다.
+
+```text
+/diagsession-memory-analysis C:\dumps\leak-test.diagsession
+
+반복 액션: ...
+반복 횟수: ...
+코드 시작점: ...
+```
+
+분석 결과의 handoff summary를 받은 뒤, 별도 세션이나 별도 요청에서 수정 작업을 시작한다.
+
+```text
+아래 memory analysis handoff summary를 기준으로 누수 후보를 코드에서 확인하고 수정해줘.
+
+<handoff summary 붙여넣기>
+```
+
+## 결과물
+
+스킬은 보통 다음 산출물을 기준으로 분석한다.
+
+```text
+LLM_MEMORY_INPUT.txt
+MANIFEST.txt
+reports/
+```
+
+- `LLM_MEMORY_INPUT.txt`: LLM에 넘기기 좋은 요약 입력이다. 기본적으로 전체 로컬 경로는 제거된다.
+- `MANIFEST.txt`: 원본 파일, 추출된 `.gcdump`, report 경로, archive entry 순서를 확인하는 파일이다.
+- `reports/`: `dotnet-gcdump report` 결과가 저장된다.
+
+외부 LLM에 넘기기 전에는 `LLM_MEMORY_INPUT.txt`를 먼저 검토한다. 타입명, 네임스페이스, 프로젝트명 자체가 민감 정보일 수 있다.
+
+## 피해야 할 요청
+
+다음처럼 매번 긴 내부 작업 목록을 직접 붙일 필요는 없다.
+
+```text
+1. diagsession 내부 gcdump들을 추출하고 ...
+2. MANIFEST.txt 기준으로 ...
+3. Snapshot 1과 Snapshot 2를 비교해서 ...
+```
+
+그 절차는 스킬과 command alias에 들어있다. 사람은 파일 경로, 스냅샷 의미, 반복 액션, 반복 횟수, 코드 시작점만 알려주면 된다.

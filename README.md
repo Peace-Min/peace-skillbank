@@ -51,6 +51,8 @@ Copy-Item -Recurse -Force -LiteralPath $source -Destination $target
 
 이 저장소는 Claude Code marketplace 파일을 포함한다. GitHub에 push한 뒤 Claude Code에서 저장소 주소를 marketplace로 추가하면 plugin을 설치할 수 있다.
 
+사람용 전체 사용법은 [diagsession-memory-analysis 사용 가이드](docs/diagsession-memory-analysis-usage.md)를 먼저 본다.
+
 ```text
 /plugin marketplace add Peace-Min/peace-skillbank
 /plugin install peace-skillbank@peace-skillbank

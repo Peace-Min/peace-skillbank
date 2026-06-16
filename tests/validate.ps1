@@ -40,6 +40,7 @@ $openAiYamlPath = Join-Path $skillRoot "agents\openai.yaml"
 $promptPath = Join-Path $skillRoot "references\model-agnostic-prompt.md"
 $cliUsagePath = Join-Path $skillRoot "references\cli-usage.md"
 $claudeCommandPath = Join-Path $RepositoryRoot "commands\diagsession-memory-analysis.md"
+$humanUsagePath = Join-Path $RepositoryRoot "docs\diagsession-memory-analysis-usage.md"
 $claudePluginPath = Join-Path $RepositoryRoot ".claude-plugin\plugin.json"
 $claudeMarketplacePath = Join-Path $RepositoryRoot ".claude-plugin\marketplace.json"
 
@@ -49,6 +50,7 @@ Assert-Condition (Test-Path -LiteralPath $openAiYamlPath) "Missing agents/openai
 Assert-Condition (Test-Path -LiteralPath $promptPath) "Missing model-agnostic prompt"
 Assert-Condition (Test-Path -LiteralPath $cliUsagePath) "Missing CLI usage reference"
 Assert-Condition (Test-Path -LiteralPath $claudeCommandPath) "Missing Claude command alias"
+Assert-Condition (Test-Path -LiteralPath $humanUsagePath) "Missing human usage guide"
 Assert-Condition (Test-Path -LiteralPath $claudePluginPath) "Missing Claude plugin manifest"
 Assert-Condition (Test-Path -LiteralPath $claudeMarketplacePath) "Missing Claude marketplace manifest"
 
@@ -66,6 +68,14 @@ $commandContent = Get-Content -Raw -LiteralPath $claudeCommandPath
 Assert-Condition ($commandContent -match '\$ARGUMENTS') "Claude command alias must pass through arguments"
 Assert-Condition ($commandContent -match "diagsession-memory-analysis") "Claude command alias must delegate to the skill"
 Assert-Condition ($commandContent -match "Do not edit source code") "Claude command alias must preserve analysis-only scope"
+
+$readmePath = Join-Path $RepositoryRoot "README.md"
+$readmeContent = Get-Content -Raw -LiteralPath $readmePath
+$humanUsageContent = Get-Content -Raw -LiteralPath $humanUsagePath
+Assert-Condition ($readmeContent -match [regex]::Escape("docs/diagsession-memory-analysis-usage.md")) "README must link the human usage guide"
+Assert-Condition ($humanUsageContent -match [regex]::Escape("/diagsession-memory-analysis")) "Human usage guide must document the short Claude command"
+Assert-Condition ($humanUsageContent -match "Snapshot 1") "Human usage guide must document snapshot ordering"
+Assert-Condition ($humanUsageContent -match "analysis-only") "Human usage guide must state analysis-only scope"
 
 $openAiYaml = Get-Content -Raw -LiteralPath $openAiYamlPath
 Assert-Condition ($openAiYaml -match 'display_name:\s*"DiagSession Memory Analysis"') "Missing display_name"

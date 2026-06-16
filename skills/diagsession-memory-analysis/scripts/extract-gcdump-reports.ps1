@@ -3,7 +3,7 @@ param(
     [string[]]$InputPath,
 
     [string]$OutputDirectory,
-    [string]$ToolPath = "C:\tools\dotnet-gcdump",
+    [string]$ToolPath,
     [switch]$KeepExtractedGcdump
 )
 
@@ -12,13 +12,45 @@ if (Get-Variable -Name PSNativeCommandUseErrorActionPreference -ErrorAction Sile
     $PSNativeCommandUseErrorActionPreference = $false
 }
 
-$tool = Join-Path $ToolPath "dotnet-gcdump.exe"
-
-if (-not (Test-Path $tool)) {
-    throw "dotnet-gcdump.exe not found: $tool"
-}
-
 Add-Type -AssemblyName System.IO.Compression.FileSystem
+
+function Resolve-GcdumpTool {
+    param([string]$ToolPath)
+
+    if ($ToolPath) {
+        if ((Test-Path -LiteralPath $ToolPath -PathType Leaf)) {
+            return (Resolve-Path -LiteralPath $ToolPath).Path
+        }
+
+        if ((Test-Path -LiteralPath $ToolPath -PathType Container)) {
+            $candidate = Join-Path $ToolPath "dotnet-gcdump.exe"
+            if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+                return (Resolve-Path -LiteralPath $candidate).Path
+            }
+        }
+
+        $candidate = Join-Path $ToolPath "dotnet-gcdump.exe"
+        if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+            return (Resolve-Path -LiteralPath $candidate).Path
+        }
+
+        throw "dotnet-gcdump.exe not found from ToolPath: $ToolPath"
+    }
+
+    foreach ($commandName in @("dotnet-gcdump.exe", "dotnet-gcdump")) {
+        $command = Get-Command $commandName -ErrorAction SilentlyContinue
+        if ($command) {
+            return $command.Source
+        }
+    }
+
+    $defaultTool = "C:\tools\dotnet-gcdump\dotnet-gcdump.exe"
+    if (Test-Path -LiteralPath $defaultTool -PathType Leaf) {
+        return (Resolve-Path -LiteralPath $defaultTool).Path
+    }
+
+    throw "dotnet-gcdump.exe not found. Install dotnet-gcdump or pass -ToolPath with a directory or full executable path."
+}
 
 function Get-SafeFileName {
     param([Parameter(Mandatory = $true)][string]$Name)
@@ -129,8 +161,10 @@ if (-not $OutputDirectory) {
     $OutputDirectory = Get-DefaultOutputDirectory -ResolvedInputPath $resolvedInputs
 }
 
+$tool = Resolve-GcdumpTool -ToolPath $ToolPath
 $OutputDirectory = [System.IO.Path]::GetFullPath($OutputDirectory)
-$extractDirectory = Join-Path $OutputDirectory "extracted-gcdumps"
+$runId = [DateTimeOffset]::Now.ToString("yyyyMMdd-HHmmss")
+$extractDirectory = Join-Path (Join-Path $OutputDirectory "extracted-gcdumps") $runId
 $reportDirectory = Join-Path $OutputDirectory "reports"
 $combinedReportPath = Join-Path $OutputDirectory "LLM_MEMORY_INPUT.txt"
 $manifestPath = Join-Path $OutputDirectory "MANIFEST.txt"
@@ -216,7 +250,7 @@ foreach ($snapshot in $snapshots) {
         ""
     ) | Out-File -FilePath $combinedReportPath -Encoding utf8 -Append
 
-    Get-Content $reportPath | Out-File -FilePath $combinedReportPath -Encoding utf8 -Append
+    Get-Content -LiteralPath $reportPath | Out-File -FilePath $combinedReportPath -Encoding utf8 -Append
 }
 
 if (-not $KeepExtractedGcdump) {

@@ -5,50 +5,48 @@ description: Analyze Visual Studio .diagsession and .gcdump snapshots for .NET m
 
 # DiagSession Memory Analysis
 
-Use this skill to turn Visual Studio `.diagsession` or `.gcdump` files into model-readable memory leak evidence, then analyze before/after managed heap growth.
+Use this skill to turn Visual Studio `.diagsession` or `.gcdump` files into model-readable managed-memory leak evidence and a follow-up handoff summary.
 
-## Core Workflow
+## Default Behavior
 
-1. Confirm the user has at least two ordered snapshots, ideally before and after repeating the action N times.
-2. Prefer `.gcdump` analysis first when the suspected leak is .NET managed memory.
-3. Run `scripts/extract-gcdump-reports.ps1` to extract embedded `.gcdump` files from `.diagsession` archives and generate `dotnet-gcdump report` output.
-4. Use the generated `LLM_MEMORY_INPUT.txt` as the primary model input.
-5. Ask for or inspect the relevant code path: UI action entry point, command handler, service flow, subscriptions, caches, timers, static state, and collection ownership.
-6. Prioritize types that grow by both `Size` and `Count`, especially app-owned types and containers that retain app-owned objects.
+When the user provides one or more `.diagsession` or `.gcdump` paths, run the bundled extraction/report script immediately unless an essential input is missing.
 
-## CLI Usage
+Default assumptions:
 
-The bundled script expects `dotnet-gcdump.exe` to be available on `PATH`, installed in `C:\tools\dotnet-gcdump`, or provided with `-ToolPath`. `-ToolPath` can be either the tool directory or the full executable path.
+- Treat paths in the prompt as `-InputPath` in the order given.
+- A single `.diagsession` may contain multiple snapshots; extract it first, then inspect `MANIFEST.txt`.
+- If the user gives an action count, repeated action, start point, or related files, include them in the analysis context.
+- If snapshot order is not explicit, assume archive/input order is chronological and state that assumption.
+- Use the script's default output directory unless the user specifies one.
+- Do not pass `-IncludeFullPathsInLlmInput` unless the user asks for full local paths.
+- Do not pass `-KeepExtractedGcdump` unless the user asks to preserve extracted dumps.
+- Use `-ToolPath` only when `dotnet-gcdump` cannot be resolved automatically and the user provides a location.
+- Ask a clarifying question only when there is no usable input path, fewer than two snapshots after extraction, or snapshot order cannot be reasonably inferred.
+
+## Workflow
+
+1. Parse the prompt for input paths, repeated action, count, start point, related files, and ordering hints.
+2. Run `scripts/extract-gcdump-reports.ps1` with the parsed paths.
+3. Read `MANIFEST.txt` and `LLM_MEMORY_INPUT.txt`.
+4. Compare snapshots in declared or assumed order.
+5. Identify growing app-owned types by both `Size` and `Count`.
+6. Map plausible app-owned types and containers to retention hypotheses and source areas.
+7. Report assumptions, candidates, evidence, confirmation steps, limitations, and a handoff summary.
+
+## CLI
+
+The script expects `dotnet-gcdump` on `PATH`, at `C:\tools\dotnet-gcdump`, or via `-ToolPath`.
 
 ```powershell
 $skillDir = "C:\path\to\peace-skillbank\skills\diagsession-memory-analysis"
-powershell -NoProfile -ExecutionPolicy Bypass -File "$skillDir\scripts\extract-gcdump-reports.ps1" -InputPath C:\dumps\before.diagsession,C:\dumps\after.diagsession
+powershell -NoProfile -ExecutionPolicy Bypass -File "$skillDir\scripts\extract-gcdump-reports.ps1" -InputPath <paths>
 ```
 
-For direct `.gcdump` files:
-
-```powershell
-$skillDir = "C:\path\to\peace-skillbank\skills\diagsession-memory-analysis"
-powershell -NoProfile -ExecutionPolicy Bypass -File "$skillDir\scripts\extract-gcdump-reports.ps1" -InputPath C:\dumps\before.gcdump,C:\dumps\after.gcdump
-```
-
-When `dotnet-gcdump` is installed in a custom directory:
-
-```powershell
-$skillDir = "C:\path\to\peace-skillbank\skills\diagsession-memory-analysis"
-powershell -NoProfile -ExecutionPolicy Bypass -File "$skillDir\scripts\extract-gcdump-reports.ps1" -InputPath C:\dumps\before.diagsession,C:\dumps\after.diagsession -ToolPath C:\tools\dotnet-gcdump
-```
-
-The output directory contains:
+Read `references/cli-usage.md` only when custom paths, full-path output, preserved extracted dumps, or troubleshooting details are needed.
 
 - `LLM_MEMORY_INPUT.txt`: combined report text for Codex or another LLM.
 - `MANIFEST.txt`: source file and extracted snapshot mapping.
 - `reports/`: one `.heapstat.txt` per snapshot.
-
-`LLM_MEMORY_INPUT.txt` redacts full local paths by default and keeps only file names. Use `MANIFEST.txt` for local path mapping. Use `-IncludeFullPathsInLlmInput` only when local paths are intentionally part of the model input.
-
-Use `-KeepExtractedGcdump` only when the user wants extracted `.gcdump` files preserved.
-Without `-KeepExtractedGcdump`, only the current run's extracted temporary `.gcdump` folder is removed after reports are generated.
 
 ## Model-Agnostic Usage
 
@@ -77,22 +75,19 @@ If context is limited, provide only:
 - Prefer concrete retention hypotheses: event subscription, static cache, timer, long-lived collection, closure capture, dispatcher queue, service lifetime mismatch, or missing `Dispose`.
 - Connect growing types back to source code only when names or ownership make that inference plausible.
 
-## Validation
+## Scope Boundary
 
-Before relying on the skill after edits:
-
-1. Validate skill metadata with the Codex skill validator when available.
-2. Run a PowerShell parser check against `scripts/extract-gcdump-reports.ps1`.
-3. Confirm `dotnet-gcdump` resolves from `PATH`, `C:\tools\dotnet-gcdump`, or the supplied `-ToolPath`.
-4. Run one dry failure-mode check with a missing input path or invalid `.gcdump` to confirm errors are explicit.
-5. Run the repository validation script when working from `peace-skillbank`: `tests/validate.ps1`.
+This skill is analysis-only. Do not modify source code, create commits, or apply fixes as part of this skill unless the user explicitly starts a separate fix task. Produce a handoff summary that another coding session or fix-oriented skill can use.
 
 ## Expected Output
 
 Produce a concise report with:
 
-1. likely leak candidates ordered by confidence
-2. evidence from `Size`, `Count`, and type names
-3. code areas to inspect first
-4. what would confirm or falsify each hypothesis
-5. limitations of the available evidence
+1. assumptions used, including snapshot ordering
+2. snapshot mapping from `MANIFEST.txt`
+3. likely leak candidates ordered by confidence
+4. evidence from `Size`, `Count`, and type names
+5. code areas to inspect first
+6. what would confirm or falsify each hypothesis
+7. limitations of the available evidence
+8. handoff summary for a follow-up fix session

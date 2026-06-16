@@ -62,6 +62,15 @@ Copy-Item -Recurse -Force -LiteralPath $source -Destination $target
 /peace-skillbank:diagsession-memory-analysis
 ```
 
+일반적인 작업 지시는 짧게 작성한다.
+
+```text
+/peace-skillbank:diagsession-memory-analysis C:\dumps\leak-test.diagsession
+
+액션은 장비 목록 새로고침 30회 반복.
+시작점은 DeviceRefreshService.RefreshAsync.
+```
+
 로컬에서 테스트할 때는 저장소 루트에서 다음 명령을 사용한다.
 
 ```powershell
@@ -91,7 +100,7 @@ dotnet tool install --global dotnet-gcdump
 
 ```powershell
 $skillDir = "C:\path\to\peace-skillbank\skills\diagsession-memory-analysis"
-powershell -NoProfile -ExecutionPolicy Bypass -File "$skillDir\scripts\extract-gcdump-reports.ps1" -InputPath C:\dumps\before.diagsession,C:\dumps\after.diagsession
+powershell -NoProfile -ExecutionPolicy Bypass -File "$skillDir\scripts\extract-gcdump-reports.ps1" -InputPath C:\dumps\leak-test.diagsession
 ```
 
 출력물:
@@ -107,6 +116,8 @@ reports/
 외부 LLM에 넘기기 전에는 `LLM_MEMORY_INPUT.txt`를 한번 검토한다. 타입명, 네임스페이스, 프로젝트명 자체가 민감 정보일 수 있다.
 
 `MANIFEST.txt`에서 입력 순서, `.diagsession` 내부 entry, 생성된 report 경로를 확인한다. 하나의 `.diagsession` 안에 여러 `.gcdump`가 있으면 archive entry 순서가 사용되므로 before/after 의미는 사용자가 직접 확인해야 한다.
+
+이 스킬은 분석 전용이다. 실제 코드 수정, 패치, 커밋은 분석 결과의 handoff summary를 바탕으로 별도 작업에서 진행한다.
 
 ## 검증
 

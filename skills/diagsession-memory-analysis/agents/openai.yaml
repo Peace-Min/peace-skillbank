@@ -2,7 +2,7 @@ interface:
   display_name: "DiagSession Memory Analysis"
   short_description: "Prepare VS gcdump snapshots for managed leak analysis."
   brand_color: "#2563EB"
-  default_prompt: "Use $diagsession-memory-analysis to extract gcdump reports from my Visual Studio diagsession snapshots and analyze the managed memory leak evidence."
+  default_prompt: "Use $diagsession-memory-analysis to analyze this .diagsession or .gcdump input for managed memory leak candidates and produce a follow-up handoff summary."
 
 policy:
   allow_implicit_invocation: true

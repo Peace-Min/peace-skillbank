@@ -38,6 +38,7 @@ $skillPath = Join-Path $skillRoot "SKILL.md"
 $scriptPath = Join-Path $skillRoot "scripts\extract-gcdump-reports.ps1"
 $openAiYamlPath = Join-Path $skillRoot "agents\openai.yaml"
 $promptPath = Join-Path $skillRoot "references\model-agnostic-prompt.md"
+$cliUsagePath = Join-Path $skillRoot "references\cli-usage.md"
 $claudePluginPath = Join-Path $RepositoryRoot ".claude-plugin\plugin.json"
 $claudeMarketplacePath = Join-Path $RepositoryRoot ".claude-plugin\marketplace.json"
 
@@ -45,12 +46,19 @@ Assert-Condition (Test-Path -LiteralPath $skillPath) "Missing SKILL.md"
 Assert-Condition (Test-Path -LiteralPath $scriptPath) "Missing extract script"
 Assert-Condition (Test-Path -LiteralPath $openAiYamlPath) "Missing agents/openai.yaml"
 Assert-Condition (Test-Path -LiteralPath $promptPath) "Missing model-agnostic prompt"
+Assert-Condition (Test-Path -LiteralPath $cliUsagePath) "Missing CLI usage reference"
 Assert-Condition (Test-Path -LiteralPath $claudePluginPath) "Missing Claude plugin manifest"
 Assert-Condition (Test-Path -LiteralPath $claudeMarketplacePath) "Missing Claude marketplace manifest"
 
 $frontMatter = Get-FrontMatter -Path $skillPath
 Assert-Condition ($frontMatter -match "(?m)^name:\s*diagsession-memory-analysis\s*$") "Invalid skill name"
 Assert-Condition ($frontMatter -match "(?m)^description:\s+.+") "Missing skill description"
+
+$skillContent = Get-Content -Raw -LiteralPath $skillPath
+Assert-Condition ($skillContent -match "## Default Behavior") "SKILL.md must define default behavior for short prompts"
+Assert-Condition ($skillContent -match "analysis-only") "SKILL.md must keep the skill analysis-only"
+Assert-Condition ($skillContent -match "handoff summary") "SKILL.md must require a follow-up handoff summary"
+Assert-Condition ($skillContent -notmatch "## Validation") "Runtime SKILL.md should not include maintainer validation details"
 
 $openAiYaml = Get-Content -Raw -LiteralPath $openAiYamlPath
 Assert-Condition ($openAiYaml -match 'display_name:\s*"DiagSession Memory Analysis"') "Missing display_name"

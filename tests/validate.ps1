@@ -73,6 +73,7 @@ $readmePath = Join-Path $RepositoryRoot "README.md"
 $readmeContent = Get-Content -Raw -LiteralPath $readmePath
 $humanUsageContent = Get-Content -Raw -LiteralPath $humanUsagePath
 Assert-Condition ($readmeContent -match [regex]::Escape("docs/diagsession-memory-analysis-usage.md")) "README must link the human usage guide"
+Assert-Condition ($readmeContent.Contains('[`diagsession-memory-analysis`](docs/diagsession-memory-analysis-usage.md)')) "README current skill list must link each skill docs page"
 Assert-Condition ($humanUsageContent -match [regex]::Escape("/diagsession-memory-analysis")) "Human usage guide must document the short Claude command"
 Assert-Condition ($humanUsageContent -match "Snapshot 1") "Human usage guide must document snapshot ordering"
 Assert-Condition ($humanUsageContent -match "analysis-only") "Human usage guide must state analysis-only scope"

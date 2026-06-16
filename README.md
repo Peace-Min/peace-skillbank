@@ -171,4 +171,4 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\validate.ps1
 
 ## 현재 스킬
 
-- `diagsession-memory-analysis`: Visual Studio `.diagsession` 또는 `.gcdump` 스냅샷에서 .NET managed heap 누수 분석용 LLM 입력을 생성하고, before/after 증가 타입을 중심으로 분석하는 절차.
+- [`diagsession-memory-analysis`](docs/diagsession-memory-analysis-usage.md): Visual Studio `.diagsession` 또는 `.gcdump` 스냅샷에서 .NET managed heap 누수 분석용 LLM 입력을 생성하고, before/after 증가 타입을 중심으로 분석하는 절차.

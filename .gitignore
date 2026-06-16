@@ -1,0 +1,9 @@
+*.diagsession
+*.gcdump
+*.heapstat.txt
+*.log
+*.llm/
+TestResults/
+out/
+tmp/
+

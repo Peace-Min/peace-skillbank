@@ -1,0 +1,8 @@
+interface:
+  display_name: "DiagSession Memory Analysis"
+  short_description: "Extract gcdump reports from VS diagsession files for memory leak analysis."
+  default_prompt: "Use $diagsession-memory-analysis to extract gcdump reports from my Visual Studio diagsession snapshots and analyze the managed memory leak evidence."
+
+policy:
+  allow_implicit_invocation: true
+

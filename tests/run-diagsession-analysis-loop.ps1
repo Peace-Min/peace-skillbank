@@ -50,6 +50,45 @@ function Join-CommandLineArgument {
     return '"' + $Value.Replace('"', '\"') + '"'
 }
 
+function Invoke-ExternalCommand {
+    param(
+        [Parameter(Mandatory = $true)][string]$Executable,
+        [string[]]$Arguments = @(),
+        [Parameter(Mandatory = $true)][string]$LogPath
+    )
+
+    $command = Get-Command $Executable -ErrorAction SilentlyContinue
+    if (-not $command) {
+        throw "Executable not found: $Executable"
+    }
+
+    $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $startInfo.FileName = $command.Source
+    $startInfo.Arguments = (($Arguments | ForEach-Object { Join-CommandLineArgument -Value $_ }) -join " ")
+    $startInfo.UseShellExecute = $false
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    $startInfo.CreateNoWindow = $true
+
+    $process = [System.Diagnostics.Process]::Start($startInfo)
+    $stdout = $process.StandardOutput.ReadToEnd()
+    $stderr = $process.StandardError.ReadToEnd()
+    $process.WaitForExit()
+
+    @(
+        "Command: $($startInfo.FileName) $($startInfo.Arguments)"
+        "ExitCode: $($process.ExitCode)"
+        ""
+        "## STDOUT"
+        $stdout.TrimEnd()
+        ""
+        "## STDERR"
+        $stderr.TrimEnd()
+    ) | Out-File -FilePath $LogPath -Encoding utf8
+
+    return $process.ExitCode
+}
+
 function Invoke-TextModel {
     param(
         [Parameter(Mandatory = $true)][string]$Executable,
@@ -142,9 +181,7 @@ if ($ToolPath) {
     $extractArgs += @("-ToolPath", $ToolPath)
 }
 
-$extractConsole = & powershell @extractArgs 2>&1
-$extractExitCode = $LASTEXITCODE
-$extractConsole | Out-File -FilePath $extractLogPath -Encoding utf8
+$extractExitCode = Invoke-ExternalCommand -Executable powershell -Arguments $extractArgs -LogPath $extractLogPath
 if ($extractExitCode -ne 0) {
     throw "Extraction command failed with exit code $extractExitCode. See $extractLogPath"
 }

@@ -113,6 +113,18 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\run-diagsession-anal
 ## 실패 해석
 
 - `dotnet-gcdump` missing: `dotnet tool install --global dotnet-gcdump` 또는 `-ToolPath`를 사용한다.
-- `No .gcdump files were found`: 해당 `.diagsession`에 managed memory snapshot이 없다.
+- `No .gcdump files were found`: 해당 `.diagsession`에 `.gcdump` entry가 없다. Visual Studio Memory Usage `.diagsession`은 `.heapstate`와 `.dmp`를 포함할 수 있으며, 이 gcdump-only parser는 그 형식을 파싱하지 않는다.
 - `Expected at least 2 snapshot(s)`: leak before/after 비교에 필요한 snapshot 수가 부족하다. 단일 snapshot 테스트는 `-MinSnapshotCount 1`로 실행한다.
 - Response contract 실패: 모델 응답이 표준 heading을 지키지 않았다. `LLM_REQUEST.md`의 Required Output Contract를 그대로 전달했는지 확인한다.
+
+## 공개 diagsession 샘플 검증 메모
+
+GitHub에서 공개 `.diagsession` 샘플을 받아 검사할 때, 일부 Visual Studio Memory Usage 샘플은 `.gcdump`가 아니라 `.heapstate`와 `.dmp` entry를 포함한다. 이런 파일은 이 스킬의 현재 범위 밖이다.
+
+검증에 사용한 공개 샘플 예:
+
+- `CecilFoubert/Project-6---Group-4---CSCN73060-SEC-1`, `PROJ2CODE/Crash_Test_InClass.diagsession`
+- `CecilFoubert/Project-6---Group-4---CSCN73060-SEC-1`, `PROJ2CODE/Load_Test_Improved.diagsession`
+- `pluralsight-cloud/azure-functions-monitor-debug-solutions`, `2.4/debugsnapshot.diagsession`
+
+이 결과는 `.diagsession` 전체 지원과 `.gcdump` 추출 지원을 구분해야 한다는 회귀 테스트 기준으로 사용한다.

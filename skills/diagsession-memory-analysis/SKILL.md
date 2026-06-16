@@ -69,6 +69,7 @@ If context is limited, provide only:
 ## Analysis Rules
 
 - Treat `.gcdump` as managed heap evidence, not full process memory evidence.
+- If a `.diagsession` contains `.heapstate` or `.dmp` entries but no `.gcdump`, report it as unsupported by this gcdump-only parser instead of fabricating heap analysis.
 - Do not claim native, COM, GDI, WPF image, unmanaged buffer, or handle leaks from `.gcdump` alone.
 - A single snapshot shows retained objects at one point in time; before/after snapshots are needed for leak growth.
 - If process memory grows but `.gcdump` growth does not explain it, escalate to full `.diagsession`, native memory tools, handle counters, or Visual Studio allocation stacks.

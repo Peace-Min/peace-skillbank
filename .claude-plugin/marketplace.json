@@ -11,7 +11,7 @@
       "name": "peace-skillbank",
       "source": "./",
       "description": "Reusable skills for diagnostic and memory analysis workflows.",
-      "version": "0.1.2",
+      "version": "0.1.3",
       "author": {
         "name": "Peace-Min",
         "url": "https://github.com/Peace-Min"

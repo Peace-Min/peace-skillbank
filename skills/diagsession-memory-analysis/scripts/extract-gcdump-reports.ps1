@@ -152,6 +152,40 @@ function Get-DefaultOutputDirectory {
     return Join-Path (Get-Location).Path "diagsession-gcdump-reports"
 }
 
+function Format-DiagSessionEntrySummary {
+    param([Parameter(Mandatory = $true)][object[]]$Entries)
+
+    $interestingExtensions = @(".gcdump", ".heapstate", ".dmp", ".etl", ".nettrace", ".vsp", ".vspx")
+    $extensionCounts = foreach ($extension in $interestingExtensions) {
+        $count = @($Entries | Where-Object {
+            [System.IO.Path]::GetExtension($_.FullName) -ieq $extension
+        }).Count
+
+        if ($count -gt 0) {
+            "$extension=$count"
+        }
+    }
+
+    $sampleEntries = @($Entries |
+        Where-Object { $_.Length -gt 0 } |
+        Select-Object -First 10 |
+        ForEach-Object { "$($_.FullName) ($($_.Length) bytes)" })
+
+    $summary = @()
+    if ($extensionCounts) {
+        $summary += "Detected diagnostic entries: $($extensionCounts -join ', ')"
+    }
+    else {
+        $summary += "Detected diagnostic entries: none with known dump/trace extensions"
+    }
+
+    if ($sampleEntries.Count -gt 0) {
+        $summary += "Sample entries: $($sampleEntries -join '; ')"
+    }
+
+    return $summary -join " "
+}
+
 function Extract-GcdumpsFromDiagSession {
     param(
         [Parameter(Mandatory = $true)][string]$DiagSessionPath,
@@ -165,7 +199,9 @@ function Extract-GcdumpsFromDiagSession {
         })
 
         if ($entries.Count -eq 0) {
-            throw "No .gcdump files were found in: $DiagSessionPath"
+            $allEntries = @($archive.Entries)
+            $entrySummary = Format-DiagSessionEntrySummary -Entries $allEntries
+            throw "No .gcdump files were found in: $DiagSessionPath. $entrySummary This gcdump-only parser cannot parse Visual Studio .heapstate/.dmp snapshots."
         }
 
         $index = 0

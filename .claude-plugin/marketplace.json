@@ -1,0 +1,31 @@
+{
+  "name": "peace-skillbank",
+  "metadata": {
+    "description": "Personal Claude Code plugin marketplace for reusable diagnostic skills."
+  },
+  "owner": {
+    "name": "Peace-Min"
+  },
+  "plugins": [
+    {
+      "name": "peace-skillbank",
+      "source": "./",
+      "description": "Reusable skills for diagnostic and memory analysis workflows.",
+      "version": "0.1.0",
+      "author": {
+        "name": "Peace-Min",
+        "url": "https://github.com/Peace-Min"
+      },
+      "repository": "https://github.com/Peace-Min/peace-skillbank",
+      "license": "MIT",
+      "category": "development",
+      "tags": [
+        "skills",
+        "dotnet",
+        "gcdump",
+        "diagsession",
+        "memory-analysis"
+      ]
+    }
+  ]
+}

@@ -47,6 +47,28 @@ $target = Join-Path $env:USERPROFILE ".codex\skills\$skillName"
 Copy-Item -Recurse -Force -LiteralPath $source -Destination $target
 ```
 
+## Claude Code에서 plugin marketplace로 사용
+
+이 저장소는 Claude Code marketplace 파일을 포함한다. GitHub에 push한 뒤 Claude Code에서 저장소 주소를 marketplace로 추가하면 plugin을 설치할 수 있다.
+
+```text
+/plugin marketplace add Peace-Min/peace-skillbank
+/plugin install peace-skillbank@peace-skillbank
+```
+
+설치 후 스킬은 plugin namespace로 호출된다.
+
+```text
+/peace-skillbank:diagsession-memory-analysis
+```
+
+로컬에서 테스트할 때는 저장소 루트에서 다음 명령을 사용한다.
+
+```powershell
+claude plugin validate .
+claude --plugin-dir .
+```
+
 ## Codex 밖의 LLM에서 사용
 
 먼저 스크립트로 `LLM_MEMORY_INPUT.txt`를 만든 뒤, `references/model-agnostic-prompt.md`의 프롬프트와 함께 입력한다.

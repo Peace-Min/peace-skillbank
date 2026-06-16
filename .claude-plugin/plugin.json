@@ -1,0 +1,18 @@
+{
+  "name": "peace-skillbank",
+  "version": "0.1.0",
+  "description": "Reusable skills for diagnostic and memory analysis workflows.",
+  "author": {
+    "name": "Peace-Min",
+    "url": "https://github.com/Peace-Min"
+  },
+  "repository": "https://github.com/Peace-Min/peace-skillbank",
+  "license": "MIT",
+  "keywords": [
+    "skills",
+    "dotnet",
+    "gcdump",
+    "diagsession",
+    "memory-analysis"
+  ]
+}

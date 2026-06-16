@@ -38,11 +38,15 @@ $skillPath = Join-Path $skillRoot "SKILL.md"
 $scriptPath = Join-Path $skillRoot "scripts\extract-gcdump-reports.ps1"
 $openAiYamlPath = Join-Path $skillRoot "agents\openai.yaml"
 $promptPath = Join-Path $skillRoot "references\model-agnostic-prompt.md"
+$claudePluginPath = Join-Path $RepositoryRoot ".claude-plugin\plugin.json"
+$claudeMarketplacePath = Join-Path $RepositoryRoot ".claude-plugin\marketplace.json"
 
 Assert-Condition (Test-Path -LiteralPath $skillPath) "Missing SKILL.md"
 Assert-Condition (Test-Path -LiteralPath $scriptPath) "Missing extract script"
 Assert-Condition (Test-Path -LiteralPath $openAiYamlPath) "Missing agents/openai.yaml"
 Assert-Condition (Test-Path -LiteralPath $promptPath) "Missing model-agnostic prompt"
+Assert-Condition (Test-Path -LiteralPath $claudePluginPath) "Missing Claude plugin manifest"
+Assert-Condition (Test-Path -LiteralPath $claudeMarketplacePath) "Missing Claude marketplace manifest"
 
 $frontMatter = Get-FrontMatter -Path $skillPath
 Assert-Condition ($frontMatter -match "(?m)^name:\s*diagsession-memory-analysis\s*$") "Invalid skill name"
@@ -57,7 +61,35 @@ Assert-Condition $shortDescriptionMatch.Success "Missing short_description"
 $shortDescriptionLength = $shortDescriptionMatch.Groups[1].Value.Length
 Assert-Condition ($shortDescriptionLength -ge 25 -and $shortDescriptionLength -le 64) "short_description must be 25-64 characters"
 
+$claudePlugin = Get-Content -Raw -LiteralPath $claudePluginPath | ConvertFrom-Json
+Assert-Condition ($claudePlugin.name -eq "peace-skillbank") "Invalid Claude plugin name"
+Assert-Condition ($claudePlugin.license -eq "MIT") "Invalid Claude plugin license"
+
+$claudeMarketplace = Get-Content -Raw -LiteralPath $claudeMarketplacePath | ConvertFrom-Json
+Assert-Condition ($claudeMarketplace.name -eq "peace-skillbank") "Invalid Claude marketplace name"
+Assert-Condition ($claudeMarketplace.metadata.description.Length -gt 0) "Claude marketplace description is required"
+Assert-Condition ($claudeMarketplace.plugins.Count -ge 1) "Claude marketplace must list at least one plugin"
+Assert-Condition ($claudeMarketplace.plugins[0].source -eq "./") "Claude marketplace plugin should source the repository root"
+
 Test-PowerShellSyntax -Path $scriptPath
+
+$claude = Get-Command claude -ErrorAction SilentlyContinue
+if ($claude) {
+    Push-Location $RepositoryRoot
+    try {
+        & $claude.Source plugin validate . | Out-Host
+        Assert-Condition ($LASTEXITCODE -eq 0) "Claude plugin marketplace validation failed"
+
+        & $claude.Source plugin validate $claudePluginPath | Out-Host
+        Assert-Condition ($LASTEXITCODE -eq 0) "Claude plugin manifest validation failed"
+    }
+    finally {
+        Pop-Location
+    }
+}
+else {
+    Write-Host "Claude CLI not found; skipping Claude plugin validation."
+}
 
 $gitIgnorePath = Join-Path $RepositoryRoot ".gitignore"
 $gitIgnore = Get-Content -Raw -LiteralPath $gitIgnorePath

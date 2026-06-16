@@ -14,6 +14,7 @@
 - 생성물, 덤프, 로그, 테스트 산출물은 저장소에 커밋하지 않는다.
 - 스킬은 Codex 전용으로만 작성하지 말고, Codex 밖의 LLM도 사용할 수 있게 입력/출력 파일 기준을 명확히 둔다.
 - 덤프, 로그, `LLM_MEMORY_INPUT.txt`, `MANIFEST.txt`, `reports/`, `extracted-gcdumps/`는 커밋하지 않는다.
+- Claude Code marketplace 호환성을 위해 `.claude-plugin/marketplace.json`과 `.claude-plugin/plugin.json`을 함께 유지한다.
 
 ## 검증
 
@@ -26,3 +27,4 @@ $errors
 ```
 
 스킬 수정 후에는 가능하면 Codex skill validator도 실행한다.
+Claude Code 호환성은 `claude plugin validate .`로 확인한다.

@@ -10,3 +10,8 @@ extracted-gcdumps/
 TestResults/
 out/
 tmp/
+LLM_REQUEST.md
+MODEL_RESPONSE.md
+MODEL_RESPONSE.stderr.txt
+RUN_SUMMARY.md
+RESPONSE_VALIDATION.md

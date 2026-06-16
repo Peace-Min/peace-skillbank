@@ -36,21 +36,31 @@ function Get-FrontMatter {
 $skillRoot = Join-Path $RepositoryRoot "skills\diagsession-memory-analysis"
 $skillPath = Join-Path $skillRoot "SKILL.md"
 $scriptPath = Join-Path $skillRoot "scripts\extract-gcdump-reports.ps1"
+$loopScriptPath = Join-Path $RepositoryRoot "tests\run-diagsession-analysis-loop.ps1"
+$responseValidatorPath = Join-Path $RepositoryRoot "tests\validate-diagsession-response.ps1"
+$responseContractPath = Join-Path $RepositoryRoot "tests\diagsession-report-contract.ps1"
 $openAiYamlPath = Join-Path $skillRoot "agents\openai.yaml"
 $promptPath = Join-Path $skillRoot "references\model-agnostic-prompt.md"
 $cliUsagePath = Join-Path $skillRoot "references\cli-usage.md"
+$standardReportTemplatePath = Join-Path $skillRoot "references\standard-report-template.md"
 $claudeCommandPath = Join-Path $RepositoryRoot "commands\diagsession-memory-analysis.md"
 $humanUsagePath = Join-Path $RepositoryRoot "docs\diagsession-memory-analysis-usage.md"
+$loopValidationDocPath = Join-Path $RepositoryRoot "docs\diagsession-loop-validation.md"
 $claudePluginPath = Join-Path $RepositoryRoot ".claude-plugin\plugin.json"
 $claudeMarketplacePath = Join-Path $RepositoryRoot ".claude-plugin\marketplace.json"
 
 Assert-Condition (Test-Path -LiteralPath $skillPath) "Missing SKILL.md"
 Assert-Condition (Test-Path -LiteralPath $scriptPath) "Missing extract script"
+Assert-Condition (Test-Path -LiteralPath $loopScriptPath) "Missing diagsession loop test script"
+Assert-Condition (Test-Path -LiteralPath $responseValidatorPath) "Missing response validator script"
+Assert-Condition (Test-Path -LiteralPath $responseContractPath) "Missing response contract helper"
 Assert-Condition (Test-Path -LiteralPath $openAiYamlPath) "Missing agents/openai.yaml"
 Assert-Condition (Test-Path -LiteralPath $promptPath) "Missing model-agnostic prompt"
 Assert-Condition (Test-Path -LiteralPath $cliUsagePath) "Missing CLI usage reference"
+Assert-Condition (Test-Path -LiteralPath $standardReportTemplatePath) "Missing standard report template"
 Assert-Condition (Test-Path -LiteralPath $claudeCommandPath) "Missing Claude command alias"
 Assert-Condition (Test-Path -LiteralPath $humanUsagePath) "Missing human usage guide"
+Assert-Condition (Test-Path -LiteralPath $loopValidationDocPath) "Missing loop validation guide"
 Assert-Condition (Test-Path -LiteralPath $claudePluginPath) "Missing Claude plugin manifest"
 Assert-Condition (Test-Path -LiteralPath $claudeMarketplacePath) "Missing Claude marketplace manifest"
 
@@ -78,6 +88,12 @@ Assert-Condition ($humanUsageContent -match [regex]::Escape("/diagsession-memory
 Assert-Condition ($humanUsageContent -match "Snapshot 1") "Human usage guide must document snapshot ordering"
 Assert-Condition ($humanUsageContent -match "analysis-only") "Human usage guide must state analysis-only scope"
 
+$loopValidationDoc = Get-Content -Raw -LiteralPath $loopValidationDocPath
+$standardReportTemplate = Get-Content -Raw -LiteralPath $standardReportTemplatePath
+Assert-Condition ($loopValidationDoc -match [regex]::Escape("run-diagsession-analysis-loop.ps1")) "Loop validation guide must document the loop runner"
+Assert-Condition ($loopValidationDoc -match [regex]::Escape("validate-diagsession-response.ps1")) "Loop validation guide must document the response validator"
+Assert-Condition ($standardReportTemplate -match [regex]::Escape("## 8. Follow-up Fix Session Handoff")) "Standard report template must include handoff heading"
+
 $openAiYaml = Get-Content -Raw -LiteralPath $openAiYamlPath
 Assert-Condition ($openAiYaml -match 'display_name:\s*"DiagSession Memory Analysis"') "Missing display_name"
 Assert-Condition ($openAiYaml -match 'default_prompt:\s*"Use \$diagsession-memory-analysis') "default_prompt must mention skill name"
@@ -99,7 +115,9 @@ Assert-Condition ($claudeMarketplace.plugins.Count -ge 1) "Claude marketplace mu
 Assert-Condition ($claudeMarketplace.plugins[0].source -eq "./") "Claude marketplace plugin should source the repository root"
 Assert-Condition ($claudeMarketplace.plugins[0].version -eq $claudePlugin.version) "Marketplace version must match plugin version"
 
-Test-PowerShellSyntax -Path $scriptPath
+foreach ($powershellScriptPath in @($scriptPath, $loopScriptPath, $responseValidatorPath, $responseContractPath)) {
+    Test-PowerShellSyntax -Path $powershellScriptPath
+}
 
 $claude = Get-Command claude -ErrorAction SilentlyContinue
 if ($claude) {
@@ -121,7 +139,7 @@ else {
 
 $gitIgnorePath = Join-Path $RepositoryRoot ".gitignore"
 $gitIgnore = Get-Content -Raw -LiteralPath $gitIgnorePath
-foreach ($pattern in @("*.diagsession", "*.gcdump", "LLM_MEMORY_INPUT.txt", "MANIFEST.txt", "reports/", "extracted-gcdumps/")) {
+foreach ($pattern in @("*.diagsession", "*.gcdump", "LLM_MEMORY_INPUT.txt", "MANIFEST.txt", "reports/", "extracted-gcdumps/", "LLM_REQUEST.md", "MODEL_RESPONSE.md", "RESPONSE_VALIDATION.md")) {
     Assert-Condition ($gitIgnore -match [regex]::Escape($pattern)) "Missing .gitignore pattern: $pattern"
 }
 

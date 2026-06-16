@@ -151,6 +151,8 @@ reports/
 
 스킬을 수정한 뒤 최소 검증을 수행한다.
 
+실제 `.diagsession` 파일을 사용한 end-to-end loop 검증은 [DiagSession loop validation](docs/diagsession-loop-validation.md)을 따른다.
+
 ```powershell
 $tokens=$null; $errors=$null
 [System.Management.Automation.Language.Parser]::ParseFile(

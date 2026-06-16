@@ -91,3 +91,5 @@ Produce a concise report with:
 6. what would confirm or falsify each hypothesis
 7. limitations of the available evidence
 8. handoff summary for a follow-up fix session
+
+For strict loop validation or machine-checkable handoff reports, use the exact headings in `references/standard-report-template.md`.

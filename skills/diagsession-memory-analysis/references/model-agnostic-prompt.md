@@ -33,4 +33,6 @@ Return:
 7. Handoff summary for a follow-up fix session
 ```
 
+When a machine-checkable report is required, use `references/standard-report-template.md` and keep its headings exactly.
+
 If the `.gcdump` evidence does not explain the observed memory growth, say that clearly and recommend full `.diagsession`/native/handle/allocation-stack analysis.

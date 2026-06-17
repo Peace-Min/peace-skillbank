@@ -4,17 +4,18 @@
 
 `Peace.Skillbank`는 개인용 LLM/에이전트 스킬 저장소다. 각 스킬은 특정 작업을 반복 가능하게 만드는 절차, 스크립트, 프롬프트 템플릿을 포함한다.
 
-## 작성 규칙
+## 새 스킬을 만들 때
 
-- 스킬 폴더는 `skills/<skill-name>` 형식을 사용한다.
-- 스킬 이름은 lowercase kebab-case를 사용한다.
-- 각 스킬은 반드시 `SKILL.md`를 가진다.
-- 반복 실행이 필요한 작업은 `scripts/`에 둔다.
-- 모델 입력용 프롬프트나 세부 설명은 `references/`에 둔다.
-- 생성물, 덤프, 로그, 테스트 산출물은 저장소에 커밋하지 않는다.
-- 스킬은 Codex 전용으로만 작성하지 말고, Codex 밖의 LLM도 사용할 수 있게 입력/출력 파일 기준을 명확히 둔다.
-- 덤프, 로그, `LLM_MEMORY_INPUT.txt`, `MANIFEST.txt`, `reports/`, `extracted-gcdumps/`는 커밋하지 않는다.
-- Claude Code marketplace 호환성을 위해 `.claude-plugin/marketplace.json`과 `.claude-plugin/plugin.json`을 함께 유지한다.
+**먼저 [Skill Production Playbook](docs/skill-authoring-guide.md)를 읽고, 그 구조를 참고해 *작업계획*부터 세운다.** 체크리스트를 외우는 게 아니라 잘 된 실제 사례(diagsession)를 보고 적응하며, 검증의 깊이는 스킬의 취약도/객관성에 비례시킨다. 보통은 이 레포를 작업 폴더로 연 뒤 Anthropic `skill-creator`에게 "플레이북·AGENTS.md 참고해서 `<목적>` 스킬 작업계획부터 세워줘"라고 맡기면 된다.
+
+항상 지키는 비협상 규약:
+
+- `skills/<kebab-name>/SKILL.md` 필수 · 결정적·반복 작업은 `scripts/` · 상세 문서·모델 프롬프트는 `references/`. SKILL.md는 lean하게.
+- 생성물·덤프·로그·모델 I/O(`LLM_MEMORY_INPUT.txt`, `MANIFEST.txt`, `reports/`, `ANALYSIS.md`, `extracted-gcdumps/` 등)는 커밋 금지(`.gitignore`). 외부 공유물은 전체 경로를 redact한다.
+- 도구 설치를 가정하지 않는다. 미설치·권한·미지원 입력은 스크립트가 직접 처리하고 **구체적으로 보고**한다(지어내지 않음).
+- **검증 없이 발행하지 않는다.** 취약하거나 객관적 출력인 스킬은 실제 fixture로 **양성+음성 경로**를 검증한다.
+- 스킬을 특정 도구 전용으로 가두지 않는다(Codex 밖 LLM도 입출력 파일 기준이 명확하게). 호출은 네이티브 셸에서 직접 — 셸 중첩 금지.
+- `.claude-plugin/marketplace.json`·`plugin.json` 버전을 동기화하고, plugin 커맨드는 namespaced(`/plugin:skill`)로 호출됨을 문서화한다.
 
 ## 검증
 

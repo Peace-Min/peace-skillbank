@@ -16,3 +16,12 @@ MODEL_RESPONSE.md
 MODEL_RESPONSE.stderr.txt
 RUN_SUMMARY.md
 RESPONSE_VALIDATION.md
+
+# lightningchart-72: licensed-derived corpus is generated locally, never committed (machinery only)
+skills/lightningchart-72/references/manual/
+skills/lightningchart-72/references/manual-index.json
+skills/lightningchart-72/references/api-index.json
+skills/lightningchart-72/references/api-symbols.txt
+skills/lightningchart-72/references/demos/*
+!skills/lightningchart-72/references/demos/README.md
+*.dll

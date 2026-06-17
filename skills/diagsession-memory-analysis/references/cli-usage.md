@@ -36,7 +36,7 @@ By default, `LLM_MEMORY_INPUT.txt` redacts full local paths and keeps file names
 
 ## Execution Environment
 
-Run the script in a single PowerShell process. The most common failure is invoking it through layered shells — for example Git Bash calling `cmd /c "powershell -File ..."`. Each layer re-parses quotes, so arguments (especially paths with spaces or non-ASCII characters) arrive corrupted and the script may never see the real input path.
+Run the script in a single PowerShell process. The most common failure is invoking it through layered shells; for example Git Bash calling `cmd /c "powershell -File ..."`. Each layer re-parses quotes, so arguments (especially paths with spaces or non-ASCII characters) arrive corrupted and the script may never see the real input path.
 
 - Use `powershell -NoProfile -ExecutionPolicy Bypass -File <script> -InputPath <paths>` from PowerShell, or `pwsh` when available. `pwsh` uses UTF-8 by default; Windows PowerShell 5.1 uses the OEM code page (for example CP949), which can misread Korean paths when they are passed in through another shell.
 - Pass the original path, quoted. The script opens files through .NET, which handles Unicode paths, so there is no need to copy the input to an ASCII filename or a temp directory.
@@ -47,5 +47,5 @@ Run the script in a single PowerShell process. The most common failure is invoki
 
 - Missing input path: ask the user for a valid `.diagsession` or `.gcdump` path.
 - No `.gcdump` inside `.diagsession`: report that the selected VS profiling session does not contain managed heap snapshots.
-- Fewer than two snapshots for leak comparison: ask for another snapshot or state that only single-snapshot inventory is possible.
+- Fewer than two snapshots for leak comparison: continue with single-snapshot inventory analysis, and state that before/after growth comparison needs another snapshot.
 - `dotnet-gcdump` missing: ask for installation or a `-ToolPath` value.

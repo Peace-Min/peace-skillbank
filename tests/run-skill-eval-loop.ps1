@@ -3,7 +3,7 @@ param(
     [string]$InputPath,
 
     [string]$RepositoryRoot,
-    [string]$ToolPath = (Join-Path $env:USERPROFILE ".dotnet\tools\dotnet-gcdump.exe"),
+    [string]$ToolPath,
     [string]$OllamaModel = "qwen2.5-coder:7b",
     [int]$OllamaTimeoutSeconds = 300,
     [string]$OutputDirectory,
@@ -15,9 +15,8 @@ param(
     [switch]$SkipModel
 )
 
-# A self-contained, deadlock-free eval loop for the diagsession-memory-analysis skill.
-# Unlike run-diagsession-analysis-loop.ps1 (which hangs on nested Process.Start + ReadToEnd),
-# this calls the extract script with inherited streams and drives the LLM via file redirection.
+# A self-contained eval loop for the diagsession-memory-analysis skill.
+# It uses file redirection for child process streams so background runs cannot block on pipes.
 
 $ErrorActionPreference = "Stop"
 if (Get-Variable -Name PSNativeCommandUseErrorActionPreference -ErrorAction SilentlyContinue) {
@@ -28,6 +27,18 @@ $scriptDir = $PSScriptRoot
 if (-not $scriptDir) { $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition }
 if (-not $RepositoryRoot) { $RepositoryRoot = (Resolve-Path (Join-Path $scriptDir "..")).Path }
 
+function Test-IsChildPath {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$ParentPath
+    )
+
+    $trimChars = [char[]]@([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar)
+    $fullPath = [System.IO.Path]::GetFullPath($Path).TrimEnd($trimChars)
+    $fullParent = [System.IO.Path]::GetFullPath($ParentPath).TrimEnd($trimChars)
+    return $fullPath.StartsWith($fullParent + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase)
+}
+
 . (Join-Path $scriptDir "diagsession-report-contract.ps1")
 
 $skillRoot = Join-Path $RepositoryRoot "skills\diagsession-memory-analysis"
@@ -36,9 +47,17 @@ $modelPrompt = Get-Content -Raw -LiteralPath (Join-Path $skillRoot "references\m
 $template = Get-Content -Raw -LiteralPath (Join-Path $skillRoot "references\standard-report-template.md")
 
 if (-not $OutputDirectory) {
-    $OutputDirectory = Join-Path $RepositoryRoot "out\skill-eval-loop"
+    $runId = [DateTimeOffset]::Now.ToString("yyyyMMdd-HHmmss")
+    $OutputDirectory = Join-Path (Join-Path $RepositoryRoot "out\skill-eval-loop") $runId
 }
-if (Test-Path -LiteralPath $OutputDirectory) { Remove-Item -Recurse -Force -LiteralPath $OutputDirectory }
+$OutputDirectory = [System.IO.Path]::GetFullPath($OutputDirectory)
+$safeOutputRoot = Join-Path $RepositoryRoot "out"
+if (Test-Path -LiteralPath $OutputDirectory) {
+    if (-not (Test-IsChildPath -Path $OutputDirectory -ParentPath $safeOutputRoot)) {
+        throw "Refusing to remove OutputDirectory outside the repository out directory: $OutputDirectory"
+    }
+    Remove-Item -Recurse -Force -LiteralPath $OutputDirectory
+}
 New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
 $extractDir = Join-Path $OutputDirectory "extract"
 
@@ -49,7 +68,10 @@ $extractDir = Join-Path $OutputDirectory "extract"
 $extractLog = Join-Path $OutputDirectory "extract.log"
 $extractErr = Join-Path $OutputDirectory "extract.err"
 $extractArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $extractScript,
-    "-InputPath", $InputPath, "-ToolPath", $ToolPath, "-OutputDirectory", $extractDir)
+    "-InputPath", $InputPath, "-OutputDirectory", $extractDir)
+if ($ToolPath) {
+    $extractArgs += @("-ToolPath", $ToolPath)
+}
 $extractProc = Start-Process -FilePath "powershell" -ArgumentList $extractArgs -NoNewWindow -PassThru `
     -RedirectStandardOutput $extractLog -RedirectStandardError $extractErr
 $null = $extractProc.Handle  # cache handle so ExitCode is populated after exit (Start-Process -PassThru quirk)
@@ -97,7 +119,8 @@ $llmInput
 $requestPath = Join-Path $OutputDirectory "LLM_REQUEST.md"
 $request | Set-Content -LiteralPath $requestPath -Encoding utf8
 
-$responsePath = Join-Path $OutputDirectory "ANALYSIS.md"
+$responsePath = Join-Path $extractDir "ANALYSIS.md"
+$legacyResponsePath = Join-Path $OutputDirectory "MODEL_RESPONSE.md"
 $contractStatus = "skipped"
 $elapsed = 0
 
@@ -118,6 +141,7 @@ if (-not $SkipModel) {
     $validationPath = Join-Path $OutputDirectory "RESPONSE_VALIDATION.md"
     try {
         Test-DiagSessionAnalysisReport -ResponsePath $responsePath -ValidationReportPath $validationPath | Out-Null
+        Copy-Item -LiteralPath $responsePath -Destination $legacyResponsePath -Force
         $contractStatus = "passed"
     }
     catch {
@@ -140,6 +164,7 @@ if (-not $SkipModel) {
     "- LLM memory input: $llmInputPath"
     "- LLM request: $requestPath"
     "- Analysis (model output): $responsePath"
+    "- Legacy model response alias: $legacyResponsePath"
 ) | Set-Content -LiteralPath (Join-Path $OutputDirectory "RUN_SUMMARY.md") -Encoding utf8
 
 Write-Host "Eval loop done. SnapshotCount=$snapshotCount ContractStatus=$contractStatus ModelElapsed=${elapsed}s"

@@ -21,7 +21,8 @@ Default assumptions:
 - Do not pass `-IncludeFullPathsInLlmInput` unless the user asks for full local paths.
 - Do not pass `-KeepExtractedGcdump` unless the user asks to preserve extracted dumps.
 - Use `-ToolPath` only when `dotnet-gcdump` cannot be resolved automatically and the user provides a location.
-- Ask a clarifying question only when there is no usable input path, fewer than two snapshots after extraction, or snapshot order cannot be reasonably inferred.
+- Ask a clarifying question only when there is no usable input path, or when before/after comparison is requested but snapshot order cannot be reasonably inferred.
+- If there is only one snapshot, continue with inventory analysis and clearly state that growth comparison is unavailable.
 
 ## Workflow
 
@@ -50,7 +51,7 @@ Read `references/cli-usage.md` only when custom paths, full-path output, preserv
 
 ## Execution Policy
 
-Run the script directly in PowerShell (`powershell`, or `pwsh` when available). Do not call it through Git Bash, `cmd /c "..."`, or nested shells — nested quoting corrupts arguments and breaks non-ASCII (for example Korean) paths. Pass each path as-is and quoted; the script reads files via .NET and handles Unicode, so do not copy or rename to an ASCII path, and note that Git Bash `/tmp` is not `C:\tmp`. If `dotnet-gcdump` is not resolved automatically, pass `-ToolPath` rather than guessing.
+Run the script directly in PowerShell (`powershell`, or `pwsh` when available). Do not call it through Git Bash, `cmd /c "..."`, or nested shells; nested quoting corrupts arguments and breaks non-ASCII (for example Korean) paths. Pass each path as-is and quoted; the script reads files via .NET and handles Unicode, so do not copy or rename to an ASCII path, and note that Git Bash `/tmp` is not `C:\tmp`. If `dotnet-gcdump` is not resolved automatically, pass `-ToolPath` rather than guessing.
 
 ## Model-Agnostic Usage
 
@@ -74,12 +75,12 @@ If context is limited, provide only:
 
 `.gcdump` captures only the managed heap at a single point in time. Because of that boundary:
 
-- It cannot evidence native, COM, GDI, WPF-image, unmanaged-buffer, or handle leaks — surface those as escalation candidates, not findings.
+- It cannot evidence native, COM, GDI, WPF-image, unmanaged-buffer, or handle leaks; surface those as escalation candidates, not findings.
 - A single snapshot is only an inventory; leak *growth* needs before/after snapshots.
-- A `.diagsession` with `.heapstate`/`.dmp` but no `.gcdump` is unsupported by this gcdump-only parser — report that rather than fabricating heap analysis.
+- A `.diagsession` with `.heapstate`/`.dmp` but no `.gcdump` is unsupported by this gcdump-only parser; report that rather than fabricating heap analysis.
 - If process memory grows but managed-heap growth does not explain it, escalate to full `.diagsession`, native memory tools, handle counters, or Visual Studio allocation stacks.
 
-The Size/Count comparison, container clues, and retention-hypothesis taxonomy live in `references/model-agnostic-prompt.md` — use them there rather than restating them here. Connect growing types back to source only when names or ownership make the inference plausible.
+The Size/Count comparison, container clues, and retention-hypothesis taxonomy live in `references/model-agnostic-prompt.md`; use them there rather than restating them here. Connect growing types back to source only when names or ownership make the inference plausible.
 
 ## Scope Boundary
 

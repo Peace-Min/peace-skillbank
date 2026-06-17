@@ -50,12 +50,12 @@ RUN_SUMMARY.md
 ## 2. 수동 LLM 응답 검증
 
 1. 생성된 `LLM_REQUEST.md`를 Claude, Codex, 또는 로컬 LLM에 그대로 입력한다.
-2. 응답을 `MODEL_RESPONSE.md`로 저장한다.
+2. 응답을 `extract/ANALYSIS.md`로 저장한다. `MODEL_RESPONSE.md`는 기존 자동화와의 호환용 별칭으로만 사용한다.
 3. 다음 명령으로 리포트 규격을 검증한다.
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\validate-diagsession-response.ps1 `
-  -ResponsePath .\out\diagsession-analysis-loop\<run-id>\MODEL_RESPONSE.md
+  -ResponsePath .\out\diagsession-analysis-loop\<run-id>\extract\ANALYSIS.md
 ```
 
 검증은 다음 heading이 모두 있는지 확인한다.
@@ -97,7 +97,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\run-diagsession-anal
   -LlmArgumentLine "-p"
 ```
 
-모델 호출까지 성공하면 `MODEL_RESPONSE.md`와 `RESPONSE_VALIDATION.md`가 생성된다.
+모델 호출까지 성공하면 `extract/ANALYSIS.md`, 호환용 `MODEL_RESPONSE.md`, `RESPONSE_VALIDATION.md`가 생성된다.
 
 ## 4. 반복 검증 루프
 
@@ -106,7 +106,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\run-diagsession-anal
 1. `run-diagsession-analysis-loop.ps1` 실행
 2. `RUN_SUMMARY.md`에서 snapshot/report/gcdump 검증 결과 확인
 3. `LLM_REQUEST.md`를 모델에 전달
-4. `MODEL_RESPONSE.md` 저장
+4. `extract/ANALYSIS.md` 저장
 5. `validate-diagsession-response.ps1` 실행
 6. 누락 heading, 잘못된 snapshot ordering, 불명확한 handoff summary가 있으면 스킬 지침이나 prompt/template를 보완
 

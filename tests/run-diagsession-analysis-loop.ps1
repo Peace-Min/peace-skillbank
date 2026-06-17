@@ -168,7 +168,8 @@ $extractOutputDirectory = Join-Path $OutputDirectory "extract"
 $requestPath = Join-Path $OutputDirectory "LLM_REQUEST.md"
 $runSummaryPath = Join-Path $OutputDirectory "RUN_SUMMARY.md"
 $extractLogPath = Join-Path $OutputDirectory "EXTRACT_LOG.txt"
-$modelResponsePath = Join-Path $OutputDirectory "MODEL_RESPONSE.md"
+$analysisPath = Join-Path $extractOutputDirectory "ANALYSIS.md"
+$legacyModelResponsePath = Join-Path $OutputDirectory "MODEL_RESPONSE.md"
 $modelErrorPath = Join-Path $OutputDirectory "MODEL_RESPONSE.stderr.txt"
 $responseValidationPath = Join-Path $OutputDirectory "RESPONSE_VALIDATION.md"
 
@@ -269,8 +270,8 @@ $requestText | Out-File -FilePath $requestPath -Encoding utf8
 
 $validatedResponsePath = $null
 if ($LlmExecutable) {
-    Invoke-TextModel -Executable $LlmExecutable -ArgumentLine $LlmArgumentLine -Arguments $LlmArguments -InputText $requestText -OutputPath $modelResponsePath -ErrorPath $modelErrorPath
-    $validatedResponsePath = $modelResponsePath
+    Invoke-TextModel -Executable $LlmExecutable -ArgumentLine $LlmArgumentLine -Arguments $LlmArguments -InputText $requestText -OutputPath $analysisPath -ErrorPath $modelErrorPath
+    $validatedResponsePath = $analysisPath
 }
 elseif ($ResponsePath) {
     Assert-Condition (Test-Path -LiteralPath $ResponsePath -PathType Leaf) "ResponsePath not found: $ResponsePath"
@@ -282,7 +283,14 @@ elseif ($RequireModelResponse) {
 
 $responseStatus = "not-run"
 if ($validatedResponsePath) {
-    Test-DiagSessionAnalysisReport -ResponsePath $validatedResponsePath -ValidationReportPath $responseValidationPath | Out-Null
+    $resolvedValidatedResponsePath = (Resolve-Path -LiteralPath $validatedResponsePath).Path
+    $analysisFullPath = [System.IO.Path]::GetFullPath($analysisPath)
+    if ($resolvedValidatedResponsePath -ne $analysisFullPath) {
+        Copy-Item -LiteralPath $resolvedValidatedResponsePath -Destination $analysisPath -Force
+    }
+    Copy-Item -LiteralPath $analysisPath -Destination $legacyModelResponsePath -Force
+    Test-DiagSessionAnalysisReport -ResponsePath $analysisPath -ValidationReportPath $responseValidationPath | Out-Null
+    $validatedResponsePath = $analysisPath
     $responseStatus = "validated"
 }
 
@@ -303,6 +311,8 @@ $summary = @(
     "- Manifest: $manifestPath"
     "- LLM memory input: $llmMemoryInputPath"
     "- LLM request: $requestPath"
+    "- Analysis: $analysisPath"
+    "- Legacy model response alias: $legacyModelResponsePath"
     "- Extract log: $extractLogPath"
     "- Response validation: $responseValidationPath"
     ""
@@ -312,7 +322,7 @@ $summary = @(
     ""
     "## Next Step"
     ""
-    "If ResponseStatus is not-run, paste LLM_REQUEST.md into Claude, Codex, or a local LLM, save the answer as MODEL_RESPONSE.md, then run tests\validate-diagsession-response.ps1 against that file."
+    "If ResponseStatus is not-run, paste LLM_REQUEST.md into Claude, Codex, or a local LLM, save the answer as extract\ANALYSIS.md, then run tests\validate-diagsession-response.ps1 against that file. MODEL_RESPONSE.md remains a legacy compatibility alias."
 )
 $summary | Out-File -FilePath $runSummaryPath -Encoding utf8
 

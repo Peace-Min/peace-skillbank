@@ -37,6 +37,7 @@ $skillRoot = Join-Path $RepositoryRoot "skills\diagsession-memory-analysis"
 $skillPath = Join-Path $skillRoot "SKILL.md"
 $scriptPath = Join-Path $skillRoot "scripts\extract-gcdump-reports.ps1"
 $loopScriptPath = Join-Path $RepositoryRoot "tests\run-diagsession-analysis-loop.ps1"
+$skillEvalLoopScriptPath = Join-Path $RepositoryRoot "tests\run-skill-eval-loop.ps1"
 $responseValidatorPath = Join-Path $RepositoryRoot "tests\validate-diagsession-response.ps1"
 $responseContractPath = Join-Path $RepositoryRoot "tests\diagsession-report-contract.ps1"
 $openAiYamlPath = Join-Path $skillRoot "agents\openai.yaml"
@@ -52,6 +53,7 @@ $claudeMarketplacePath = Join-Path $RepositoryRoot ".claude-plugin\marketplace.j
 Assert-Condition (Test-Path -LiteralPath $skillPath) "Missing SKILL.md"
 Assert-Condition (Test-Path -LiteralPath $scriptPath) "Missing extract script"
 Assert-Condition (Test-Path -LiteralPath $loopScriptPath) "Missing diagsession loop test script"
+Assert-Condition (Test-Path -LiteralPath $skillEvalLoopScriptPath) "Missing skill eval loop script"
 Assert-Condition (Test-Path -LiteralPath $responseValidatorPath) "Missing response validator script"
 Assert-Condition (Test-Path -LiteralPath $responseContractPath) "Missing response contract helper"
 Assert-Condition (Test-Path -LiteralPath $openAiYamlPath) "Missing agents/openai.yaml"
@@ -68,11 +70,18 @@ $frontMatter = Get-FrontMatter -Path $skillPath
 Assert-Condition ($frontMatter -match "(?m)^name:\s*diagsession-memory-analysis\s*$") "Invalid skill name"
 Assert-Condition ($frontMatter -match "(?m)^description:\s+.+") "Missing skill description"
 
-$skillContent = Get-Content -Raw -LiteralPath $skillPath
+$extractScriptContent = Get-Content -Raw -LiteralPath $scriptPath
+foreach ($manifestField in @("ArchiveIndex", "ArchiveEntryLastWriteTime", "ArchiveEntryLengthBytes", "GcdumpLengthBytes", "GcdumpRetention")) {
+    Assert-Condition ($extractScriptContent -match [regex]::Escape($manifestField)) "Extract script must emit manifest/LLM metadata field: $manifestField"
+}
+
+$skillContent = Get-Content -Raw -Encoding UTF8 -LiteralPath $skillPath
 Assert-Condition ($skillContent -match "## Default Behavior") "SKILL.md must define default behavior for short prompts"
 Assert-Condition ($skillContent -match "analysis-only") "SKILL.md must keep the skill analysis-only"
 Assert-Condition ($skillContent -match "handoff summary") "SKILL.md must require a follow-up handoff summary"
+Assert-Condition ($skillContent -match "inventory analysis") "SKILL.md must allow single-snapshot inventory analysis"
 Assert-Condition ($skillContent -notmatch "## Validation") "Runtime SKILL.md should not include maintainer validation details"
+Assert-Condition ($skillContent -notmatch '[\u2010-\u2015]') "SKILL.md must avoid typographic dashes that break default Windows validation"
 
 $commandContent = Get-Content -Raw -LiteralPath $claudeCommandPath
 Assert-Condition ($commandContent -match '\$ARGUMENTS') "Claude command alias must pass through arguments"
@@ -92,7 +101,12 @@ $loopValidationDoc = Get-Content -Raw -LiteralPath $loopValidationDocPath
 $standardReportTemplate = Get-Content -Raw -LiteralPath $standardReportTemplatePath
 Assert-Condition ($loopValidationDoc -match [regex]::Escape("run-diagsession-analysis-loop.ps1")) "Loop validation guide must document the loop runner"
 Assert-Condition ($loopValidationDoc -match [regex]::Escape("validate-diagsession-response.ps1")) "Loop validation guide must document the response validator"
+Assert-Condition ($loopValidationDoc -match [regex]::Escape("extract/ANALYSIS.md")) "Loop validation guide must document the canonical analysis output"
 Assert-Condition ($standardReportTemplate -match [regex]::Escape("## 8. Follow-up Fix Session Handoff")) "Standard report template must include handoff heading"
+
+$skillEvalLoopContent = Get-Content -Raw -LiteralPath $skillEvalLoopScriptPath
+Assert-Condition ($skillEvalLoopContent -notmatch '\[string\]\$ToolPath\s*=') "Skill eval loop must not force a default dotnet-gcdump ToolPath"
+Assert-Condition ($skillEvalLoopContent -match "Refusing to remove OutputDirectory") "Skill eval loop must guard recursive output cleanup"
 
 $openAiYaml = Get-Content -Raw -LiteralPath $openAiYamlPath
 Assert-Condition ($openAiYaml -match 'display_name:\s*"DiagSession Memory Analysis"') "Missing display_name"
@@ -115,7 +129,7 @@ Assert-Condition ($claudeMarketplace.plugins.Count -ge 1) "Claude marketplace mu
 Assert-Condition ($claudeMarketplace.plugins[0].source -eq "./") "Claude marketplace plugin should source the repository root"
 Assert-Condition ($claudeMarketplace.plugins[0].version -eq $claudePlugin.version) "Marketplace version must match plugin version"
 
-foreach ($powershellScriptPath in @($scriptPath, $loopScriptPath, $responseValidatorPath, $responseContractPath)) {
+foreach ($powershellScriptPath in @($scriptPath, $loopScriptPath, $skillEvalLoopScriptPath, $responseValidatorPath, $responseContractPath)) {
     Test-PowerShellSyntax -Path $powershellScriptPath
 }
 
@@ -139,7 +153,7 @@ else {
 
 $gitIgnorePath = Join-Path $RepositoryRoot ".gitignore"
 $gitIgnore = Get-Content -Raw -LiteralPath $gitIgnorePath
-foreach ($pattern in @("*.diagsession", "*.gcdump", "LLM_MEMORY_INPUT.txt", "MANIFEST.txt", "reports/", "extracted-gcdumps/", "LLM_REQUEST.md", "MODEL_RESPONSE.md", "RESPONSE_VALIDATION.md")) {
+foreach ($pattern in @("*.diagsession", "*.gcdump", "LLM_MEMORY_INPUT.txt", "MANIFEST.txt", "reports/", "extracted-gcdumps/", "LLM_REQUEST.md", "ANALYSIS.md", "MODEL_RESPONSE.md", "RESPONSE_VALIDATION.md")) {
     Assert-Condition ($gitIgnore -match [regex]::Escape($pattern)) "Missing .gitignore pattern: $pattern"
 }
 

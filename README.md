@@ -114,19 +114,20 @@ $skillDir = "C:\path\to\peace-skillbank\skills\diagsession-memory-analysis"
 powershell -NoProfile -ExecutionPolicy Bypass -File "$skillDir\scripts\extract-gcdump-reports.ps1" -InputPath C:\dumps\leak-test.diagsession
 ```
 
-출력물:
+추출/분석 주요 산출물:
 
 ```text
 LLM_MEMORY_INPUT.txt
 MANIFEST.txt
 reports/
+ANALYSIS.md (분석 완료 후)
 ```
 
 `LLM_MEMORY_INPUT.txt`는 기본적으로 전체 로컬 경로를 제거하고 파일명만 포함한다. 전체 경로는 `MANIFEST.txt`에만 기록된다.
 
 외부 LLM에 넘기기 전에는 `LLM_MEMORY_INPUT.txt`를 한번 검토한다. 타입명, 네임스페이스, 프로젝트명 자체가 민감 정보일 수 있다.
 
-`MANIFEST.txt`에서 입력 순서, `.diagsession` 내부 entry, 생성된 report 경로를 확인한다. 하나의 `.diagsession` 안에 여러 `.gcdump`가 있으면 archive entry 순서가 사용되므로 before/after 의미는 사용자가 직접 확인해야 한다.
+`ANALYSIS.md`는 분석 결과와 후속 수정 세션용 handoff summary를 담는 표준 파일이다. `MANIFEST.txt`에서 입력 순서, `.diagsession` 내부 entry, 생성된 report 경로를 확인한다. 하나의 `.diagsession` 안에 여러 `.gcdump`가 있으면 archive entry 순서가 사용되므로 before/after 의미는 사용자가 직접 확인해야 한다.
 
 이 스킬은 분석 전용이다. 실제 코드 수정, 패치, 커밋은 분석 결과의 handoff summary를 바탕으로 별도 작업에서 진행한다.
 

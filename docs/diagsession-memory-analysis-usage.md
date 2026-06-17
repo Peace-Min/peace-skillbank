@@ -120,11 +120,13 @@ Snapshot 2 = 반복 후
 LLM_MEMORY_INPUT.txt
 MANIFEST.txt
 reports/
+ANALYSIS.md (분석 완료 후)
 ```
 
 - `LLM_MEMORY_INPUT.txt`: LLM에 넘기기 좋은 요약 입력이다. 기본적으로 전체 로컬 경로는 제거된다.
 - `MANIFEST.txt`: 원본 파일, 추출된 `.gcdump`, report 경로, archive entry 순서를 확인하는 파일이다.
 - `reports/`: `dotnet-gcdump report` 결과가 저장된다.
+- `ANALYSIS.md`: 분석 결과와 후속 수정 세션용 handoff summary가 저장되는 표준 파일이다.
 
 외부 LLM에 넘기기 전에는 `LLM_MEMORY_INPUT.txt`를 먼저 검토한다. 타입명, 네임스페이스, 프로젝트명 자체가 민감 정보일 수 있다.
 

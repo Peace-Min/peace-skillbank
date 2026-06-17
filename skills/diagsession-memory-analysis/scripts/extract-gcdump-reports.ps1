@@ -217,7 +217,10 @@ function Extract-GcdumpsFromDiagSession {
             [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $targetPath, $true)
             [pscustomobject]@{
                 Gcdump = $targetPath
+                ArchiveIndex = $index
                 ArchiveEntry = $entry.FullName
+                ArchiveEntryLastWriteTime = $entry.LastWriteTime.ToString("o")
+                ArchiveEntryLengthBytes = $entry.Length
             }
         }
 
@@ -258,7 +261,10 @@ foreach ($input in $resolvedInputs) {
         $snapshots.Add([pscustomobject]@{
             Source = $input
             Gcdump = $input
+            ArchiveIndex = $null
             ArchiveEntry = $null
+            ArchiveEntryLastWriteTime = $null
+            ArchiveEntryLengthBytes = $null
         })
         continue
     }
@@ -272,7 +278,10 @@ foreach ($input in $resolvedInputs) {
             $snapshots.Add([pscustomobject]@{
                 Source = $input
                 Gcdump = $extracted.Gcdump
+                ArchiveIndex = $extracted.ArchiveIndex
                 ArchiveEntry = $extracted.ArchiveEntry
+                ArchiveEntryLastWriteTime = $extracted.ArchiveEntryLastWriteTime
+                ArchiveEntryLengthBytes = $extracted.ArchiveEntryLengthBytes
             })
         }
         continue
@@ -311,6 +320,16 @@ foreach ($snapshot in $snapshots) {
     $llmSource = Format-LlmPath -Path $snapshot.Source -IncludeFullPath:$IncludeFullPathsInLlmInput
     $llmGcdump = Format-LlmPath -Path $snapshot.Gcdump -IncludeFullPath:$IncludeFullPathsInLlmInput
     $llmReport = Format-LlmPath -Path $reportPath -IncludeFullPath:$IncludeFullPathsInLlmInput
+    $gcdumpLengthBytes = (Get-Item -LiteralPath $snapshot.Gcdump).Length
+    $gcdumpRetention = if (-not $snapshot.ArchiveEntry) {
+        "input-file"
+    }
+    elseif ($KeepExtractedGcdump) {
+        "kept"
+    }
+    else {
+        "removed-after-report"
+    }
     $pathMap = @(
         [pscustomobject]@{ FullPath = $snapshot.Source; SafeName = $llmSource }
         [pscustomobject]@{ FullPath = $snapshot.Gcdump; SafeName = $llmGcdump }
@@ -327,8 +346,13 @@ foreach ($snapshot in $snapshots) {
     @(
         "[$index]"
         "Source: $($snapshot.Source)"
+        "ArchiveIndex: $($snapshot.ArchiveIndex)"
         "ArchiveEntry: $($snapshot.ArchiveEntry)"
+        "ArchiveEntryLastWriteTime: $($snapshot.ArchiveEntryLastWriteTime)"
+        "ArchiveEntryLengthBytes: $($snapshot.ArchiveEntryLengthBytes)"
         "Gcdump: $($snapshot.Gcdump)"
+        "GcdumpLengthBytes: $gcdumpLengthBytes"
+        "GcdumpRetention: $gcdumpRetention"
         "Report: $reportPath"
         ""
     ) | Out-File -FilePath $manifestPath -Encoding utf8 -Append
@@ -338,8 +362,13 @@ foreach ($snapshot in $snapshots) {
         "================================================================================"
         "Snapshot $index"
         "Source: $llmSource"
+        "ArchiveIndex: $($snapshot.ArchiveIndex)"
         "ArchiveEntry: $($snapshot.ArchiveEntry)"
+        "ArchiveEntryLastWriteTime: $($snapshot.ArchiveEntryLastWriteTime)"
+        "ArchiveEntryLengthBytes: $($snapshot.ArchiveEntryLengthBytes)"
         "Gcdump: $llmGcdump"
+        "GcdumpLengthBytes: $gcdumpLengthBytes"
+        "GcdumpRetention: $gcdumpRetention"
         "Report: $llmReport"
         "================================================================================"
         ""

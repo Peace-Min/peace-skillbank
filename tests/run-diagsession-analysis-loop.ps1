@@ -71,9 +71,13 @@ function Invoke-ExternalCommand {
     $startInfo.CreateNoWindow = $true
 
     $process = [System.Diagnostics.Process]::Start($startInfo)
-    $stdout = $process.StandardOutput.ReadToEnd()
-    $stderr = $process.StandardError.ReadToEnd()
+    # Read both streams concurrently to avoid a pipe-buffer deadlock when the child fills
+    # one stream (or a grandchild inherits the handle) while the parent blocks on the other.
+    $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+    $stderrTask = $process.StandardError.ReadToEndAsync()
     $process.WaitForExit()
+    $stdout = $stdoutTask.Result
+    $stderr = $stderrTask.Result
 
     @(
         "Command: $($startInfo.FileName) $($startInfo.Arguments)"
@@ -119,12 +123,15 @@ function Invoke-TextModel {
     $startInfo.CreateNoWindow = $true
 
     $process = [System.Diagnostics.Process]::Start($startInfo)
+    # Start draining output before writing stdin, and read both streams concurrently,
+    # so a model that streams to stdout/stderr during input cannot deadlock the pipe.
+    $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+    $stderrTask = $process.StandardError.ReadToEndAsync()
     $process.StandardInput.Write($InputText)
     $process.StandardInput.Close()
-
-    $stdout = $process.StandardOutput.ReadToEnd()
-    $stderr = $process.StandardError.ReadToEnd()
     $process.WaitForExit()
+    $stdout = $stdoutTask.Result
+    $stderr = $stderrTask.Result
 
     $stdout | Out-File -FilePath $OutputPath -Encoding utf8
     $stderr | Out-File -FilePath $ErrorPath -Encoding utf8

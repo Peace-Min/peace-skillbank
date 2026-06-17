@@ -60,8 +60,10 @@ def candidates(text):
 
 
 def main():
-    src = sys.argv[1] if len(sys.argv) > 1 else "-"
-    ref_dir = sys.argv[2] if len(sys.argv) > 2 else os.path.join(
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    strict = "--strict" in sys.argv
+    src = args[0] if len(args) > 0 else "-"
+    ref_dir = args[1] if len(args) > 1 else os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "references")
     text = sys.stdin.read() if src == "-" else open(src, encoding="utf-8-sig").read()
 
@@ -92,9 +94,11 @@ def main():
     else:
         print("UNVERIFIED qualified (0)")
     if bare_unknown:
-        print(f"(info) bare PascalCase not in index ({len(bare_unknown)}): " + ", ".join(bare_unknown[:30]))
+        tag = "REVIEW -- strict: qualify as Type.Member or remove" if strict else "info"
+        print(f"({tag}) bare PascalCase not in index ({len(bare_unknown)}): " + ", ".join(bare_unknown[:30]))
 
-    sys.exit(1 if unverified else 0)
+    fail = bool(unverified) or (strict and bool(bare_unknown))
+    sys.exit(1 if fail else 0)
 
 
 if __name__ == "__main__":

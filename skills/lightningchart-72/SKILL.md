@@ -24,32 +24,45 @@ Generated locally per machine and **not committed** (see `README.md` for one-tim
 
 ## Workflow (per question)
 
-1. **Translate intent → API symbol.** Search `manual-index.json` (titles/keywords) and/or
-   `api-symbols.txt` to turn the user's words ("color palette") into the exact symbol
-   (`ValueRangePalette`). The manual/index is the translator from human intent to API names.
-2. **Read the matched manual chunk(s)** for documented meaning + any C# snippet. Cite `§<section> (p<page>)`.
-3. **Confirm existence/signature against Tier 1** — look the symbol up in `api-index.json` (exact type,
-   property type, method params/return).
-4. **Escalate to project code only when needed:** the user asks for usage/an example, OR Tier 1
-   confirms a symbol but Tier 2 has no semantics for it (undocumented-API gap). Then grep the *exact
-   symbol* (not free text) in the current project, restricted to files that reference the
-   LightningChart/Arction namespace; never search secrets/config/`bin`/`obj`; take ≤3–5 short
-   call-site snippets.
-5. **Compose, grounded + cited.** Meaning ← manual; existence/signature ← DLL index; working pattern ←
-   project (Tier 3, hedged). Quote code; adapt minimally; never invent.
-6. **Verify hook (required).** Run `scripts/verify-symbols.py` on your draft (or grep each cited symbol
-   against `api-symbols.txt`). Any symbol NOT in Tier 1 is unverified → remove it or mark
-   "not found in the 7.2 API" — never assert it. A symbol that appears only in project code but not in
-   the DLL index fails the same as a hallucination.
+1. **Find the symbol.** Search BOTH `manual-index.json` (titles/keywords) and `api-symbols.txt`. The
+   manual translates intent ("color palette") into the API name — but it is incomplete, so **absence
+   from the manual is normal, not a stop**: go straight to `api-symbols.txt` / `api-index.json` for the
+   exact symbol.
+2. **Existence + signature ← Tier 1 only** (`api-index.json`). It is the sole authority for whether a
+   type/property/method/enum exists and for its exact signature. Confirm every symbol here. Never
+   answer an existence question from the manual.
+3. **Meaning ← Tier 2.** Read the matched manual chunk for what it does + any C# snippet; cite
+   `§<section> (p<page>)`.
+4. **Working code ← Tier 3, only on escalation:** the user asks for usage/an example, OR a symbol
+   exists in Tier 1 but Tier 2 has no semantics for it. Grep the *exact symbol* (not free text) in the
+   current project, restricted to LightningChart/Arction-namespace files; never secrets/config/`bin`/
+   `obj`; ≤3–5 short snippets. **A symbol seen only in project code and not in `api-index.json` is
+   unverified — treat it exactly like a hallucination; project code never establishes existence.**
+5. **Compose, grounded + cited.** Quote; adapt minimally. **Write every API member in qualified
+   `Type.Member` form** (e.g. `IntensityGridSeries.ValueRangePalette`, not a bare `ValueRangePalette`)
+   so the verify hook can check it — a bare member name counts as unverified.
+6. **Exists but undocumented?** If a symbol exists in Tier 1 but no Tier 2/Tier 3 source says what it
+   DOES, report its existence and signature only and say *"exists in the 7.2 API; behavior not
+   documented in the local manual or used in this project — I won't guess what it does."* **Never infer
+   behavior from a type/member name.**
+7. **Verify hook (required).** Run `python scripts/verify-symbols.py --strict -` on your draft.
+   - **exit 0** → all cited symbols verified; you may assert them.
+   - **exit 1** → remove or qualify every `X`-flagged symbol before answering (qualified-unknown =
+     invented; bare-unknown under `--strict` = must be qualified or removed).
+   - **exit 2** → index not built → say the corpus is unavailable; do NOT answer with citations.
+   The hook confirms a member EXISTS; it does **not** validate method signatures/parameter lists — so
+   when you cite a method signature, **quote it verbatim** from the manual snippet or the
+   `api-index.json` entry, never reconstruct it from memory.
 
 ## Output rules
 
 - **Cite every fact:** manual `§6.15.5 (p85)`, API `[api: IntensityGridSeries.ValueRangePalette : ValueRangePalette]`,
   project `[project: <file>:<line> — usage example, not verified as correct]`.
-- **Tier 1 wins conflicts.** If the project uses something the DLL index doesn't list, say so; trust the index.
+- **Tier 1 wins conflicts** (project/manual vs DLL index → trust the index, and say so).
 - Phrase project findings as "this project does X", never "the recommended way is X".
-- If a topic is in **none** of the sources: answer "not found in the 7.2 manual or API index" — do not guess.
-- **Prefer quoting** documented snippets / real code over generating new code (the runtime model may be small).
+- **One operating rule:** assert only what a cited source establishes. If none does, say "not found in
+  the 7.2 manual or API index" or "exists but behavior undocumented" — never fill the gap from memory.
+- **Prefer quoting** documented snippets / real code over generating new code.
 
 ## Scope
 

@@ -20,7 +20,10 @@ def main():
     query = sys.argv[1]
     ref = sys.argv[2] if len(sys.argv) > 2 else os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "references")
-    terms = [t for t in re.findall(r"[A-Za-z0-9]+", query.lower()) if len(t) > 2]
+    terms = [t for t in re.findall(r"[A-Za-z0-9]+", query.lower())
+             if len(t) >= 2 or any(c.isdigit() for c in t)]
+    if not terms:
+        print("(no usable query terms -- use more specific words)")
 
     print("== manual sections ==")
     mi = os.path.join(ref, "manual-index.json")

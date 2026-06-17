@@ -72,13 +72,14 @@ If context is limited, provide only:
 
 ## Analysis Rules
 
-- Treat `.gcdump` as managed heap evidence, not full process memory evidence.
-- If a `.diagsession` contains `.heapstate` or `.dmp` entries but no `.gcdump`, report it as unsupported by this gcdump-only parser instead of fabricating heap analysis.
-- Do not claim native, COM, GDI, WPF image, unmanaged buffer, or handle leaks from `.gcdump` alone.
-- A single snapshot shows retained objects at one point in time; before/after snapshots are needed for leak growth.
-- If process memory grows but `.gcdump` growth does not explain it, escalate to full `.diagsession`, native memory tools, handle counters, or Visual Studio allocation stacks.
-- Prefer concrete retention hypotheses: event subscription, static cache, timer, long-lived collection, closure capture, dispatcher queue, service lifetime mismatch, or missing `Dispose`.
-- Connect growing types back to source code only when names or ownership make that inference plausible.
+`.gcdump` captures only the managed heap at a single point in time. Because of that boundary:
+
+- It cannot evidence native, COM, GDI, WPF-image, unmanaged-buffer, or handle leaks — surface those as escalation candidates, not findings.
+- A single snapshot is only an inventory; leak *growth* needs before/after snapshots.
+- A `.diagsession` with `.heapstate`/`.dmp` but no `.gcdump` is unsupported by this gcdump-only parser — report that rather than fabricating heap analysis.
+- If process memory grows but managed-heap growth does not explain it, escalate to full `.diagsession`, native memory tools, handle counters, or Visual Studio allocation stacks.
+
+The Size/Count comparison, container clues, and retention-hypothesis taxonomy live in `references/model-agnostic-prompt.md` — use them there rather than restating them here. Connect growing types back to source only when names or ownership make the inference plausible.
 
 ## Scope Boundary
 

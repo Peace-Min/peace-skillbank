@@ -56,38 +56,31 @@ Copy-Item -Recurse -Force -LiteralPath $source -Destination $target
 ```text
 /plugin marketplace add Peace-Min/peace-skillbank
 /plugin install peace-skillbank@peace-skillbank
+/reload-plugins
 ```
 
-이미 설치한 경우 marketplace를 갱신한 뒤 plugin을 업데이트한다.
+`/plugin install` 직후에는 커맨드가 현재 세션에 바로 등록되지 않을 수 있다. `/reload-plugins`를 실행하거나 Claude Code를 재시작한다.
+
+이미 설치한 경우 marketplace를 갱신한 뒤 plugin을 업데이트하고 다시 reload한다.
 
 ```text
 /plugin marketplace update peace-skillbank
 /plugin update peace-skillbank@peace-skillbank
+/reload-plugins
 ```
 
-설치 후 짧은 command alias를 우선 사용한다.
+설치 후에는 plugin namespace를 붙인 호출을 사용한다. plugin으로 설치한 커맨드는 항상 `peace-skillbank:` namespace로 등록된다.
 
 ```text
-/diagsession-memory-analysis C:\dumps\leak-test.diagsession
+/peace-skillbank:diagsession-memory-analysis C:\dumps\leak-test.diagsession
 
 액션은 장비 목록 새로고침 30회 반복.
 시작점은 DeviceRefreshService.RefreshAsync.
 ```
 
-Claude Code가 plugin skill namespace만 노출하는 환경에서는 namespaced skill 호출도 사용할 수 있다.
+`/diagsession-memory-analysis`처럼 namespace 없는 짧은 형태는 plugin 설치만으로는 등록되지 않는다(이 경우 "등록된 커맨드가 없다"고 나온다). 짧은 형태가 필요하면 `commands/diagsession-memory-analysis.md`를 대상 환경의 `.claude/commands/`에 직접 복사해 개인 command로 둔다.
 
-```text
-/peace-skillbank:diagsession-memory-analysis
-```
-
-두 방식 모두 같은 분석 스킬을 사용한다. 일반적인 작업 지시는 짧게 작성한다.
-
-```text
-/diagsession-memory-analysis C:\dumps\leak-test.diagsession
-
-액션은 장비 목록 새로고침 30회 반복.
-시작점은 DeviceRefreshService.RefreshAsync.
-```
+커맨드가 안 보이면 `/reload-plugins`를 먼저 실행하고, 그래도 없으면 `/plugin`에서 설치·활성(enabled) 상태와 Errors 탭을 확인한다.
 
 로컬에서 테스트할 때는 저장소 루트에서 다음 명령을 사용한다.
 

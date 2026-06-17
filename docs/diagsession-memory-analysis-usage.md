@@ -15,37 +15,37 @@ Scope: analysis-only.
 ```text
 /plugin marketplace add Peace-Min/peace-skillbank
 /plugin install peace-skillbank@peace-skillbank
+/reload-plugins
 ```
+
+`/plugin install` 직후에는 커맨드가 현재 세션에 바로 등록되지 않을 수 있다. `/reload-plugins`를 실행하거나 Claude Code를 재시작한 뒤 사용한다.
 
 이미 설치한 경우:
 
 ```text
 /plugin marketplace update peace-skillbank
 /plugin update peace-skillbank@peace-skillbank
+/reload-plugins
 ```
 
 ## 기본 호출
 
-권장 호출은 짧은 command alias다.
-
-```text
-/diagsession-memory-analysis C:\dumps\leak-test.diagsession
-```
-
-Claude Code 환경에 따라 plugin namespace만 보이면 다음 호출도 가능하다.
+plugin으로 설치한 경우 권장 호출은 namespace를 붙인 형태다.
 
 ```text
 /peace-skillbank:diagsession-memory-analysis C:\dumps\leak-test.diagsession
 ```
 
-두 호출은 같은 분석 스킬을 사용한다.
+plugin으로 설치한 커맨드는 항상 `peace-skillbank:` namespace로 등록된다. `/diagsession-memory-analysis`처럼 namespace 없는 짧은 형태는 plugin 설치만으로는 등록되지 않으므로 "등록된 커맨드가 없다"고 나온다. 짧은 형태가 필요하면 `commands/diagsession-memory-analysis.md`를 대상 환경의 `.claude/commands/`에 직접 복사해 개인 command로 둔다.
+
+커맨드가 안 보이면 `/reload-plugins`를 먼저 실행하고, 그래도 없으면 `/plugin`에서 설치·활성(enabled) 상태와 Errors 탭을 확인한다.
 
 ## 권장 프롬프트
 
 보통은 긴 체크리스트를 매번 붙이지 않는다. 파일 경로와 누수 재현 맥락만 짧게 적는다.
 
 ```text
-/diagsession-memory-analysis C:\dumps\leak-test.diagsession
+/peace-skillbank:diagsession-memory-analysis C:\dumps\leak-test.diagsession
 
 하나의 diagsession 안에 메모리 스냅샷 2개가 들어있다.
 Snapshot 1 = 액션 반복 전
@@ -60,7 +60,7 @@ Snapshot 2 = 액션 반복 후
 최소 입력도 가능하다.
 
 ```text
-/diagsession-memory-analysis C:\dumps\leak-test.diagsession
+/peace-skillbank:diagsession-memory-analysis C:\dumps\leak-test.diagsession
 
 장비 목록 새로고침을 30회 반복한 뒤 찍은 스냅샷이다.
 시작점은 DeviceRefreshService.RefreshAsync.
@@ -84,7 +84,7 @@ Snapshot 2 = 반복 후
 `.gcdump` 자체를 넘겨도 된다.
 
 ```text
-/diagsession-memory-analysis C:\dumps\snapshot1.gcdump C:\dumps\snapshot2.gcdump
+/peace-skillbank:diagsession-memory-analysis C:\dumps\snapshot1.gcdump C:\dumps\snapshot2.gcdump
 
 Snapshot 1 = 반복 전
 Snapshot 2 = 반복 후
@@ -97,7 +97,7 @@ Snapshot 2 = 반복 후
 첫 세션에서는 분석만 요청한다.
 
 ```text
-/diagsession-memory-analysis C:\dumps\leak-test.diagsession
+/peace-skillbank:diagsession-memory-analysis C:\dumps\leak-test.diagsession
 
 반복 액션: ...
 반복 횟수: ...

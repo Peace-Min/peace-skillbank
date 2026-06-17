@@ -5,6 +5,7 @@
 *.llm/
 LLM_MEMORY_INPUT.txt
 MANIFEST.txt
+ANALYSIS.md
 reports/
 extracted-gcdumps/
 TestResults/

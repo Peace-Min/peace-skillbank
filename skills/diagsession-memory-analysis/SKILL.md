@@ -97,4 +97,4 @@ Produce a concise report with:
 7. limitations of the available evidence
 8. handoff summary for a follow-up fix session
 
-For strict loop validation or machine-checkable handoff reports, use the exact headings in `references/standard-report-template.md`.
+Also write this report to `ANALYSIS.md` in the script's output directory (next to `MANIFEST.txt`), so a later fix session can resume from the file alone instead of relying on chat history. Keep the report's structure flexible; for strict loop validation or machine-checkable handoff reports, use the exact headings in `references/standard-report-template.md`.

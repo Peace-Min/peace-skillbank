@@ -34,6 +34,15 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "$skillDir\scripts\extract-g
 
 By default, `LLM_MEMORY_INPUT.txt` redacts full local paths and keeps file names only. `MANIFEST.txt` keeps the full local path mapping for local traceability.
 
+## Execution Environment
+
+Run the script in a single PowerShell process. The most common failure is invoking it through layered shells — for example Git Bash calling `cmd /c "powershell -File ..."`. Each layer re-parses quotes, so arguments (especially paths with spaces or non-ASCII characters) arrive corrupted and the script may never see the real input path.
+
+- Use `powershell -NoProfile -ExecutionPolicy Bypass -File <script> -InputPath <paths>` from PowerShell, or `pwsh` when available. `pwsh` uses UTF-8 by default; Windows PowerShell 5.1 uses the OEM code page (for example CP949), which can misread Korean paths when they are passed in through another shell.
+- Pass the original path, quoted. The script opens files through .NET, which handles Unicode paths, so there is no need to copy the input to an ASCII filename or a temp directory.
+- Git Bash paths like `/tmp` are inside the Git installation, not `C:\tmp`; pass real Windows paths.
+- If `dotnet-gcdump` cannot be resolved on `PATH` or at `C:\tools\dotnet-gcdump`, pass `-ToolPath` with the directory or full executable path.
+
 ## Failure Modes
 
 - Missing input path: ask the user for a valid `.diagsession` or `.gcdump` path.

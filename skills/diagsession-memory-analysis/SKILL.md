@@ -48,6 +48,10 @@ Read `references/cli-usage.md` only when custom paths, full-path output, preserv
 - `MANIFEST.txt`: source file and extracted snapshot mapping.
 - `reports/`: one `.heapstat.txt` per snapshot.
 
+## Execution Policy
+
+Run the script directly in PowerShell (`powershell`, or `pwsh` when available). Do not call it through Git Bash, `cmd /c "..."`, or nested shells — nested quoting corrupts arguments and breaks non-ASCII (for example Korean) paths. Pass each path as-is and quoted; the script reads files via .NET and handles Unicode, so do not copy or rename to an ASCII path, and note that Git Bash `/tmp` is not `C:\tmp`. If `dotnet-gcdump` is not resolved automatically, pass `-ToolPath` rather than guessing.
+
 ## Model-Agnostic Usage
 
 This skill is model-independent. For any LLM environment without direct tool access, generate `LLM_MEMORY_INPUT.txt` first, then provide:

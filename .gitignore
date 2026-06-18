@@ -25,3 +25,7 @@ skills/lightningchart-72/references/api-symbols.txt
 skills/lightningchart-72/references/demos/*
 !skills/lightningchart-72/references/demos/README.md
 *.dll
+
+# Python bytecode (e.g. from syntax checks)
+__pycache__/
+*.pyc

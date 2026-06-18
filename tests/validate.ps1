@@ -189,7 +189,8 @@ Test-PowerShellSyntax -Path $lcApiIndexScript
 $python = Get-Command python -ErrorAction SilentlyContinue
 if ($python) {
     foreach ($lcPy in @("build-manual-index.py", "verify-symbols.py", "search.py")) {
-        & $python.Source -m py_compile (Join-Path $lcRoot "scripts\$lcPy")
+        # ast.parse is a syntax check that does not write __pycache__ bytecode.
+        & $python.Source -c "import ast,sys; ast.parse(open(sys.argv[1], encoding='utf-8').read())" (Join-Path $lcRoot "scripts\$lcPy")
         Assert-Condition ($LASTEXITCODE -eq 0) "Python syntax error in lightningchart-72 script: $lcPy"
     }
 }

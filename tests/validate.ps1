@@ -202,4 +202,8 @@ foreach ($lcPattern in @("skills/lightningchart-72/references/manual/", "skills/
     Assert-Condition ($gitIgnore -match [regex]::Escape($lcPattern)) "Missing .gitignore pattern: $lcPattern"
 }
 
+$lcUsageDoc = Join-Path $RepositoryRoot "docs\lightningchart-72-usage.md"
+Assert-Condition (Test-Path -LiteralPath $lcUsageDoc) "Missing lightningchart-72 usage guide (docs/lightningchart-72-usage.md)"
+Assert-Condition ($readmeContent.Contains('[`lightningchart-72`](docs/lightningchart-72-usage.md)')) "README current-skill list must link the lightningchart-72 usage guide"
+
 Write-Host "Validation passed."

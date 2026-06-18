@@ -34,7 +34,22 @@ LightningChart Ultimate SDK **7.2**(Arction)의 API·프로퍼티·메서드·en
 
 > `python`/`py`를 쓰고 **`python3`(Store stub)는 피한다.**
 
-### 2) 코퍼스 생성 (스크립트 2개)
+### 2) 코퍼스 생성 — 단일 CLI 권장
+
+```powershell
+# 의존성 폴더(SDK DLL + 매뉴얼 PDF) 하나만 주면 자동 탐지해서 두 인덱스를 한 번에 생성 + self-check
+powershell -NoProfile -ExecutionPolicy Bypass -File skills/lightningchart-72/scripts/setup-local-corpus.ps1 -SourceDir "<...>\LightningChart72"
+
+# 경로를 직접 주는 형태도 지원
+powershell -NoProfile -ExecutionPolicy Bypass -File skills/lightningchart-72/scripts/setup-local-corpus.ps1 `
+  -DllDir "<...>\Lib\Arction" -ManualPdf "<...>\LightningChart Users Manual.pdf"
+```
+
+- `setup-local-corpus.ps1`이 DLL 폴더·PDF 자동 탐지 -> Python/`pypdf` 확인 -> Tier1/Tier2 빌드 -> self-check까지 한 번에 수행한다(정상: `api types: 627`, `manual sections: 289 == md files`).
+- **fail-fast**: Python·pypdf·DLL·PDF 중 하나라도 없으면 *부분 코퍼스를 남기지 않고* 구체적 복구 안내와 함께 중단한다(예: pypdf 오프라인 설치 `python -m pip install --no-index --find-links <wheelhouse> pypdf`).
+- 산출물은 `skills/lightningchart-72/references/`(로컬, gitignore)에 생긴다.
+
+<details><summary>수동: 내부 빌드 스크립트 2개 직접 호출 (고급/디버그)</summary>
 
 ```powershell
 # Tier 1: DLL -> api-index.json + api-symbols.txt (생성자 포함, Licensing 제외, 이름+시그니처만)
@@ -44,8 +59,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File skills/lightningchart-72/scr
 python skills/lightningchart-72/scripts/build-manual-index.py "<...>\LightningChart Users Manual.pdf"
 ```
 
-- `-DllDir`만 주면 메인 어셈블리(`*LightningChartUltimate*.dll`)를 **자동 탐지**한다.
-- 산출물은 `skills/lightningchart-72/references/`(로컬, gitignore)에 생긴다.
+`-DllDir`만 주면 메인 어셈블리(`*LightningChartUltimate*.dll`)를 자동 탐지한다. `setup-local-corpus.ps1`은 이 둘을 묶은 편의 래퍼다.
+</details>
 
 ### 3) 폐쇄망(air-gapped) 박스
 
@@ -177,6 +192,8 @@ sequenceDiagram
 - **검증 훅** `verify-symbols.py --strict`: `exit 0`=전부 검증(단정 가능) / `exit 1`=가짜 심볼·잘못된 `new Type(...)` arity·bare 멤버 → 제거·수정 후 재검증 / `exit 2`=코퍼스 미생성 → 인용 없이 빌드 안내.
 
 ## 설정이 제대로 됐는지 확인 (self-check)
+
+`setup-local-corpus.ps1`은 이 검사를 빌드 직후 자동으로 수행한다. 수동 빌드했거나 다시 확인하려면:
 
 ```powershell
 $ref = "skills\lightningchart-72\references"

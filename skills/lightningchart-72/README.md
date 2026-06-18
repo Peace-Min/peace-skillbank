@@ -10,6 +10,27 @@ The corpus is **generated locally from your own licensed SDK + manual** and is *
 (gitignored). Only the scripts (`scripts/`) and docs are in the repo. Paths are passed as arguments
 — nothing is hardcoded.
 
+### Quick: one command
+
+```powershell
+# Point it at a folder that holds the 7.2 SDK DLLs and the User's Manual PDF; it auto-detects both.
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-local-corpus.ps1 -SourceDir "D:\LightningChart72"
+
+# ...or pass the two paths explicitly:
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-local-corpus.ps1 `
+  -DllDir "D:\LightningChart72\Lib\Arction" -ManualPdf "D:\LightningChart72\LightningChart Users Manual.pdf"
+```
+
+`setup-local-corpus.ps1` resolves the DLL folder + manual PDF, verifies Python + `pypdf`, builds both
+tiers, and self-checks the result (expects e.g. `api types: 627`, `manual sections: 289 == md files`).
+It needs **Python 3 + `pypdf`** for the manual index; if Python, pypdf, the DLL folder, or the PDF is
+missing it **aborts with specific guidance** rather than leaving a half-built corpus. Offline pypdf:
+`python -m pip install --no-index --find-links <wheelhouse-dir> pypdf`.
+
+### Manual: the two underlying build scripts
+
+`setup-local-corpus.ps1` only orchestrates the scripts below — run them directly for finer control:
+
 1. **Tier 1 — DLL API index** (existence / signature):
    ```powershell
    powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-api-index.ps1 -DllDir "<...>\Lib\Arction"

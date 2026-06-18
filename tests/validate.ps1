@@ -173,6 +173,7 @@ foreach ($lcFile in @(
         (Join-Path $lcRoot "references\README.md"),
         (Join-Path $lcRoot "references\demos\README.md"),
         $lcApiIndexScript,
+        (Join-Path $lcRoot "scripts\setup-local-corpus.ps1"),
         (Join-Path $lcRoot "scripts\build-manual-index.py"),
         (Join-Path $lcRoot "scripts\verify-symbols.py"),
         (Join-Path $lcRoot "scripts\search.py"))) {
@@ -191,6 +192,7 @@ foreach ($marker in @("verify-symbols", "Tier 1", "Type.Member", "not found")) {
 }
 
 Test-PowerShellSyntax -Path $lcApiIndexScript
+Test-PowerShellSyntax -Path (Join-Path $lcRoot "scripts\setup-local-corpus.ps1")
 
 $python = Get-Command python -ErrorAction SilentlyContinue
 if ($python) {
@@ -211,6 +213,12 @@ Assert-Condition (Test-Path -LiteralPath $lcVerifyFixtures) "Missing verify-symb
 Assert-Condition (Test-Path -LiteralPath $lcVerifyFixtureIndex) "Missing synthetic verify-symbols fixture index"
 Test-PowerShellSyntax -Path $lcVerifyFixtures
 & $lcVerifyFixtures -RepositoryRoot $RepositoryRoot
+
+# Behavioral fixtures for the one-command corpus setup CLI (preflight/auto-detect/fail-fast paths).
+$lcSetupFixtures = Join-Path $RepositoryRoot "tests\setup-corpus-fixtures.ps1"
+Assert-Condition (Test-Path -LiteralPath $lcSetupFixtures) "Missing setup-corpus fixture runner"
+Test-PowerShellSyntax -Path $lcSetupFixtures
+& $lcSetupFixtures -RepositoryRoot $RepositoryRoot
 
 foreach ($lcPattern in @("skills/lightningchart-72/references/manual/", "skills/lightningchart-72/references/api-index.json", "skills/lightningchart-72/references/demos/*")) {
     Assert-Condition ($gitIgnore -match [regex]::Escape($lcPattern)) "Missing .gitignore pattern: $lcPattern"

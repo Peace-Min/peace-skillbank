@@ -15,16 +15,17 @@ A personal skill bank for reusable LLM/Codex workflows, scripts, and model-agnos
 
 ## 구조
 
+각 스킬은 동일한 형태를 따른다(자세한 목록은 아래 "현재 스킬" 참고).
+
 ```text
 skills/
-  diagsession-memory-analysis/
-    SKILL.md
-    agents/
-      openai.yaml
-    scripts/
-      extract-gcdump-reports.ps1
-    references/
-      model-agnostic-prompt.md
+  <skill-name>/
+    SKILL.md            # 런타임 계약(YAML frontmatter: name + description)
+    scripts/            # 결정적 변환/검증 도구 (PowerShell / Python)
+    references/         # 프롬프트·로컬 코퍼스 (민감/라이선스 자료는 gitignore)
+    agents/             # (선택) Codex 등 외부 에이전트 메타데이터
+
+# 현재: diagsession-memory-analysis, lightningchart-72
 ```
 
 ## Codex에서 사용

@@ -1,0 +1,25 @@
+{
+  "_note": "SYNTHETIC fixture for verify-symbols.py behavior tests. Fictional types only -- contains NO LightningChart/Arction licensed API surface. Mirrors the api-index.json shape produced by build-api-index.ps1.",
+  "typeCount": 2,
+  "types": [
+    {
+      "name": "FixtureSeries",
+      "props": [
+        { "n": "LineColor" },
+        { "n": "Visible" }
+      ],
+      "methods": [
+        { "n": "Clear" }
+      ],
+      "ctors": [
+        { "params": [] },
+        { "params": ["view", "xAxis", "yAxis"] }
+      ]
+    },
+    {
+      "name": "FixtureMode",
+      "kind": "enum",
+      "values": ["Fast", "Slow"]
+    }
+  ]
+}

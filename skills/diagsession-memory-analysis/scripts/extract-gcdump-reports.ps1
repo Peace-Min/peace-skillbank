@@ -84,9 +84,13 @@ function Invoke-GcdumpReport {
     $startInfo.CreateNoWindow = $true
 
     $process = [System.Diagnostics.Process]::Start($startInfo)
-    $stdout = $process.StandardOutput.ReadToEnd()
-    $stderr = $process.StandardError.ReadToEnd()
+    # Read both streams concurrently to avoid a pipe-buffer deadlock when the child fills one
+    # stream (e.g. a large stderr) while the parent blocks reading the other to completion.
+    $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+    $stderrTask = $process.StandardError.ReadToEndAsync()
     $process.WaitForExit()
+    $stdout = $stdoutTask.Result
+    $stderr = $stderrTask.Result
 
     if ($process.ExitCode -ne 0) {
         throw "dotnet-gcdump report failed for '$GcdumpPath': $stderr"

@@ -198,6 +198,14 @@ else {
     Write-Host "Python not found; skipping lightningchart-72 Python syntax checks."
 }
 
+# Behavioral fixtures for the verify-symbols hook (synthetic index; self-skips without Python).
+$lcVerifyFixtures = Join-Path $RepositoryRoot "tests\verify-symbols-fixtures.ps1"
+$lcVerifyFixtureIndex = Join-Path $RepositoryRoot "tests\fixtures\lightningchart-72\api-index.json"
+Assert-Condition (Test-Path -LiteralPath $lcVerifyFixtures) "Missing verify-symbols fixture runner"
+Assert-Condition (Test-Path -LiteralPath $lcVerifyFixtureIndex) "Missing synthetic verify-symbols fixture index"
+Test-PowerShellSyntax -Path $lcVerifyFixtures
+& $lcVerifyFixtures -RepositoryRoot $RepositoryRoot
+
 foreach ($lcPattern in @("skills/lightningchart-72/references/manual/", "skills/lightningchart-72/references/api-index.json", "skills/lightningchart-72/references/demos/*")) {
     Assert-Condition ($gitIgnore -match [regex]::Escape($lcPattern)) "Missing .gitignore pattern: $lcPattern"
 }

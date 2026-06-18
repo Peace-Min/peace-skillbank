@@ -1,0 +1,8 @@
+interface:
+  display_name: "LightningChart 7.2 API Grounding"
+  short_description: "Answer LightningChart 7.2 API questions from local sources."
+  brand_color: "#2563EB"
+  default_prompt: "Use $lightningchart-72 to answer this LightningChart Ultimate 7.2 (Arction) API / property / usage question, grounded only in the local 7.2 corpus with citations and the verify hook."
+
+policy:
+  allow_implicit_invocation: true

@@ -177,6 +177,7 @@ foreach ($lcFile in @(
         (Join-Path $lcRoot "references\README.md"),
         (Join-Path $lcRoot "references\demos\README.md"),
         $lcApiIndexScript,
+        (Join-Path $lcRoot "agents\openai.yaml"),
         (Join-Path $lcRoot "scripts\setup-local-corpus.ps1"),
         (Join-Path $lcRoot "scripts\build-manual-index.py"),
         (Join-Path $lcRoot "scripts\verify-symbols.py"),
@@ -237,5 +238,12 @@ Assert-Condition (Test-Path -LiteralPath $lcCommandPath) "Missing lightningchart
 $lcCommandContent = Get-Content -Raw -LiteralPath $lcCommandPath
 Assert-Condition ($lcCommandContent -match '\$ARGUMENTS') "lightningchart-72 command alias must pass through arguments"
 Assert-Condition ($lcCommandContent -match "lightningchart-72") "lightningchart-72 command alias must delegate to the skill"
+
+$lcOpenAiYaml = Get-Content -Raw -LiteralPath (Join-Path $lcRoot "agents\openai.yaml")
+Assert-Condition ($lcOpenAiYaml -match 'display_name:\s*"[^"]+"') "lightningchart-72 openai.yaml needs a display_name"
+Assert-Condition ($lcOpenAiYaml -match 'default_prompt:\s*"Use \$lightningchart-72') "lightningchart-72 openai.yaml default_prompt must mention the skill name"
+$lcShort = [regex]::Match($lcOpenAiYaml, 'short_description:\s*"([^"]+)"')
+Assert-Condition $lcShort.Success "lightningchart-72 openai.yaml needs a short_description"
+Assert-Condition ($lcShort.Groups[1].Value.Length -ge 25 -and $lcShort.Groups[1].Value.Length -le 64) "lightningchart-72 short_description must be 25-64 characters"
 
 Write-Host "Validation passed."

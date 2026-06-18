@@ -16,9 +16,11 @@ skill is installed as a plugin the corpus lives in the plugin data dir; `search.
 `verify-symbols.py` resolve it automatically (`${CLAUDE_PLUGIN_DATA}/references` when set, else the
 script-relative `references/`).
 
-- **Tier 1 -- DLL API index** (`references/api-index.json`, `references/api-symbols.txt`): the complete
-  public API surface (types, properties, methods, enums + signatures) of the 7.2 assemblies.
-  **Authoritative for whether an API/property/method/enum EXISTS and for its signature.**
+- **Tier 1 -- DLL API index** (`references/api-index.json`, `references/api-symbols.txt`): the public
+  API surface (types, properties, methods, enums + signatures) of the **main 7.2 charting assembly**
+  (the auto-detected `*LightningChartUltimate*.dll`; sibling/edition assemblies are not indexed).
+  **Authoritative for whether an API EXISTS in that assembly and for its signature.** A symbol absent
+  here is treated as not-in-7.2, though it could live in an un-indexed sibling assembly.
 - **Tier 2 -- Manual** (`references/manual/<section>.md`, indexed by `references/manual-index.json`):
   concepts, how-to, meaning. Curated and **incomplete** -- many APIs are undocumented here.
 - **Tier 3 -- Project code** (current working project, searched in place): **unverified** in-project
@@ -46,9 +48,12 @@ script-relative `references/`).
    unverified -- treat it exactly like a hallucination; project code never establishes existence.**
 5. **Compose, grounded + cited.** Quote; adapt minimally. **Write every API member in qualified
    `Type.Member` form** (e.g. `IntensityGridSeries.ValueRangePalette`, not a bare `ValueRangePalette`)
-   so the verify hook can check it -- a bare member name counts as unverified. **Put every API
-   identifier in `backticks`**: the hook also inspects single-word identifiers inside inline-code spans,
-   so a member named only in plain prose (e.g. "set the Smoothing property") can slip past verification.
+   so the verify hook can check it. Under `--strict` the hook **blocks** (exit 1) a bare name that is
+   *not* in the index, and **flags for review** (still exit 0, does not block) a bare name that *is* a
+   known member somewhere -- qualify those too so the citation is unambiguous about which type. **Put
+   every API identifier in `backticks`**: the hook only inspects single-word identifiers inside
+   inline-code spans, so a member named only in plain prose (e.g. "set the Smoothing property") can slip
+   past verification.
 6. **Exists but undocumented:** If a symbol exists in Tier 1 but no Tier 2/Tier 3 source says what it
    DOES, report its existence and signature only and say *"exists in the 7.2 API; behavior not
    documented in the local manual or used in this project -- I won't guess what it does."* **Never infer

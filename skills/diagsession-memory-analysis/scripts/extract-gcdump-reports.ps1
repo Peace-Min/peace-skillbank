@@ -263,7 +263,6 @@ if (-not $OutputDirectory) {
     $OutputDirectory = Get-DefaultOutputDirectory -ResolvedInputPath $resolvedInputs
 }
 
-$tool = Resolve-GcdumpTool -ToolPath $ToolPath
 $OutputDirectory = [System.IO.Path]::GetFullPath($OutputDirectory)
 $runId = [DateTimeOffset]::Now.ToString("yyyyMMdd-HHmmss")
 $extractDirectory = Join-Path (Join-Path $OutputDirectory "extracted-gcdumps") $runId
@@ -275,13 +274,13 @@ New-Item -ItemType Directory -Force -Path $extractDirectory, $reportDirectory | 
 
 $snapshots = New-Object System.Collections.Generic.List[object]
 
-foreach ($inputPath in $resolvedInputs) {
-    $extension = [System.IO.Path]::GetExtension($inputPath)
+foreach ($resolvedInput in $resolvedInputs) {
+    $extension = [System.IO.Path]::GetExtension($resolvedInput)
 
     if ($extension -ieq ".gcdump") {
         $snapshots.Add([pscustomobject]@{
-            Source = $inputPath
-            Gcdump = $inputPath
+            Source = $resolvedInput
+            Gcdump = $resolvedInput
             ArchiveIndex = $null
             ArchiveEntry = $null
             ArchiveEntryLastWriteTime = $null
@@ -291,13 +290,13 @@ foreach ($inputPath in $resolvedInputs) {
     }
 
     if ($extension -ieq ".diagsession") {
-        $sessionName = Get-SafeFileName -Name ([System.IO.Path]::GetFileNameWithoutExtension($inputPath))
+        $sessionName = Get-SafeFileName -Name ([System.IO.Path]::GetFileNameWithoutExtension($resolvedInput))
         $sessionExtractDirectory = Join-Path $extractDirectory $sessionName
         New-Item -ItemType Directory -Force -Path $sessionExtractDirectory | Out-Null
 
-        foreach ($extracted in (Extract-GcdumpsFromDiagSession -DiagSessionPath $inputPath -ExtractDirectory $sessionExtractDirectory)) {
+        foreach ($extracted in (Extract-GcdumpsFromDiagSession -DiagSessionPath $resolvedInput -ExtractDirectory $sessionExtractDirectory)) {
             $snapshots.Add([pscustomobject]@{
-                Source = $inputPath
+                Source = $resolvedInput
                 Gcdump = $extracted.Gcdump
                 ArchiveIndex = $extracted.ArchiveIndex
                 ArchiveEntry = $extracted.ArchiveEntry
@@ -314,6 +313,10 @@ foreach ($inputPath in $resolvedInputs) {
 if ($snapshots.Count -eq 0) {
     throw "No gcdump snapshots were found."
 }
+
+# Resolve the tool only AFTER confirming there is at least one .gcdump to report on, so an
+# unsupported .diagsession (only .heapstate/.dmp) is diagnosed before a missing-dotnet-gcdump error.
+$tool = Resolve-GcdumpTool -ToolPath $ToolPath
 
 @(
     "dotnet-gcdump LLM memory input"

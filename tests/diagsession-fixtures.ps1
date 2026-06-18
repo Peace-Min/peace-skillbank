@@ -110,6 +110,24 @@ $contractThrew = $false
 try { Test-DiagSessionAnalysisReport -ResponsePath $badReport | Out-Null } catch { $contractThrew = $true }
 Check "incomplete report fails the contract" $contractThrew
 
+# An unsupported (.heapstate-only) .diagsession must be diagnosed BEFORE a missing-dotnet-gcdump
+# error: run the full script with a bogus -ToolPath and assert the gcdump-only limitation surfaces,
+# not a tool-not-found message. ($noGcPath was built above with only .heapstate/.etl entries.)
+# Use Start-Process with redirect files (not & ... 2>&1) so the child's stderr does not trip the
+# runner's Stop preference as a NativeCommandError.
+$orderOutFile = [System.IO.Path]::GetTempFileName()
+$orderErrFile = [System.IO.Path]::GetTempFileName()
+$orderArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "`"$extractScript`"",
+    "-InputPath", "`"$noGcPath`"",
+    "-ToolPath", "`"$(Join-Path $work 'no-such-tool-dir')`"",
+    "-OutputDirectory", "`"$(Join-Path $work 'order-out')`"")
+$op = Start-Process -FilePath "powershell" -ArgumentList $orderArgs -NoNewWindow -Wait -PassThru `
+    -RedirectStandardOutput $orderOutFile -RedirectStandardError $orderErrFile
+$orderOut = (Get-Content -Raw -LiteralPath $orderOutFile -ErrorAction SilentlyContinue)
+$orderOut += (Get-Content -Raw -LiteralPath $orderErrFile -ErrorAction SilentlyContinue)
+Remove-Item -LiteralPath $orderOutFile, $orderErrFile -Force -ErrorAction SilentlyContinue
+Check "unsupported .diagsession diagnosed before missing-tool error" (($op.ExitCode -ne 0) -and ($orderOut -match 'No \.gcdump files were found') -and ($orderOut -notmatch 'Install dotnet-gcdump')) $orderOut
+
 # --- 5) Invoke-GcdumpReport must not deadlock on large stdout+stderr (regression guard for the
 #        concurrent ReadToEndAsync fix), must append stderr after stdout, and must throw on non-zero
 #        exit. A stub console exe emits ~200 KB to each stream (well past the OS pipe buffer); a

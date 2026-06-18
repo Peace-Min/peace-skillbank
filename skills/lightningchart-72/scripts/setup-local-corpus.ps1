@@ -48,6 +48,10 @@ function Write-Step { param([string]$Message) Write-Host "[setup] $Message" }
 
 function Stop-Setup {
     param([string]$Message, [string[]]$Hint = @())
+    # Never leave a partial staged corpus behind on failure.
+    if ($script:StageDir -and (Test-Path -LiteralPath $script:StageDir)) {
+        Remove-Item -LiteralPath $script:StageDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
     Write-Host ""
     Write-Host "[setup] FAILED: $Message"
     foreach ($h in $Hint) { Write-Host "        $h" }
@@ -172,10 +176,17 @@ Write-Step "Output     : $OutDir"
 Write-Step "Python     : $pythonExe $($pythonPre -join ' ')"
 Write-Host ""
 
+# Build into a staging dir and promote into $OutDir only after the self-check passes, so a late
+# failure (e.g. Tier 2) never leaves a partial corpus in the real location.
+$script:StageDir = "$OutDir.staging-$PID"
+if (Test-Path -LiteralPath $script:StageDir) { Remove-Item -LiteralPath $script:StageDir -Recurse -Force }
+New-Item -ItemType Directory -Force -Path $script:StageDir | Out-Null
+$buildDir = $script:StageDir
+
 # --- Build Tier 1 (DLL API index). ---
 Write-Step "(1/2) Building Tier 1 DLL API index..."
 try {
-    & (Join-Path $scriptDir "build-api-index.ps1") -DllDir $DllDir -OutDir $OutDir
+    & (Join-Path $scriptDir "build-api-index.ps1") -DllDir $DllDir -OutDir $buildDir
 }
 catch {
     Stop-Setup "DLL API index build failed: $($_.Exception.Message)" @(
@@ -186,7 +197,7 @@ catch {
 # Fail fast BEFORE the slow Tier 2 pass if Tier 1 produced no usable index (honor the documented
 # "aborts without building a partial corpus" promise -- e.g. a non-throwing reflection load failure
 # that yields a zero-type api-index.json).
-$apiIndexEarly = Join-Path $OutDir "api-index.json"
+$apiIndexEarly = Join-Path $buildDir "api-index.json"
 $earlyTypeCount = 0
 if (Test-Path -LiteralPath $apiIndexEarly) {
     try { $earlyTypeCount = (Get-Content -Raw -Encoding UTF8 -LiteralPath $apiIndexEarly | ConvertFrom-Json).typeCount } catch {}
@@ -199,20 +210,20 @@ if ($earlyTypeCount -le 0) {
 
 # --- Build Tier 2 (manual index). ---
 Write-Step "(2/2) Building Tier 2 manual index..."
-& $pythonExe @pythonPre (Join-Path $scriptDir "build-manual-index.py") $ManualPdf $OutDir
+& $pythonExe @pythonPre (Join-Path $scriptDir "build-manual-index.py") $ManualPdf $buildDir
 if ($LASTEXITCODE -ne 0) {
     Stop-Setup "Manual index build failed (exit $LASTEXITCODE)." @(
         "Confirm the PDF path is correct and that pypdf can read it."
     )
 }
 
-# --- Self-check the generated corpus. ---
+# --- Self-check the staged corpus (before promoting it to the real location). ---
 Write-Host ""
 Write-Step "Self-check:"
-$apiIndex = Join-Path $OutDir "api-index.json"
-$apiSymbols = Join-Path $OutDir "api-symbols.txt"
-$manualIndex = Join-Path $OutDir "manual-index.json"
-$manualDir = Join-Path $OutDir "manual"
+$apiIndex = Join-Path $buildDir "api-index.json"
+$apiSymbols = Join-Path $buildDir "api-symbols.txt"
+$manualIndex = Join-Path $buildDir "manual-index.json"
+$manualDir = Join-Path $buildDir "manual"
 
 $problems = @()
 foreach ($f in @($apiIndex, $apiSymbols, $manualIndex)) {
@@ -243,6 +254,18 @@ if ($problems.Count -gt 0) {
         "Fix the inputs above and re-run this script."
     )
 }
+
+# Promote the staged corpus into the real location, replacing only the generated artifacts so any
+# existing demos/ and committed READMEs are preserved. Only reached after a clean self-check.
+New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
+foreach ($item in @("api-index.json", "api-symbols.txt", "manual-index.json", "manual")) {
+    $dst = Join-Path $OutDir $item
+    if (Test-Path -LiteralPath $dst) { Remove-Item -LiteralPath $dst -Recurse -Force }
+    $src = Join-Path $buildDir $item
+    if (Test-Path -LiteralPath $src) { Move-Item -LiteralPath $src -Destination $dst }
+}
+Remove-Item -LiteralPath $buildDir -Recurse -Force -ErrorAction SilentlyContinue
+$script:StageDir = $null
 
 Write-Host ""
 Write-Step "OK. Corpus ready under: $OutDir"

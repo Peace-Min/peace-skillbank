@@ -13,7 +13,7 @@ Usage:
 
 Requires: pypdf  (pip install pypdf) -- only on the one-time build machine.
 """
-import sys, os, re, json
+import sys, os, re, json, glob
 from pypdf import PdfReader
 
 DOTLEADER = re.compile(r"\.{4,}")
@@ -35,6 +35,11 @@ def main():
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "references")
     manual_dir = os.path.join(ref_dir, "manual")
     os.makedirs(manual_dir, exist_ok=True)
+    # Safe cleanup: drop stale section chunks from a previous run, but only inside the
+    # intended 'manual' directory (never an arbitrary path).
+    if os.path.basename(os.path.normpath(manual_dir)) == "manual":
+        for old in glob.glob(os.path.join(manual_dir, "*.md")):
+            os.remove(old)
 
     reader = PdfReader(pdf)
     pages = []

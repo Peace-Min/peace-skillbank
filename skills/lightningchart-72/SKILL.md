@@ -1,31 +1,31 @@
 ---
 name: lightningchart-72
-description: Answers LightningChart Ultimate SDK v7.2 (Arction) API, property, method, enum, and usage questions grounded ONLY in local 7.2 sources (the DLL API index + the indexed user manual + the current project's own usage), with source citations and an API-existence verification step. Use whenever the user works with LightningChart / Arction 7.2 — asking about chart APIs, properties, methods, enums, how to implement a chart feature, ViewXY / View3D / ViewRound, series, axes, annotations, maps, palettes, zooming, cursors, legend, etc. Prefer this over answering from general knowledge for ANY LightningChart 7.2 question, especially offline / air-gapped, because answers must come from the manual and DLL, not memory.
+description: Answers LightningChart Ultimate SDK v7.2 (Arction) API, property, method, enum, and usage questions grounded ONLY in local 7.2 sources (the DLL API index + the indexed user manual + the current project's own usage), with source citations and an API-existence verification step. Use whenever the user works with LightningChart / Arction 7.2 -- asking about chart APIs, properties, methods, enums, how to implement a chart feature, ViewXY / View3D / ViewRound, series, axes, annotations, maps, palettes, zooming, cursors, legend, etc. Prefer this over answering from general knowledge for ANY LightningChart 7.2 question, especially offline / air-gapped, because answers must come from the manual and DLL, not memory.
 ---
 
-# LightningChart 7.2 — grounded API assistant
+# LightningChart 7.2 -- grounded API assistant
 
 Answer LightningChart Ultimate 7.2 questions ONLY from the local sources below. Never answer from
-memory or general knowledge — invented APIs/properties are exactly the failure this skill exists to
+memory or general knowledge -- invented APIs/properties are exactly the failure this skill exists to
 prevent. Quote and cite; if the sources don't cover it, say so.
 
 ## Sources (tiered)
 
 Generated locally per machine and **not committed** (see `README.md` for one-time setup).
 
-- **Tier 1 — DLL API index** (`references/api-index.json`, `references/api-symbols.txt`): the complete
+- **Tier 1 -- DLL API index** (`references/api-index.json`, `references/api-symbols.txt`): the complete
   public API surface (types, properties, methods, enums + signatures) of the 7.2 assemblies.
   **Authoritative for whether an API/property/method/enum EXISTS and for its signature.**
-- **Tier 2 — Manual** (`references/manual/<section>.md`, indexed by `references/manual-index.json`):
-  concepts, how-to, meaning. Curated and **incomplete** — many APIs are undocumented here.
-- **Tier 3 — Project code** (current working project, searched in place): **unverified** in-project
+- **Tier 2 -- Manual** (`references/manual/<section>.md`, indexed by `references/manual-index.json`):
+  concepts, how-to, meaning. Curated and **incomplete** -- many APIs are undocumented here.
+- **Tier 3 -- Project code** (current working project, searched in place): **unverified** in-project
   usage examples. Shows HOW an API was called here; can NEVER establish that an API exists or its
   signature (that is Tier 1 only).
 
 ## Workflow (per question)
 
 1. **Find the symbol.** Search BOTH `manual-index.json` (titles/keywords) and `api-symbols.txt`. The
-   manual translates intent ("color palette") into the API name — but it is incomplete, so **absence
+   manual translates intent ("color palette") into the API name -- but it is incomplete, so **absence
    from the manual is normal, not a stop**: go straight to `api-symbols.txt` / `api-index.json` for the
    exact symbol.
 2. **Existence + signature ← Tier 1 only** (`api-index.json`). It is the sole authority for whether a
@@ -36,37 +36,37 @@ Generated locally per machine and **not committed** (see `README.md` for one-tim
 4. **Working code ← Tier 3, only on escalation:** the user asks for usage/an example, OR a symbol
    exists in Tier 1 but Tier 2 has no semantics for it. Grep the *exact symbol* (not free text) in the
    current project, restricted to LightningChart/Arction-namespace files; never secrets/config/`bin`/
-   `obj`; ≤3–5 short snippets. **A symbol seen only in project code and not in `api-index.json` is
-   unverified — treat it exactly like a hallucination; project code never establishes existence.**
+   `obj`; ≤3-5 short snippets. **A symbol seen only in project code and not in `api-index.json` is
+   unverified -- treat it exactly like a hallucination; project code never establishes existence.**
 5. **Compose, grounded + cited.** Quote; adapt minimally. **Write every API member in qualified
    `Type.Member` form** (e.g. `IntensityGridSeries.ValueRangePalette`, not a bare `ValueRangePalette`)
-   so the verify hook can check it — a bare member name counts as unverified.
-6. **Exists but undocumented?** If a symbol exists in Tier 1 but no Tier 2/Tier 3 source says what it
+   so the verify hook can check it -- a bare member name counts as unverified.
+6. **Exists but undocumented:** If a symbol exists in Tier 1 but no Tier 2/Tier 3 source says what it
    DOES, report its existence and signature only and say *"exists in the 7.2 API; behavior not
-   documented in the local manual or used in this project — I won't guess what it does."* **Never infer
+   documented in the local manual or used in this project -- I won't guess what it does."* **Never infer
    behavior from a type/member name.**
 7. **Verify hook (required).** Run `python scripts/verify-symbols.py --strict -` on your draft.
    - **exit 0** → all cited symbols verified; you may assert them.
    - **exit 1** → remove or qualify every `X`-flagged symbol before answering (qualified-unknown =
      invented; bare-unknown under `--strict` = must be qualified or removed).
    - **exit 2** → index not built → say the corpus is unavailable; do NOT answer with citations.
-   The hook confirms a member EXISTS; it does **not** validate method signatures/parameter lists — so
+   The hook confirms a member EXISTS; it does **not** validate method signatures/parameter lists -- so
    when you cite a method signature, **quote it verbatim** from the manual snippet or the
    `api-index.json` entry, never reconstruct it from memory.
 
 ## Output rules
 
 - **Cite every fact:** manual `§6.15.5 (p85)`, API `[api: IntensityGridSeries.ValueRangePalette : ValueRangePalette]`,
-  project `[project: <file>:<line> — usage example, not verified as correct]`.
+  project `[project: <file>:<line> -- usage example, not verified as correct]`.
 - **Tier 1 wins conflicts** (project/manual vs DLL index → trust the index, and say so).
 - Phrase project findings as "this project does X", never "the recommended way is X".
 - **One operating rule:** assert only what a cited source establishes. If none does, say "not found in
-  the 7.2 manual or API index" or "exists but behavior undocumented" — never fill the gap from memory.
+  the 7.2 manual or API index" or "exists but behavior undocumented" -- never fill the gap from memory.
 - **Prefer quoting** documented snippets / real code over generating new code.
 
 ## Scope
 
 Answers from the 7.2 sources only; does not modify the licensed SDK or invent APIs. v1 sources = DLL
 index + manual (+ in-project usage). Official vendor demos may be added later under
-`references/demos/` (see that folder's README) when manual + project prove insufficient — add them
+`references/demos/` (see that folder's README) when manual + project prove insufficient -- add them
 with a symbol index so retrieval stays precise.

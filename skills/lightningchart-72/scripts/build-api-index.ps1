@@ -15,7 +15,7 @@
 #>
 param(
     [Parameter(Mandatory = $true)][string]$DllDir,
-    [string]$MainDll = "Arction.Wpf.Charting.LightningChartUltimate.dll",
+    [string]$MainDll,
     [string]$OutDir
 )
 
@@ -36,6 +36,16 @@ $handler = [System.ResolveEventHandler] {
 }
 [System.AppDomain]::CurrentDomain.add_AssemblyResolve($handler)
 
+# Auto-detect the main charting assembly so a differently-named edition (e.g. WinForms) still works,
+# rather than failing on a hardcoded default.
+if (-not $MainDll) {
+    $autoMain = Get-ChildItem -LiteralPath $resolveDir -Filter "*LightningChartUltimate*.dll" -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $autoMain) {
+        $present = (Get-ChildItem -LiteralPath $resolveDir -Filter "*.dll" -ErrorAction SilentlyContinue).Name -join ", "
+        throw "No *LightningChartUltimate*.dll found in $resolveDir. Pass -MainDll explicitly. DLLs present: $present"
+    }
+    $MainDll = $autoMain.Name
+}
 $mainPath = Join-Path $resolveDir $MainDll
 if (-not (Test-Path -LiteralPath $mainPath)) { throw "Main DLL not found: $mainPath" }
 $asm = [System.Reflection.Assembly]::LoadFrom($mainPath)

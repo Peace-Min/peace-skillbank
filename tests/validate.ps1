@@ -157,4 +157,48 @@ foreach ($pattern in @("*.diagsession", "*.gcdump", "LLM_MEMORY_INPUT.txt", "MAN
     Assert-Condition ($gitIgnore -match [regex]::Escape($pattern)) "Missing .gitignore pattern: $pattern"
 }
 
+# --- lightningchart-72 skill (machinery only; licensed corpus stays local) ---
+$lcRoot = Join-Path $RepositoryRoot "skills\lightningchart-72"
+$lcSkillPath = Join-Path $lcRoot "SKILL.md"
+$lcApiIndexScript = Join-Path $lcRoot "scripts\build-api-index.ps1"
+foreach ($lcFile in @(
+        $lcSkillPath,
+        (Join-Path $lcRoot "README.md"),
+        (Join-Path $lcRoot "references\README.md"),
+        (Join-Path $lcRoot "references\demos\README.md"),
+        $lcApiIndexScript,
+        (Join-Path $lcRoot "scripts\build-manual-index.py"),
+        (Join-Path $lcRoot "scripts\verify-symbols.py"),
+        (Join-Path $lcRoot "scripts\search.py"))) {
+    Assert-Condition (Test-Path -LiteralPath $lcFile) "Missing lightningchart-72 file: $lcFile"
+}
+
+$lcFrontMatter = Get-FrontMatter -Path $lcSkillPath
+Assert-Condition ($lcFrontMatter -match "(?m)^name:\s*lightningchart-72\s*$") "Invalid lightningchart-72 skill name"
+Assert-Condition ($lcFrontMatter -match "(?m)^description:\s+.+") "Missing lightningchart-72 skill description"
+
+$lcSkillContent = Get-Content -Raw -Encoding UTF8 -LiteralPath $lcSkillPath
+$lcTypographicDashes = @([char]0x2010, [char]0x2011, [char]0x2012, [char]0x2013, [char]0x2014, [char]0x2015)
+Assert-Condition (-not ($lcTypographicDashes | Where-Object { $lcSkillContent.Contains($_) })) "lightningchart-72 SKILL.md must avoid typographic dashes that break default Windows validation"
+foreach ($marker in @("verify-symbols", "Tier 1", "Type.Member", "not found")) {
+    Assert-Condition ($lcSkillContent -match [regex]::Escape($marker)) "lightningchart-72 SKILL.md must keep grounding-contract marker: $marker"
+}
+
+Test-PowerShellSyntax -Path $lcApiIndexScript
+
+$python = Get-Command python -ErrorAction SilentlyContinue
+if ($python) {
+    foreach ($lcPy in @("build-manual-index.py", "verify-symbols.py", "search.py")) {
+        & $python.Source -m py_compile (Join-Path $lcRoot "scripts\$lcPy")
+        Assert-Condition ($LASTEXITCODE -eq 0) "Python syntax error in lightningchart-72 script: $lcPy"
+    }
+}
+else {
+    Write-Host "Python not found; skipping lightningchart-72 Python syntax checks."
+}
+
+foreach ($lcPattern in @("skills/lightningchart-72/references/manual/", "skills/lightningchart-72/references/api-index.json", "skills/lightningchart-72/references/demos/*")) {
+    Assert-Condition ($gitIgnore -match [regex]::Escape($lcPattern)) "Missing .gitignore pattern: $lcPattern"
+}
+
 Write-Host "Validation passed."

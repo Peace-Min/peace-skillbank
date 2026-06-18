@@ -11,7 +11,10 @@ prevent. Quote and cite; if the sources don't cover it, say so.
 
 ## Sources (tiered)
 
-Generated locally per machine and **not committed** (see `README.md` for one-time setup).
+Generated locally per machine and **not committed** (see `README.md` for one-time setup). When the
+skill is installed as a plugin the corpus lives in the plugin data dir; `search.py` and
+`verify-symbols.py` resolve it automatically (`${CLAUDE_PLUGIN_DATA}/references` when set, else the
+script-relative `references/`).
 
 - **Tier 1 -- DLL API index** (`references/api-index.json`, `references/api-symbols.txt`): the complete
   public API surface (types, properties, methods, enums + signatures) of the 7.2 assemblies.

@@ -22,6 +22,19 @@ except Exception:
     pass
 
 
+def default_ref_dir():
+    # Installed as a plugin, the corpus is generated into the persistent plugin data dir
+    # (${CLAUDE_PLUGIN_DATA}/references) because the plugin cache itself is read-only and wiped on
+    # update. Prefer that when it holds a built corpus; otherwise fall back to the script-relative
+    # references/ (repo / dev checkout).
+    data = os.environ.get("CLAUDE_PLUGIN_DATA")
+    if data:
+        cand = os.path.join(data, "references")
+        if os.path.exists(os.path.join(cand, "api-index.json")) or os.path.exists(os.path.join(cand, "api-symbols.txt")):
+            return cand
+    return os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "references")
+
+
 def _strip_arity(name):
     # Reflection renders a generic type as "Name`N" (e.g. EventArgs`2); the model cites it
     # without the backtick arity. Normalize both sides so real generic members still verify.
@@ -156,8 +169,7 @@ def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     strict = "--strict" in sys.argv
     src = args[0] if len(args) > 0 else "-"
-    ref_dir = args[1] if len(args) > 1 else os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "references")
+    ref_dir = args[1] if len(args) > 1 else default_ref_dir()
     text = sys.stdin.read() if src == "-" else open(src, encoding="utf-8-sig").read()
 
     types, qualified, members, ctor_arities = load_index(ref_dir)

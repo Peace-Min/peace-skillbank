@@ -122,8 +122,40 @@ else {
 
 Remove-Item -LiteralPath $emptyDir -Recurse -Force -ErrorAction SilentlyContinue
 
+# CLAUDE_PLUGIN_DATA resolution: with no ref-dir arg, a corpus in the plugin data dir is used
+# (this is how the verifier finds the corpus when the skill is installed as a plugin).
+$dataDir = Join-Path $env:TEMP "lc72-plugindata-fixture"
+$dataRefs = Join-Path $dataDir "references"
+if (Test-Path -LiteralPath $dataDir) { Remove-Item -LiteralPath $dataDir -Recurse -Force }
+New-Item -ItemType Directory -Path $dataRefs | Out-Null
+Copy-Item -LiteralPath (Join-Path $indexDir "api-index.json") -Destination (Join-Path $dataRefs "api-index.json")
+$savedData = $env:CLAUDE_PLUGIN_DATA
+try {
+    $env:CLAUDE_PLUGIN_DATA = $dataDir
+    $t1 = [System.IO.Path]::GetTempFileName()
+    [System.IO.File]::WriteAllText($t1, 'Use FixtureSeries.LineColor here.', (New-Object System.Text.UTF8Encoding($false)))
+    & $python.Source $verify $t1 "--strict" | Out-Null     # no ref-dir arg -> resolve via CLAUDE_PLUGIN_DATA
+    $c1 = $LASTEXITCODE
+    Remove-Item -LiteralPath $t1 -Force
+    if ($c1 -eq 0) { Write-Host "  [ok]   CLAUDE_PLUGIN_DATA corpus resolved (known -> 0)" }
+    else { $failures += "  [FAIL] CLAUDE_PLUGIN_DATA known: expected 0, got $c1" }
+
+    $t2 = [System.IO.Path]::GetTempFileName()
+    [System.IO.File]::WriteAllText($t2, 'Use FixtureSeries.RainbowMode here.', (New-Object System.Text.UTF8Encoding($false)))
+    & $python.Source $verify $t2 "--strict" | Out-Null
+    $c2 = $LASTEXITCODE
+    Remove-Item -LiteralPath $t2 -Force
+    if ($c2 -eq 1) { Write-Host "  [ok]   CLAUDE_PLUGIN_DATA corpus resolved (unknown -> 1)" }
+    else { $failures += "  [FAIL] CLAUDE_PLUGIN_DATA unknown: expected 1, got $c2" }
+}
+finally {
+    if ($null -eq $savedData) { Remove-Item Env:\CLAUDE_PLUGIN_DATA -ErrorAction SilentlyContinue }
+    else { $env:CLAUDE_PLUGIN_DATA = $savedData }
+    Remove-Item -LiteralPath $dataDir -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 if ($failures.Count -gt 0) {
     throw ("verify-symbols fixture tests failed:`n" + ($failures -join "`n"))
 }
 
-Write-Host "verify-symbols fixture tests passed ($($cases.Count + 1) cases)."
+Write-Host "verify-symbols fixture tests passed ($($cases.Count + 3) cases)."

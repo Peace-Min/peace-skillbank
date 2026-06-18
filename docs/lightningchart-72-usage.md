@@ -80,6 +80,22 @@ python skills/lightningchart-72/scripts/build-manual-index.py "<...>\LightningCh
 /reload-plugins
 ```
 
+### 설치형 코퍼스 위치 (중요)
+
+설치된 플러그인은 **읽기전용 캐시**(`~/.claude/plugins/cache/...`)에 풀리고 `/plugin update` 때
+폐기되므로, 코퍼스는 캐시가 아니라 **영속 데이터 디렉터리**(`~/.claude/plugins/data/<id>/references`)에
+둬야 한다. 처리 방식은 자동이다:
+
+- `setup-local-corpus.ps1`은 `${CLAUDE_PLUGIN_DATA}`가 있으면 거기로, (수동 터미널 실행이라 없으면)
+  캐시 컨텍스트를 감지해 디스크에서 데이터 디렉터리를 찾아 그쪽으로 코퍼스를 만든다. 못 찾으면
+  경고와 함께 `-OutDir`로 명시하라고 안내한다.
+- `verify-symbols.py` / `search.py`도 `${CLAUDE_PLUGIN_DATA}/references`를 먼저 보고, 없으면
+  스크립트 옆 `references/`로 fallback한다.
+
+> 폐쇄망에서 가장 단순한 길은 **플러그인 설치 없이 레포를 그대로 두고**(이 저장소를 작업 폴더로)
+> `setup-local-corpus.ps1 -SourceDir <폴더>`를 돌려 레포의 `references/`에 코퍼스를 만드는 것이다.
+> 이 경우 위 데이터 디렉터리 처리는 신경 쓸 필요가 없다.
+
 ## 호출
 
 작업 폴더(스킬/프로젝트)를 연 세션에서 LightningChart 7.2 질문을 하면 된다. 짧게:

@@ -45,7 +45,38 @@ function Stop-Setup {
 }
 
 $scriptDir = $PSScriptRoot
-if (-not $OutDir) { $OutDir = Join-Path (Split-Path -Parent $scriptDir) "references" }
+if (-not $OutDir) {
+    $repoRef = Join-Path (Split-Path -Parent $scriptDir) "references"
+    if ($env:CLAUDE_PLUGIN_DATA) {
+        # Inside Claude Code (hook/skill context): write to the persistent plugin data dir.
+        $OutDir = Join-Path $env:CLAUDE_PLUGIN_DATA "references"
+    }
+    elseif ($scriptDir -match '[\\/]plugins[\\/]cache[\\/]') {
+        # Manual terminal run from the read-only plugin cache (no env var). Writing here loses the
+        # corpus on '/plugin update', so try to find the persistent data dir on disk and target it.
+        $dataRoot = Join-Path $env:USERPROFILE ".claude\plugins\data"
+        $dataDir = $null
+        if (Test-Path -LiteralPath $dataRoot) {
+            $dataDir = Get-ChildItem -LiteralPath $dataRoot -Directory -Filter "*peace-skillbank*" -ErrorAction SilentlyContinue |
+                Select-Object -First 1
+        }
+        if ($dataDir) {
+            $OutDir = Join-Path $dataDir.FullName "references"
+            Write-Step "Installed-plugin context: targeting persistent data dir $OutDir"
+        }
+        else {
+            Write-Host "[setup] NOTE: running from the read-only plugin cache and CLAUDE_PLUGIN_DATA is not set."
+            Write-Host "        The corpus would be written into the cache and lost on '/plugin update'."
+            Write-Host "        Run setup from within a Claude Code session, or pass -OutDir pointing at your"
+            Write-Host "        persistent data dir (e.g. %USERPROFILE%\.claude\plugins\data\<id>\references)."
+            $OutDir = $repoRef
+        }
+    }
+    else {
+        # Repo / dev checkout: the corpus sits next to the scripts.
+        $OutDir = $repoRef
+    }
+}
 
 if (-not $SourceDir -and -not $DllDir -and -not $ManualPdf) {
     Stop-Setup "No inputs given." @(

@@ -4,7 +4,7 @@
 
 A personal skill bank for reusable LLM/Codex workflows, scripts, and model-agnostic prompts.
 
-이 저장소는 특정 PC에 바로 설치되는 Codex Skill 묶음이 아니라, 재사용 가능한 분석 절차, 스크립트, 프롬프트 템플릿을 보관하는 스킬뱅크다. Codex에서는 `skills/<skill-name>/SKILL.md`를 Skill로 복사하거나 참조해서 쓰고, Codex 밖의 LLM에서는 스크립트 출력물과 `references/`의 프롬프트를 직접 입력으로 사용한다.
+이 저장소는 재사용 가능한 분석 절차, 스크립트, 프롬프트 템플릿을 보관하는 스킬뱅크다. Claude Code에서는 repo 루트에서 바로 프로젝트 스킬로 쓸 수 있고, Codex에서는 `skills/<skill-name>/SKILL.md`를 Skill로 복사하거나 참조해서 쓴다. Codex 밖의 LLM에서는 스크립트 출력물과 `references/`의 프롬프트를 직접 입력으로 사용한다.
 
 ## 목표
 
@@ -48,9 +48,25 @@ $target = Join-Path $env:USERPROFILE ".codex\skills\$skillName"
 Copy-Item -Recurse -Force -LiteralPath $source -Destination $target
 ```
 
-## Claude Code에서 plugin marketplace로 사용
+## Claude Code에서 사용
 
-이 저장소는 Claude Code marketplace 파일을 포함한다. GitHub에 push한 뒤 Claude Code에서 저장소 주소를 marketplace로 추가하면 plugin을 설치할 수 있다.
+### 클론 후 바로 사용
+
+이 저장소는 Claude Code 프로젝트 스킬 진입점을 `.claude/skills/`에 포함한다. 폐쇄망에서 repo를
+클론한 뒤 **repo 루트에서** Claude Code를 시작하면 바로 다음 커맨드가 노출된다.
+
+```text
+/diagsession-memory-analysis
+/lightningchart-72
+```
+
+이미 실행 중인 세션에서 새로 클론했거나 `.claude/skills/`가 세션 시작 뒤 생겼다면 Claude Code를
+재시작한다. 프로젝트 스킬은 Claude Code가 시작 디렉터리와 부모 디렉터리의 `.claude/skills/`를
+자동 발견하는 방식이다.
+
+### plugin marketplace 설치
+
+이 저장소는 Claude Code marketplace 파일도 포함한다. GitHub에 push한 뒤 Claude Code에서 저장소 주소를 marketplace로 추가하면 plugin을 설치할 수 있다.
 
 사람용 전체 사용법은 [diagsession-memory-analysis 사용 가이드](docs/diagsession-memory-analysis-usage.md)를 먼저 본다.
 

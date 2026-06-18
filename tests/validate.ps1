@@ -45,6 +45,8 @@ $promptPath = Join-Path $skillRoot "references\model-agnostic-prompt.md"
 $cliUsagePath = Join-Path $skillRoot "references\cli-usage.md"
 $standardReportTemplatePath = Join-Path $skillRoot "references\standard-report-template.md"
 $claudeCommandPath = Join-Path $RepositoryRoot "commands\diagsession-memory-analysis.md"
+$claudeProjectDiagSkillPath = Join-Path $RepositoryRoot ".claude\skills\diagsession-memory-analysis\SKILL.md"
+$claudeProjectLightningSkillPath = Join-Path $RepositoryRoot ".claude\skills\lightningchart-72\SKILL.md"
 $humanUsagePath = Join-Path $RepositoryRoot "docs\diagsession-memory-analysis-usage.md"
 $loopValidationDocPath = Join-Path $RepositoryRoot "docs\diagsession-loop-validation.md"
 $claudePluginPath = Join-Path $RepositoryRoot ".claude-plugin\plugin.json"
@@ -61,6 +63,8 @@ Assert-Condition (Test-Path -LiteralPath $promptPath) "Missing model-agnostic pr
 Assert-Condition (Test-Path -LiteralPath $cliUsagePath) "Missing CLI usage reference"
 Assert-Condition (Test-Path -LiteralPath $standardReportTemplatePath) "Missing standard report template"
 Assert-Condition (Test-Path -LiteralPath $claudeCommandPath) "Missing Claude command alias"
+Assert-Condition (Test-Path -LiteralPath $claudeProjectDiagSkillPath) "Missing Claude project skill entrypoint for diagsession-memory-analysis"
+Assert-Condition (Test-Path -LiteralPath $claudeProjectLightningSkillPath) "Missing Claude project skill entrypoint for lightningchart-72"
 Assert-Condition (Test-Path -LiteralPath $humanUsagePath) "Missing human usage guide"
 Assert-Condition (Test-Path -LiteralPath $loopValidationDocPath) "Missing loop validation guide"
 Assert-Condition (Test-Path -LiteralPath $claudePluginPath) "Missing Claude plugin manifest"
@@ -88,10 +92,23 @@ Assert-Condition ($commandContent -match '\$ARGUMENTS') "Claude command alias mu
 Assert-Condition ($commandContent -match "diagsession-memory-analysis") "Claude command alias must delegate to the skill"
 Assert-Condition ($commandContent -match "Do not edit source code") "Claude command alias must preserve analysis-only scope"
 
+$projectDiagSkillContent = Get-Content -Raw -LiteralPath $claudeProjectDiagSkillPath
+$projectLightningSkillContent = Get-Content -Raw -LiteralPath $claudeProjectLightningSkillPath
+$projectDiagFrontMatter = Get-FrontMatter -Path $claudeProjectDiagSkillPath
+$projectLightningFrontMatter = Get-FrontMatter -Path $claudeProjectLightningSkillPath
+Assert-Condition ($projectDiagFrontMatter -match "(?m)^name:\s*diagsession-memory-analysis\s*$") "Claude project diagsession entrypoint must expose /diagsession-memory-analysis"
+Assert-Condition ($projectLightningFrontMatter -match "(?m)^name:\s*lightningchart-72\s*$") "Claude project lightningchart entrypoint must expose /lightningchart-72"
+Assert-Condition ($projectDiagSkillContent -match "skills/diagsession-memory-analysis/SKILL.md") "Claude project diagsession entrypoint must delegate to the canonical skill"
+Assert-Condition ($projectDiagSkillContent -match "skills/diagsession-memory-analysis/") "Claude project diagsession entrypoint must point to bundled resources"
+Assert-Condition ($projectLightningSkillContent -match "skills/lightningchart-72/SKILL.md") "Claude project lightningchart entrypoint must delegate to the canonical skill"
+Assert-Condition ($projectLightningSkillContent -match "setup-local-corpus.ps1") "Claude project lightningchart entrypoint must mention corpus setup"
+
 $readmePath = Join-Path $RepositoryRoot "README.md"
 $readmeContent = Get-Content -Raw -LiteralPath $readmePath
 $humanUsageContent = Get-Content -Raw -LiteralPath $humanUsagePath
 Assert-Condition ($readmeContent -match [regex]::Escape("docs/diagsession-memory-analysis-usage.md")) "README must link the human usage guide"
+Assert-Condition ($readmeContent -match [regex]::Escape(".claude/skills/")) "README must document clone-time Claude project skill discovery"
+Assert-Condition ($readmeContent -match [regex]::Escape("/lightningchart-72")) "README must document clone-time lightningchart command"
 Assert-Condition ($readmeContent.Contains('[`diagsession-memory-analysis`](docs/diagsession-memory-analysis-usage.md)')) "README current skill list must link each skill docs page"
 Assert-Condition ($humanUsageContent -match [regex]::Escape("/diagsession-memory-analysis")) "Human usage guide must document the short Claude command"
 Assert-Condition ($humanUsageContent -match "Snapshot 1") "Human usage guide must document snapshot ordering"

@@ -18,8 +18,8 @@
   specific recovery guidance and ABORTS without building a partial corpus.
 
 .EXAMPLE
-  # Simplest: drop the DLLs + manual PDF in a folder, run the script from inside it (no paths).
-  cd D:\LightningChart72
+  # Simplest: run with no paths. It PROMPTS for the folder that holds the DLLs + manual PDF
+  # (press Enter to use the current folder).
   powershell -NoProfile -ExecutionPolicy Bypass -File C:\path\to\scripts\setup-local-corpus.ps1
 
 .EXAMPLE
@@ -93,10 +93,19 @@ if (-not $OutDir) {
 }
 
 if (-not $SourceDir -and -not $DllDir -and -not $ManualPdf) {
-    # Default: assume the script is run from inside the folder holding the DLLs + manual PDF, so the
-    # user can just drop the files in a folder, run the script there, and be done -- no paths to pass.
-    $SourceDir = (Get-Location).Path
-    Write-Step "No -SourceDir given; using the current directory as the source: $SourceDir"
+    # No paths passed: when run interactively, ASK for the folder (Enter = current folder). When
+    # stdin is redirected (automation / CI / piped), fall back to the current folder so a
+    # non-interactive run never blocks on the prompt.
+    $canPrompt = $false
+    try { $canPrompt = -not [Console]::IsInputRedirected } catch { $canPrompt = $false }
+    if ($canPrompt) {
+        $entered = (Read-Host "Folder with the 7.2 SDK DLLs + the User's Manual PDF (press Enter for the current folder)").Trim().Trim('"')
+        $SourceDir = if ($entered) { $entered } else { (Get-Location).Path }
+    }
+    else {
+        $SourceDir = (Get-Location).Path
+    }
+    Write-Step "Source: $SourceDir"
 }
 if ($SourceDir -and -not (Test-Path -LiteralPath $SourceDir)) {
     Stop-Setup "SourceDir not found: $SourceDir" @("Pass a folder that contains the 7.2 SDK DLLs and the User's Manual PDF.")

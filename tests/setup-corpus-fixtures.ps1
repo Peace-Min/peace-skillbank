@@ -21,16 +21,17 @@ function Invoke-Setup {
     param([string[]]$ScriptArgs = @(), [string]$WorkingDir = $RepositoryRoot)
     $outFile = [System.IO.Path]::GetTempFileName()
     $errFile = [System.IO.Path]::GetTempFileName()
+    $inFile = [System.IO.Path]::GetTempFileName()   # empty stdin -> IsInputRedirected -> no interactive prompt / no hang
     try {
         $allArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $setup) + $ScriptArgs
         $p = Start-Process -FilePath "powershell" -ArgumentList $allArgs -WorkingDirectory $WorkingDir `
-            -NoNewWindow -Wait -PassThru -RedirectStandardOutput $outFile -RedirectStandardError $errFile
+            -NoNewWindow -Wait -PassThru -RedirectStandardInput $inFile -RedirectStandardOutput $outFile -RedirectStandardError $errFile
         $out = (Get-Content -Raw -LiteralPath $outFile -ErrorAction SilentlyContinue)
         $out += (Get-Content -Raw -LiteralPath $errFile -ErrorAction SilentlyContinue)
         return [pscustomobject]@{ Code = $p.ExitCode; Out = [string]$out }
     }
     finally {
-        Remove-Item -LiteralPath $outFile, $errFile -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $outFile, $errFile, $inFile -Force -ErrorAction SilentlyContinue
     }
 }
 
@@ -62,9 +63,9 @@ function Check {
     else { $script:failures += "  [FAIL] $Name$(if ($Detail) { " -- $Detail" })" }
 }
 
-# 1) No args: defaults to the current directory as the source. Run from an empty dir -> DLL not found.
+# 1) No args with redirected stdin: no prompt, falls back to current dir. From an empty dir -> no DLL.
 $r = Invoke-Setup -WorkingDir $emptyDir
-Check "no args falls back to current directory" ($r.Out -match 'using the current directory') $r.Out
+Check "no args (redirected stdin) uses current directory, no prompt" ($r.Out -match 'Source:') $r.Out
 Check "current-dir source with no DLL aborts non-zero" ($r.Code -ne 0) "exit $($r.Code)"
 Check "current-dir source names the missing DLL folder" ($r.Out -match 'DLL folder') $r.Out
 

@@ -232,4 +232,10 @@ $lcUsageDoc = Join-Path $RepositoryRoot "docs\lightningchart-72-usage.md"
 Assert-Condition (Test-Path -LiteralPath $lcUsageDoc) "Missing lightningchart-72 usage guide (docs/lightningchart-72-usage.md)"
 Assert-Condition ($readmeContent.Contains('[`lightningchart-72`](docs/lightningchart-72-usage.md)')) "README current-skill list must link the lightningchart-72 usage guide"
 
+$lcCommandPath = Join-Path $RepositoryRoot "commands\lightningchart-72.md"
+Assert-Condition (Test-Path -LiteralPath $lcCommandPath) "Missing lightningchart-72 Claude command alias"
+$lcCommandContent = Get-Content -Raw -LiteralPath $lcCommandPath
+Assert-Condition ($lcCommandContent -match '\$ARGUMENTS') "lightningchart-72 command alias must pass through arguments"
+Assert-Condition ($lcCommandContent -match "lightningchart-72") "lightningchart-72 command alias must delegate to the skill"
+
 Write-Host "Validation passed."

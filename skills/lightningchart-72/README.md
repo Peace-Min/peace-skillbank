@@ -12,14 +12,25 @@ The corpus is **generated locally from your own licensed SDK + manual** and is *
 
 ### Quick: one command
 
-```powershell
-# Point it at a folder that holds the 7.2 SDK DLLs and the User's Manual PDF; it auto-detects both.
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-local-corpus.ps1 -SourceDir "D:\LightningChart72"
+Drop the 7.2 SDK DLLs **and** the User's Manual PDF into one folder, then run the script — either from
+**inside that folder** (no paths at all) or by naming it with `-SourceDir`:
 
-# ...or pass the two paths explicitly:
+```powershell
+# simplest: from inside the folder that holds the DLLs + PDF (no arguments)
+cd D:\lc72-deps
+powershell -NoProfile -ExecutionPolicy Bypass -File C:\path\to\scripts\setup-local-corpus.ps1
+
+# or from anywhere, naming the folder:
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-local-corpus.ps1 -SourceDir "D:\lc72-deps"
+
+# or pass the two paths explicitly (if auto-detection can't find them):
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-local-corpus.ps1 `
-  -DllDir "D:\LightningChart72\Lib\Arction" -ManualPdf "D:\LightningChart72\LightningChart Users Manual.pdf"
+  -DllDir "D:\lc72-deps\Lib\Arction" -ManualPdf "D:\lc72-deps\LightningChart Users Manual.pdf"
 ```
+
+The **corpus output always goes to the skill's `references/`** (or the plugin data dir) regardless of
+where you run it or where the source files are — output is anchored to the script's own location, not
+the source folder, so the two never get confused.
 
 `setup-local-corpus.ps1` resolves the DLL folder + manual PDF, verifies Python + `pypdf`, builds both
 tiers, and self-checks the result (expects e.g. `api types: 627`, `manual sections: 289 == md files`).

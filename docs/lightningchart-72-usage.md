@@ -36,15 +36,23 @@ LightningChart Ultimate SDK **7.2**(Arction)의 API·프로퍼티·메서드·en
 
 ### 2) 코퍼스 생성 — 단일 CLI 권장
 
-```powershell
-# 의존성 폴더(SDK DLL + 매뉴얼 PDF) 하나만 주면 자동 탐지해서 두 인덱스를 한 번에 생성 + self-check
-powershell -NoProfile -ExecutionPolicy Bypass -File skills/lightningchart-72/scripts/setup-local-corpus.ps1 -SourceDir "<...>\LightningChart72"
+**DLL들 + 매뉴얼 PDF를 폴더 하나에 몰아넣고**, 그 폴더 *안에서* 인자 없이 실행하면 끝이다(또는 `-SourceDir`로 지정):
 
-# 경로를 직접 주는 형태도 지원
+```powershell
+# 가장 단순: DLL+PDF 넣어둔 폴더 안에서, 인자 없이
+cd D:\lc72-deps
+powershell -NoProfile -ExecutionPolicy Bypass -File <...>\skills\lightningchart-72\scripts\setup-local-corpus.ps1
+
+# 또는 폴더를 지정
+powershell -NoProfile -ExecutionPolicy Bypass -File skills/lightningchart-72/scripts/setup-local-corpus.ps1 -SourceDir "D:\lc72-deps"
+
+# 자동 탐지가 안 될 때만 경로 직접 지정
 powershell -NoProfile -ExecutionPolicy Bypass -File skills/lightningchart-72/scripts/setup-local-corpus.ps1 `
-  -DllDir "<...>\Lib\Arction" -ManualPdf "<...>\LightningChart Users Manual.pdf"
+  -DllDir "D:\lc72-deps\Lib\Arction" -ManualPdf "D:\lc72-deps\LightningChart Users Manual.pdf"
 ```
 
+- 인자를 안 주면 **현재 폴더**를 소스로 보고 그 안에서 DLL/PDF를 자동 탐지한다.
+- **코퍼스 출력 위치는 소스/현재폴더가 아니라 스크립트 자기 위치 기준**(레포 `references/` 또는 플러그인 data 디렉터리)이라, 어디서 실행하든 입력과 출력이 섞이지 않는다.
 - `setup-local-corpus.ps1`이 DLL 폴더·PDF 자동 탐지 -> Python/`pypdf` 확인 -> Tier1/Tier2 빌드 -> self-check까지 한 번에 수행한다(정상: `api types: 627`, `manual sections: 289 == md files`).
 - **fail-fast**: Python·pypdf·DLL·PDF 중 하나라도 없으면 *부분 코퍼스를 남기지 않고* 구체적 복구 안내와 함께 중단한다(예: pypdf 오프라인 설치 `python -m pip install --no-index --find-links <wheelhouse> pypdf`).
 - 산출물은 `skills/lightningchart-72/references/`(로컬, gitignore)에 생긴다.

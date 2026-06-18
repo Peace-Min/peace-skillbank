@@ -18,12 +18,22 @@
   specific recovery guidance and ABORTS without building a partial corpus.
 
 .EXAMPLE
+  # Simplest: drop the DLLs + manual PDF in a folder, run the script from inside it (no paths).
+  cd D:\LightningChart72
+  powershell -NoProfile -ExecutionPolicy Bypass -File C:\path\to\scripts\setup-local-corpus.ps1
+
+.EXAMPLE
   powershell -NoProfile -ExecutionPolicy Bypass -File scripts\setup-local-corpus.ps1 -SourceDir "D:\LightningChart72"
 
 .EXAMPLE
   powershell -NoProfile -ExecutionPolicy Bypass -File scripts\setup-local-corpus.ps1 `
     -DllDir "D:\LightningChart72\Lib\Arction" `
     -ManualPdf "D:\LightningChart72\LightningChart Users Manual.pdf"
+
+.NOTES
+  The corpus OUTPUT location is anchored to the SCRIPT's own location ($PSScriptRoot), not the source
+  folder or the current directory: it writes to the skill's references/ (repo) or ${CLAUDE_PLUGIN_DATA}
+  (installed plugin). So running from inside the source folder never confuses where the corpus lands.
 #>
 param(
     [string]$SourceDir,
@@ -79,10 +89,10 @@ if (-not $OutDir) {
 }
 
 if (-not $SourceDir -and -not $DllDir -and -not $ManualPdf) {
-    Stop-Setup "No inputs given." @(
-        "Pass -SourceDir <folder containing the 7.2 SDK DLLs and the manual PDF>,",
-        "or pass -DllDir and -ManualPdf explicitly."
-    )
+    # Default: assume the script is run from inside the folder holding the DLLs + manual PDF, so the
+    # user can just drop the files in a folder, run the script there, and be done -- no paths to pass.
+    $SourceDir = (Get-Location).Path
+    Write-Step "No -SourceDir given; using the current directory as the source: $SourceDir"
 }
 if ($SourceDir -and -not (Test-Path -LiteralPath $SourceDir)) {
     Stop-Setup "SourceDir not found: $SourceDir" @("Pass a folder that contains the 7.2 SDK DLLs and the User's Manual PDF.")

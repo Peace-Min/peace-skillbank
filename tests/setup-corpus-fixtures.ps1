@@ -15,10 +15,23 @@ $ErrorActionPreference = "Stop"
 $setup = Join-Path $RepositoryRoot "skills\lightningchart-72\scripts\setup-local-corpus.ps1"
 if (-not (Test-Path -LiteralPath $setup)) { throw "Missing setup CLI: $setup" }
 
+# Run the setup script as a child process with a controlled working directory so we can test the
+# "default -SourceDir to the current directory" behavior deterministically.
 function Invoke-Setup {
-    param([string[]]$ScriptArgs)
-    $out = & powershell -NoProfile -ExecutionPolicy Bypass -File $setup @ScriptArgs 2>&1 | Out-String
-    return [pscustomobject]@{ Code = $LASTEXITCODE; Out = $out }
+    param([string[]]$ScriptArgs = @(), [string]$WorkingDir = $RepositoryRoot)
+    $outFile = [System.IO.Path]::GetTempFileName()
+    $errFile = [System.IO.Path]::GetTempFileName()
+    try {
+        $allArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $setup) + $ScriptArgs
+        $p = Start-Process -FilePath "powershell" -ArgumentList $allArgs -WorkingDirectory $WorkingDir `
+            -NoNewWindow -Wait -PassThru -RedirectStandardOutput $outFile -RedirectStandardError $errFile
+        $out = (Get-Content -Raw -LiteralPath $outFile -ErrorAction SilentlyContinue)
+        $out += (Get-Content -Raw -LiteralPath $errFile -ErrorAction SilentlyContinue)
+        return [pscustomobject]@{ Code = $p.ExitCode; Out = [string]$out }
+    }
+    finally {
+        Remove-Item -LiteralPath $outFile, $errFile -Force -ErrorAction SilentlyContinue
+    }
 }
 
 $work = Join-Path $env:TEMP ("setup-corpus-fixtures-" + [System.Guid]::NewGuid().ToString("N"))
@@ -36,10 +49,11 @@ function Check {
     else { $script:failures += "  [FAIL] $Name$(if ($Detail) { " -- $Detail" })" }
 }
 
-# 1) No inputs at all -> abort with usage guidance.
-$r = Invoke-Setup @()
-Check "no inputs aborts non-zero" ($r.Code -ne 0) "exit $($r.Code)"
-Check "no inputs explains the inputs needed" ($r.Out -match 'No inputs given') $r.Out
+# 1) No args: defaults to the current directory as the source. Run from an empty dir -> DLL not found.
+$r = Invoke-Setup -WorkingDir $emptyDir
+Check "no args falls back to current directory" ($r.Out -match 'using the current directory') $r.Out
+Check "current-dir source with no DLL aborts non-zero" ($r.Code -ne 0) "exit $($r.Code)"
+Check "current-dir source names the missing DLL folder" ($r.Out -match 'DLL folder') $r.Out
 
 # 2) SourceDir present but empty -> cannot find the DLL folder.
 $r = Invoke-Setup @("-SourceDir", $emptyDir)

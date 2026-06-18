@@ -32,7 +32,9 @@ function Test-DiagSessionAnalysisReport {
 
     $missing = New-Object System.Collections.Generic.List[string]
     foreach ($heading in (Get-DiagSessionAnalysisReportHeadings)) {
-        if (-not $content.Contains($heading)) {
+        # Require the heading at the start of a line (a real Markdown heading), not buried mid-line.
+        # Trailing text after the heading is allowed so a valid report is not falsely rejected.
+        if ($content -notmatch ("(?m)^" + [regex]::Escape($heading))) {
             $missing.Add($heading)
         }
     }

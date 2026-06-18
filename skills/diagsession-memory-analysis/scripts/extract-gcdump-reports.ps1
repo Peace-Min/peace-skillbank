@@ -82,25 +82,37 @@ function Invoke-GcdumpReport {
     $startInfo.RedirectStandardOutput = $true
     $startInfo.RedirectStandardError = $true
     $startInfo.CreateNoWindow = $true
+    # dotnet-gcdump writes UTF-8; decode it as UTF-8 so non-ASCII text and paths (e.g. Korean) are not
+    # mangled by the console OEM/CP949 code page under Windows PowerShell 5.1. This also keeps the
+    # echoed paths byte-accurate so ConvertTo-LlmSafeText can redact them.
+    $startInfo.StandardOutputEncoding = [System.Text.Encoding]::UTF8
+    $startInfo.StandardErrorEncoding = [System.Text.Encoding]::UTF8
 
     $process = [System.Diagnostics.Process]::Start($startInfo)
-    # Read both streams concurrently to avoid a pipe-buffer deadlock when the child fills one
-    # stream (e.g. a large stderr) while the parent blocks reading the other to completion.
-    $stdoutTask = $process.StandardOutput.ReadToEndAsync()
-    $stderrTask = $process.StandardError.ReadToEndAsync()
-    $process.WaitForExit()
-    $stdout = $stdoutTask.Result
-    $stderr = $stderrTask.Result
+    try {
+        # Read both streams concurrently to avoid a pipe-buffer deadlock when the child fills one
+        # stream (e.g. a large stderr) while the parent blocks reading the other to completion.
+        $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+        $stderrTask = $process.StandardError.ReadToEndAsync()
+        if (-not $process.WaitForExit(180000)) {
+            try { $process.Kill() } catch {}
+            throw "dotnet-gcdump report timed out (180s) for '$GcdumpPath'."
+        }
+        $stdout = $stdoutTask.Result
+        $stderr = $stderrTask.Result
 
-    if ($process.ExitCode -ne 0) {
-        throw "dotnet-gcdump report failed for '$GcdumpPath': $stderr"
+        if ($process.ExitCode -ne 0) {
+            throw "dotnet-gcdump report failed for '$GcdumpPath': $stderr"
+        }
+
+        if ($stderr) {
+            return ($stdout.TrimEnd() + [Environment]::NewLine + $stderr.TrimEnd())
+        }
+        return $stdout
     }
-
-    if ($stderr) {
-        return ($stdout.TrimEnd() + [Environment]::NewLine + $stderr.TrimEnd())
+    finally {
+        $process.Dispose()
     }
-
-    return $stdout
 }
 
 function Format-LlmPath {
@@ -133,7 +145,8 @@ function ConvertTo-LlmSafeText {
             $safeText = [regex]::Replace(
                 $safeText,
                 [regex]::Escape($item.FullPath),
-                [System.Text.RegularExpressions.MatchEvaluator]{ param($match) $item.SafeName }
+                [System.Text.RegularExpressions.MatchEvaluator]{ param($match) $item.SafeName },
+                [System.Text.RegularExpressions.RegexOptions]::IgnoreCase
             )
         }
     }
@@ -262,13 +275,13 @@ New-Item -ItemType Directory -Force -Path $extractDirectory, $reportDirectory | 
 
 $snapshots = New-Object System.Collections.Generic.List[object]
 
-foreach ($input in $resolvedInputs) {
-    $extension = [System.IO.Path]::GetExtension($input)
+foreach ($inputPath in $resolvedInputs) {
+    $extension = [System.IO.Path]::GetExtension($inputPath)
 
     if ($extension -ieq ".gcdump") {
         $snapshots.Add([pscustomobject]@{
-            Source = $input
-            Gcdump = $input
+            Source = $inputPath
+            Gcdump = $inputPath
             ArchiveIndex = $null
             ArchiveEntry = $null
             ArchiveEntryLastWriteTime = $null
@@ -278,13 +291,13 @@ foreach ($input in $resolvedInputs) {
     }
 
     if ($extension -ieq ".diagsession") {
-        $sessionName = Get-SafeFileName -Name ([System.IO.Path]::GetFileNameWithoutExtension($input))
+        $sessionName = Get-SafeFileName -Name ([System.IO.Path]::GetFileNameWithoutExtension($inputPath))
         $sessionExtractDirectory = Join-Path $extractDirectory $sessionName
         New-Item -ItemType Directory -Force -Path $sessionExtractDirectory | Out-Null
 
-        foreach ($extracted in (Extract-GcdumpsFromDiagSession -DiagSessionPath $input -ExtractDirectory $sessionExtractDirectory)) {
+        foreach ($extracted in (Extract-GcdumpsFromDiagSession -DiagSessionPath $inputPath -ExtractDirectory $sessionExtractDirectory)) {
             $snapshots.Add([pscustomobject]@{
-                Source = $input
+                Source = $inputPath
                 Gcdump = $extracted.Gcdump
                 ArchiveIndex = $extracted.ArchiveIndex
                 ArchiveEntry = $extracted.ArchiveEntry
@@ -318,6 +331,8 @@ if ($snapshots.Count -eq 0) {
     ""
 ) | Out-File -FilePath $manifestPath -Encoding utf8
 
+# Generate reports; always clean up extracted dumps afterward (even on a mid-run failure).
+try {
 $index = 0
 foreach ($snapshot in $snapshots) {
     $index++
@@ -385,8 +400,13 @@ foreach ($snapshot in $snapshots) {
     $llmReportOutput | Out-File -FilePath $combinedReportPath -Encoding utf8 -Append
 }
 
-if (-not $KeepExtractedGcdump) {
-    Remove-Item -LiteralPath $extractDirectory -Recurse -Force
+}
+finally {
+    # Honor the 'removed-after-report' retention promise even if a report threw mid-run.
+    # Guarded so cleanup never masks the original error.
+    if (-not $KeepExtractedGcdump -and (Test-Path -LiteralPath $extractDirectory)) {
+        Remove-Item -LiteralPath $extractDirectory -Recurse -Force -ErrorAction SilentlyContinue
+    }
 }
 
 Write-Host "Processed $($snapshots.Count) gcdump snapshot(s)."

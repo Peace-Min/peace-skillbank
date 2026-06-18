@@ -15,15 +15,21 @@ except Exception:
 
 
 def default_ref_dir():
-    # Installed as a plugin, the corpus lives in the persistent plugin data dir
-    # (${CLAUDE_PLUGIN_DATA}/references), not the read-only/ephemeral plugin cache. Prefer that when
-    # it holds a built corpus; otherwise fall back to the script-relative references/ (repo / dev).
+    # Resolve the corpus dir, kept SYMMETRIC with setup-local-corpus.ps1 and verify-symbols.py:
+    #   1. ${CLAUDE_PLUGIN_DATA}/references (installed plugin, env set inside Claude Code),
+    #   2. ~/.claude/plugins/data/*peace-skillbank*/references discovered on disk (cache run, no env),
+    #   3. the script-relative references/ (repo / dev checkout).
     data = os.environ.get("CLAUDE_PLUGIN_DATA")
     if data:
-        cand = os.path.join(data, "references")
-        if os.path.exists(os.path.join(cand, "api-symbols.txt")) or os.path.exists(os.path.join(cand, "manual-index.json")):
-            return cand
-    return os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "references")
+        return os.path.join(data, "references")
+    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if (os.sep + "plugins" + os.sep + "cache" + os.sep) in (here.replace("/", os.sep) + os.sep):
+        import glob
+        home = os.environ.get("USERPROFILE") or os.path.expanduser("~")
+        hits = sorted(glob.glob(os.path.join(home, ".claude", "plugins", "data", "*peace-skillbank*", "references")))
+        if hits:
+            return hits[0]
+    return os.path.join(here, "references")
 
 
 def main():

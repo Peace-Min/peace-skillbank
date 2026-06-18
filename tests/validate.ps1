@@ -128,8 +128,12 @@ Assert-Condition ($claudeMarketplace.metadata.description.Length -gt 0) "Claude 
 Assert-Condition ($claudeMarketplace.plugins.Count -ge 1) "Claude marketplace must list at least one plugin"
 Assert-Condition ($claudeMarketplace.plugins[0].source -eq "./") "Claude marketplace plugin should source the repository root"
 Assert-Condition ($claudeMarketplace.plugins[0].version -eq $claudePlugin.version) "Marketplace version must match plugin version"
+Assert-Condition ($claudeMarketplace.plugins[0].name -eq $claudePlugin.name) "Marketplace plugin name must match plugin manifest name"
+Assert-Condition ($claudeMarketplace.plugins[0].description -eq $claudePlugin.description) "Marketplace plugin description must stay in sync with plugin manifest"
+Assert-Condition ($claudeMarketplace.plugins[0].license -eq $claudePlugin.license) "Marketplace plugin license must match plugin manifest"
+Assert-Condition ($claudeMarketplace.plugins[0].repository -eq $claudePlugin.repository) "Marketplace plugin repository must match plugin manifest"
 
-foreach ($powershellScriptPath in @($scriptPath, $loopScriptPath, $skillEvalLoopScriptPath, $responseValidatorPath, $responseContractPath)) {
+foreach ($powershellScriptPath in @($scriptPath, $loopScriptPath, $skillEvalLoopScriptPath, $responseValidatorPath, $responseContractPath, (Join-Path $RepositoryRoot "tests\build-fixture.ps1"))) {
     Test-PowerShellSyntax -Path $powershellScriptPath
 }
 
@@ -159,7 +163,7 @@ else {
 
 $gitIgnorePath = Join-Path $RepositoryRoot ".gitignore"
 $gitIgnore = Get-Content -Raw -LiteralPath $gitIgnorePath
-foreach ($pattern in @("*.diagsession", "*.gcdump", "LLM_MEMORY_INPUT.txt", "MANIFEST.txt", "reports/", "extracted-gcdumps/", "LLM_REQUEST.md", "ANALYSIS.md", "MODEL_RESPONSE.md", "RESPONSE_VALIDATION.md")) {
+foreach ($pattern in @("*.diagsession", "*.gcdump", "*.heapstat.txt", "*.log", "LLM_MEMORY_INPUT.txt", "MANIFEST.txt", "reports/", "extracted-gcdumps/", "out/", "LLM_REQUEST.md", "ANALYSIS.md", "MODEL_RESPONSE.md", "MODEL_RESPONSE.stderr.txt", "RUN_SUMMARY.md", "RESPONSE_VALIDATION.md")) {
     Assert-Condition ($gitIgnore -match [regex]::Escape($pattern)) "Missing .gitignore pattern: $pattern"
 }
 
@@ -220,7 +224,7 @@ Assert-Condition (Test-Path -LiteralPath $lcSetupFixtures) "Missing setup-corpus
 Test-PowerShellSyntax -Path $lcSetupFixtures
 & $lcSetupFixtures -RepositoryRoot $RepositoryRoot
 
-foreach ($lcPattern in @("skills/lightningchart-72/references/manual/", "skills/lightningchart-72/references/api-index.json", "skills/lightningchart-72/references/demos/*")) {
+foreach ($lcPattern in @("skills/lightningchart-72/references/manual/", "skills/lightningchart-72/references/manual-index.json", "skills/lightningchart-72/references/api-index.json", "skills/lightningchart-72/references/api-symbols.txt", "skills/lightningchart-72/references/demos/*", "*.dll")) {
     Assert-Condition ($gitIgnore -match [regex]::Escape($lcPattern)) "Missing .gitignore pattern: $lcPattern"
 }
 

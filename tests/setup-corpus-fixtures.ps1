@@ -42,6 +42,19 @@ New-Item -ItemType Directory -Path $dllOnlyDir | Out-Null
 # A fake main assembly so DLL auto-detection succeeds (existence only; never loaded in preflight).
 New-Item -ItemType File -Path (Join-Path $dllOnlyDir "Vendor.LightningChartUltimate.WPF.dll") | Out-Null
 
+# Release-notes-only folder: a non-manual LightningChart PDF must NOT be auto-picked as the manual.
+$relNotesDir = Join-Path $work "relnotes"
+New-Item -ItemType Directory -Path $relNotesDir | Out-Null
+New-Item -ItemType File -Path (Join-Path $relNotesDir "Vendor.LightningChartUltimate.WPF.dll") | Out-Null
+New-Item -ItemType File -Path (Join-Path $relNotesDir "LightningChart-ReleaseNotes.pdf") | Out-Null
+
+# Both a real-looking manual and a release-notes PDF: the manual-shaped name must win.
+$bothPdfDir = Join-Path $work "both-pdf"
+New-Item -ItemType Directory -Path $bothPdfDir | Out-Null
+New-Item -ItemType File -Path (Join-Path $bothPdfDir "Vendor.LightningChartUltimate.WPF.dll") | Out-Null
+New-Item -ItemType File -Path (Join-Path $bothPdfDir "LightningChart-ReleaseNotes.pdf") | Out-Null
+New-Item -ItemType File -Path (Join-Path $bothPdfDir "LightningChart Users Manual.pdf") | Out-Null
+
 $failures = @()
 function Check {
     param([string]$Name, [bool]$Ok, [string]$Detail = "")
@@ -65,6 +78,15 @@ $r = Invoke-Setup @("-SourceDir", $dllOnlyDir)
 Check "dll-only SourceDir aborts non-zero" ($r.Code -ne 0) "exit $($r.Code)"
 Check "dll-only SourceDir auto-detected the DLL folder" ($r.Out -match 'Auto-detected DLL folder') $r.Out
 Check "dll-only SourceDir names the missing manual PDF" ($r.Out -match "User's Manual PDF") $r.Out
+
+# 4) A release-notes-only LightningChart PDF must NOT be auto-detected as the manual.
+$r = Invoke-Setup @("-SourceDir", $relNotesDir)
+Check "release-notes PDF is not auto-picked as the manual" ($r.Out -notmatch 'Auto-detected manual PDF') $r.Out
+Check "release-notes-only aborts on missing manual PDF" (($r.Code -ne 0) -and ($r.Out -match "User's Manual PDF")) $r.Out
+
+# 5) When a manual-shaped PDF and a release-notes PDF coexist, the manual wins.
+$r = Invoke-Setup @("-SourceDir", $bothPdfDir)
+Check "manual-shaped PDF wins over release-notes" ($r.Out -match 'Auto-detected manual PDF:.*Users Manual') $r.Out
 
 Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
 

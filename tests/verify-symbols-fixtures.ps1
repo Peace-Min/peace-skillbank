@@ -98,6 +98,11 @@ $cases = @(
     @{ Name = "fallback: known qualified -> 0"; Draft = 'Use FixtureSeries.LineColor here.'; Dir = $symbolsDir; Strict = $false; Expect = 0 }
     @{ Name = "fallback: unknown qualified -> 1"; Draft = 'Use FixtureSeries.RainbowMode here.'; Dir = $symbolsDir; Strict = $false; Expect = 1 }
     @{ Name = "fallback: generic member without backtick -> 0"; Draft = 'Read FixtureGeneric.Payload here.'; Dir = $symbolsDir; Strict = $true; Expect = 0 }
+
+    # --- regression guards for verifier edge cases the audit found ---
+    @{ Name = "prose apostrophe does not swallow a following bad ctor -> 1"; Draft = 'Adjust the chart''s color, then new FixtureSeries(view, xAxis, yAxis, zAxis, extra).'; Dir = $indexDir; Strict = $false; Expect = 1 }
+    @{ Name = "chained invented member is flagged -> 1"; Draft = 'Call FixtureSeries.Clear.Deeper to reset.'; Dir = $indexDir; Strict = $true; Expect = 1 }
+    @{ Name = "generic ctor with nested angle brackets, bad arity -> 1"; Draft = 'Create with new FixtureGeneric<Func<int>>(a, b, c).'; Dir = $indexDir; Strict = $false; Expect = 1 }
 )
 
 $failures = @()

@@ -100,10 +100,14 @@ if ($SourceDir -and -not (Test-Path -LiteralPath $SourceDir)) {
 
 # --- Resolve the DLL folder (existence only; the actual load happens in build-api-index.ps1). ---
 if (-not $DllDir -and $SourceDir) {
-    $mainDll = Get-ChildItem -LiteralPath $SourceDir -Recurse -Filter "*LightningChartUltimate*.dll" -ErrorAction SilentlyContinue |
-        Select-Object -First 1
-    if ($mainDll) {
-        $DllDir = $mainDll.DirectoryName
+    $mainDlls = @(Get-ChildItem -LiteralPath $SourceDir -Recurse -Filter "*LightningChartUltimate*.dll" -ErrorAction SilentlyContinue)
+    $mainDirs = @($mainDlls | Select-Object -ExpandProperty DirectoryName -Unique)
+    if ($mainDirs.Count -gt 1) {
+        Write-Step "WARNING: multiple *LightningChartUltimate*.dll locations found; using the first. Pass -DllDir to pick a specific edition:"
+        foreach ($d in $mainDirs) { Write-Host "          $d" }
+    }
+    if ($mainDlls.Count -ge 1) {
+        $DllDir = $mainDlls[0].DirectoryName
         Write-Step "Auto-detected DLL folder: $DllDir"
     }
 }
@@ -116,10 +120,15 @@ if (-not $DllDir -or -not (Test-Path -LiteralPath $DllDir)) {
 
 # --- Resolve the manual PDF. ---
 if (-not $ManualPdf -and $SourceDir) {
-    foreach ($pat in @("*User*Manual*.pdf", "*Manual*.pdf", "*LightningChart*.pdf")) {
-        $pdf = Get-ChildItem -LiteralPath $SourceDir -Recurse -Filter $pat -ErrorAction SilentlyContinue |
-            Select-Object -First 1
-        if ($pdf) { $ManualPdf = $pdf.FullName; Write-Step "Auto-detected manual PDF: $ManualPdf"; break }
+    # Match user-manual-shaped names only; do NOT fall back to any *LightningChart*.pdf, so a
+    # brochure / release-notes / installer PDF is never silently indexed as the manual.
+    foreach ($pat in @("*User*Manual*.pdf", "*Manual*.pdf")) {
+        $pdfs = @(Get-ChildItem -LiteralPath $SourceDir -Recurse -Filter $pat -ErrorAction SilentlyContinue)
+        if ($pdfs.Count -gt 1) {
+            Write-Step "WARNING: multiple '$pat' matches; using the first. Pass -ManualPdf to choose:"
+            foreach ($p in $pdfs) { Write-Host "          $($p.FullName)" }
+        }
+        if ($pdfs.Count -ge 1) { $ManualPdf = $pdfs[0].FullName; Write-Step "Auto-detected manual PDF: $ManualPdf"; break }
     }
 }
 if (-not $ManualPdf -or -not (Test-Path -LiteralPath $ManualPdf)) {
@@ -174,6 +183,20 @@ catch {
     )
 }
 
+# Fail fast BEFORE the slow Tier 2 pass if Tier 1 produced no usable index (honor the documented
+# "aborts without building a partial corpus" promise -- e.g. a non-throwing reflection load failure
+# that yields a zero-type api-index.json).
+$apiIndexEarly = Join-Path $OutDir "api-index.json"
+$earlyTypeCount = 0
+if (Test-Path -LiteralPath $apiIndexEarly) {
+    try { $earlyTypeCount = (Get-Content -Raw -Encoding UTF8 -LiteralPath $apiIndexEarly | ConvertFrom-Json).typeCount } catch {}
+}
+if ($earlyTypeCount -le 0) {
+    Stop-Setup "Tier 1 produced an empty API index (0 types)." @(
+        "DLL reflection likely failed. Check that -DllDir holds the 7.2 Arction assemblies and their sibling dependencies."
+    )
+}
+
 # --- Build Tier 2 (manual index). ---
 Write-Step "(2/2) Building Tier 2 manual index..."
 & $pythonExe @pythonPre (Join-Path $scriptDir "build-manual-index.py") $ManualPdf $OutDir
@@ -198,7 +221,7 @@ foreach ($f in @($apiIndex, $apiSymbols, $manualIndex)) {
 
 $typeCount = 0; $sectionCount = 0; $mdCount = 0
 if (Test-Path -LiteralPath $apiIndex) {
-    try { $typeCount = (Get-Content -Raw -LiteralPath $apiIndex | ConvertFrom-Json).typeCount }
+    try { $typeCount = (Get-Content -Raw -Encoding UTF8 -LiteralPath $apiIndex | ConvertFrom-Json).typeCount }
     catch { $problems += "api-index.json is not valid JSON" }
 }
 if (Test-Path -LiteralPath $manualIndex) {
@@ -209,6 +232,7 @@ if (Test-Path -LiteralPath $manualDir) {
     $mdCount = @(Get-ChildItem -LiteralPath $manualDir -Filter *.md -ErrorAction SilentlyContinue).Count
 }
 if ($typeCount -le 0) { $problems += "api-index.json reports no types" }
+if ($sectionCount -le 0) { $problems += "manual-index.json reports no sections (is this the LightningChart User's Manual PDF?)" }
 if ($sectionCount -ne $mdCount) { $problems += "manual sections ($sectionCount) != manual/*.md files ($mdCount)" }
 
 Write-Step "  api types      : $typeCount"

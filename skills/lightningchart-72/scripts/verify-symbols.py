@@ -23,16 +23,24 @@ except Exception:
 
 
 def default_ref_dir():
-    # Installed as a plugin, the corpus is generated into the persistent plugin data dir
-    # (${CLAUDE_PLUGIN_DATA}/references) because the plugin cache itself is read-only and wiped on
-    # update. Prefer that when it holds a built corpus; otherwise fall back to the script-relative
-    # references/ (repo / dev checkout).
+    # Resolve where the local corpus lives, kept SYMMETRIC with setup-local-corpus.ps1's output dir:
+    #   1. ${CLAUDE_PLUGIN_DATA}/references -- installed-plugin persistent data dir (env set inside
+    #      Claude Code). Honored even if not built yet, so the "not built" message points at the real
+    #      location instead of the read-only plugin cache.
+    #   2. ~/.claude/plugins/data/*peace-skillbank*/references -- the same data dir discovered on disk
+    #      when running from the read-only plugin cache outside Claude Code (no env var).
+    #   3. the script-relative references/ -- repo / dev checkout.
     data = os.environ.get("CLAUDE_PLUGIN_DATA")
     if data:
-        cand = os.path.join(data, "references")
-        if os.path.exists(os.path.join(cand, "api-index.json")) or os.path.exists(os.path.join(cand, "api-symbols.txt")):
-            return cand
-    return os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "references")
+        return os.path.join(data, "references")
+    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if (os.sep + "plugins" + os.sep + "cache" + os.sep) in (here.replace("/", os.sep) + os.sep):
+        import glob
+        home = os.environ.get("USERPROFILE") or os.path.expanduser("~")
+        hits = sorted(glob.glob(os.path.join(home, ".claude", "plugins", "data", "*peace-skillbank*", "references")))
+        if hits:
+            return hits[0]
+    return os.path.join(here, "references")
 
 
 def _strip_arity(name):
@@ -91,14 +99,17 @@ def candidates(text):
 
 
 def _strip_code_literals(s):
-    """Replace string/char literals with a single placeholder and drop comments, so commas or
-    parens inside them cannot corrupt constructor argument counting. A literal still counts as
-    one argument, so it collapses to a non-delimiter placeholder rather than vanishing."""
+    """Replace double-quoted string literals with a single placeholder and drop comments, so commas
+    or parens inside them cannot corrupt constructor argument counting. A literal still counts as one
+    argument, so it collapses to a non-delimiter placeholder rather than vanishing. NOTE: a lone ASCII
+    apostrophe is NOT treated as a char-literal opener -- the input is English prose+code where
+    apostrophes are overwhelmingly contractions/possessives, and treating `'` as a delimiter would let
+    "the series' new ChartXY(...)" swallow the following constructor call and skip the arity check."""
     out = []
     i, n = 0, len(s)
     while i < n:
         c = s[i]
-        if c == '"' or c == "'":
+        if c == '"':
             q = c
             i += 1
             while i < n:
@@ -174,7 +185,7 @@ def main():
 
     types, qualified, members, ctor_arities = load_index(ref_dir)
     if not types:
-        print("api-index not built (run scripts/build-api-index.ps1). Cannot verify.")
+        print(f"api-index not built at {ref_dir} (run scripts/setup-local-corpus.ps1). Cannot verify.")
         sys.exit(2)
 
     qual, bare = candidates(text)
@@ -190,6 +201,15 @@ def main():
     bare_known = sorted(b for b in bare if b in types or b in members)
     bare_unknown = sorted(b for b in bare if b not in types and b not in members)
 
+    # Chained citations Type.A.B... -- candidates() only verifies the head Type.A pair, so a deeper
+    # invented segment (e.g. an extra .Frobnicate) would otherwise escape every net. Flag any chain
+    # whose deeper segment is not a known member/type name.
+    chain_unverified = []
+    for ch in sorted(set(re.findall(r"\b[A-Z][A-Za-z0-9]+(?:\.[A-Za-z_][A-Za-z0-9_]+){2,}\b", text))):
+        deeper = ch.split(".")[2:]
+        if any(seg not in members and seg not in types for seg in deeper):
+            chain_unverified.append(ch)
+
     # Single-word PascalCase identifiers cited inside inline-code spans. These bypass candidates()
     # entirely, so they are the main leak path for invented members on a weak model.
     code_single = set()
@@ -200,6 +220,11 @@ def main():
     code_member_bare = sorted(t for t in code_single if t in members and t not in types)
 
     ctor_issues = []
+    # NOTE: we check constructor ARITY but deliberately do not flag an unknown ctor type as invented.
+    # A multi-hump invented type (new TotallyMadeUpSeries(...)) is already caught by the strict
+    # bare-name net; flagging every unknown ctor type would false-positive on legitimate BCL types
+    # used in examples (new List<int>(), new StringBuilder(), new Point(...)), which are out of the
+    # 7.2 API scope but not hallucinations.
     for typ, count in constructor_calls(text):
         if typ in ctor_arities and count not in ctor_arities[typ]:
             ctor_issues.append(
@@ -217,6 +242,10 @@ def main():
         print(f"UNVERIFIED constructors ({len(ctor_issues)}) -- arity not in the 7.2 API index:")
         for c in ctor_issues:
             print(f"  X {c}")
+    if chain_unverified:
+        print(f"UNVERIFIED chained members ({len(chain_unverified)}) -- a deeper segment is not in the 7.2 API index:")
+        for c in chain_unverified:
+            print(f"  X {c}")
     if bare_unknown:
         tag = "REVIEW -- strict: qualify as Type.Member or remove" if strict else "info"
         print(f"({tag}) bare PascalCase not in index ({len(bare_unknown)}): " + ", ".join(bare_unknown[:30]))
@@ -227,7 +256,8 @@ def main():
         print(f"(REVIEW -- strict: qualify as Type.Member) bare inline members ({len(code_member_bare)}): "
               + ", ".join(code_member_bare[:30]))
 
-    fail = bool(unverified) or bool(ctor_issues) or (strict and bool(bare_unknown)) or (strict and bool(code_unknown))
+    fail = (bool(unverified) or bool(ctor_issues) or bool(chain_unverified)
+            or (strict and bool(bare_unknown)) or (strict and bool(code_unknown)))
     sys.exit(1 if fail else 0)
 
 

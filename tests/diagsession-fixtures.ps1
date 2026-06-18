@@ -110,6 +110,67 @@ $contractThrew = $false
 try { Test-DiagSessionAnalysisReport -ResponsePath $badReport | Out-Null } catch { $contractThrew = $true }
 Check "incomplete report fails the contract" $contractThrew
 
+# --- 5) Invoke-GcdumpReport must not deadlock on large stdout+stderr (regression guard for the
+#        concurrent ReadToEndAsync fix), must append stderr after stdout, and must throw on non-zero
+#        exit. A stub console exe emits ~200 KB to each stream (well past the OS pipe buffer); a
+#        regression to sequential ReadToEnd()+WaitForExit() would deadlock and time out the job. ---
+$stubExe = Join-Path $work "gcdump-stub.exe"
+$stubSrc = @"
+using System;
+class P {
+  static int Main(string[] a) {
+    string p = a.Length > 1 ? a[1] : "";
+    if (p.IndexOf("FAIL", StringComparison.OrdinalIgnoreCase) >= 0) { Console.Error.Write("boom-failure"); return 1; }
+    var big = new string('x', 200000);
+    Console.Out.Write(big);
+    Console.Error.Write(big);
+    return 0;
+  }
+}
+"@
+$stubBuilt = $true
+try { Add-Type -TypeDefinition $stubSrc -OutputAssembly $stubExe -OutputType ConsoleApplication -ErrorAction Stop }
+catch { $stubBuilt = $false; Write-Host "  [skip] C# stub compile unavailable; skipping Invoke-GcdumpReport large-output test" }
+
+if ($stubBuilt) {
+    $bigGc = Join-Path $work "big.gcdump"
+    $failGc = Join-Path $work "FAIL.gcdump"
+    Set-Content -LiteralPath $bigGc -Value "x"
+    Set-Content -LiteralPath $failGc -Value "x"
+
+    $okJob = Start-Job -ScriptBlock {
+        param($script, $exe, $gc)
+        . $script -InputPath "dot-source-only.gcdump"
+        Invoke-GcdumpReport -Tool $exe -GcdumpPath $gc
+    } -ArgumentList $extractScript, $stubExe, $bigGc
+    if (Wait-Job $okJob -Timeout 30) {
+        $combined = (Receive-Job $okJob) -join ""
+        Remove-Job $okJob -Force
+        Check "Invoke-GcdumpReport returns on large stdout+stderr (no deadlock)" $true
+        Check "large stdout+stderr combined (~400KB)" ($combined.Length -ge 390000) "len=$($combined.Length)"
+    }
+    else {
+        Stop-Job $okJob -ErrorAction SilentlyContinue; Remove-Job $okJob -Force -ErrorAction SilentlyContinue
+        Check "Invoke-GcdumpReport returns on large stdout+stderr (no deadlock)" $false "timed out -- likely a sequential-read regression"
+    }
+
+    $failJob = Start-Job -ScriptBlock {
+        param($script, $exe, $gc)
+        . $script -InputPath "dot-source-only.gcdump"
+        try { Invoke-GcdumpReport -Tool $exe -GcdumpPath $gc | Out-Null; "NOTHROW" }
+        catch { "THREW:" + $_.Exception.Message }
+    } -ArgumentList $extractScript, $stubExe, $failGc
+    if (Wait-Job $failJob -Timeout 30) {
+        $fr = (Receive-Job $failJob) -join ""
+        Remove-Job $failJob -Force
+        Check "non-zero gcdump exit throws with stderr in the message" (($fr -like "THREW:*") -and ($fr -match "boom-failure")) $fr
+    }
+    else {
+        Stop-Job $failJob -ErrorAction SilentlyContinue; Remove-Job $failJob -Force -ErrorAction SilentlyContinue
+        Check "non-zero gcdump exit throws with stderr in the message" $false "timed out"
+    }
+}
+
 Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
 
 if ($failures.Count -gt 0) {

@@ -121,6 +121,8 @@ function Invoke-TextModel {
     $startInfo.RedirectStandardOutput = $true
     $startInfo.RedirectStandardError = $true
     $startInfo.CreateNoWindow = $true
+    # Write the (possibly Korean) request as UTF-8 with no BOM, not the console OEM/CP949 code page.
+    $startInfo.StandardInputEncoding = New-Object System.Text.UTF8Encoding($false)
 
     $process = [System.Diagnostics.Process]::Start($startInfo)
     # Start draining output before writing stdin, and read both streams concurrently,

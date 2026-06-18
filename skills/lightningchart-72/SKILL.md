@@ -26,10 +26,13 @@ Generated locally per machine and **not committed** (see `README.md` for one-tim
 
 1. **Find the symbol.** Search BOTH `manual-index.json` (titles/keywords) and `api-symbols.txt`. The
    manual translates intent ("color palette") into the API name -- but it is incomplete, so **absence
-   from the manual is normal, not a stop**: go straight to `api-symbols.txt` / `api-index.json` for the
-   exact symbol.
-2. **Existence + signature ← Tier 1 only** (`api-index.json`). It is the sole authority for whether a
-   type/property/method/enum exists and for its exact signature. Confirm every symbol here. Never
+   from the manual is normal, not a stop**: go straight to `api-symbols.txt` for the exact symbol (grep
+   it; do not Read `api-index.json`). If `search.py` returns no manual section, grep
+   `references/manual/*.md` directly before concluding a topic is undocumented.
+2. **Existence + signature ← Tier 1 only.** Confirm every symbol by grepping `api-symbols.txt` (sorted,
+   grep-friendly) or `python scripts/search.py "<term>"`. **Never `Read` `api-index.json` directly: it
+   is a single ~740 KB line and will blow your context** -- only the verify hook parses it. For a type's
+   members or a method/constructor signature, `grep "^TypeName\." references/api-symbols.txt`. Never
    answer an existence question from the manual.
 3. **Meaning ← Tier 2.** Read the matched manual chunk for what it does + any C# snippet; cite
    `§<section> (p<page>)`.
@@ -45,14 +48,20 @@ Generated locally per machine and **not committed** (see `README.md` for one-tim
    DOES, report its existence and signature only and say *"exists in the 7.2 API; behavior not
    documented in the local manual or used in this project -- I won't guess what it does."* **Never infer
    behavior from a type/member name.**
+6a. **Constructors (`new Type(...)`).** Series/axes/objects are created via constructors. The verify
+   hook records constructor arities and flags any `new Type(...)` whose argument count is not a real
+   7.2 constructor. Confirm the type exists in Tier 1, but take the exact constructor argument list
+   from a Tier 2 manual snippet or Tier 3 project code -- **never reconstruct `new Type(view, xAxis,
+   yAxis)` from memory.** If no local source shows the call, say "the type exists; get its exact
+   constructor arguments from a manual example or project usage."
 7. **Verify hook (required).** Run `python scripts/verify-symbols.py --strict -` on your draft.
    - **exit 0** → all cited symbols verified; you may assert them.
    - **exit 1** → remove or qualify every `X`-flagged symbol before answering (qualified-unknown =
      invented; bare-unknown under `--strict` = must be qualified or removed).
    - **exit 2** → index not built → say the corpus is unavailable; do NOT answer with citations.
-   The hook confirms a member EXISTS; it does **not** validate method signatures/parameter lists -- so
-   when you cite a method signature, **quote it verbatim** from the manual snippet or the
-   `api-index.json` entry, never reconstruct it from memory.
+   The hook confirms a member EXISTS and checks constructor argument COUNT; it does **not** validate
+   method signatures/parameter types -- so when you cite a method signature, **quote it verbatim** from
+   the manual snippet or the api index entry, never reconstruct it from memory.
 
 ## Output rules
 

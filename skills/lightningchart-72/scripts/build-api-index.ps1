@@ -90,6 +90,15 @@ foreach ($t in $types) {
             }
         } catch {}
         $rec.methods = $methods
+
+        $ctors = New-Object System.Collections.Generic.List[object]
+        try {
+            foreach ($c in $t.GetConstructors()) {
+                $cparams = @($c.GetParameters() | ForEach-Object { [ordered]@{ n = $_.Name; t = $_.ParameterType.Name } })
+                $ctors.Add([ordered]@{ params = $cparams })
+            }
+        } catch {}
+        $rec.ctors = $ctors
     }
     $out.Add($rec)
 }
@@ -114,6 +123,7 @@ foreach ($r in $out) {
     else {
         foreach ($p in $r.props) { $symbols.Add("$($r.name).$($p.n)") }
         foreach ($m in $r.methods) { $symbols.Add("$($r.name).$($m.n)") }
+        if ($r.ctors) { foreach ($c in $r.ctors) { $symbols.Add("$($r.name)..ctor($($c.params.Count))") } }
     }
 }
 $symPath = Join-Path $OutDir "api-symbols.txt"

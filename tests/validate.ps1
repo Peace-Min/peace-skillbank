@@ -133,6 +133,12 @@ foreach ($powershellScriptPath in @($scriptPath, $loopScriptPath, $skillEvalLoop
     Test-PowerShellSyntax -Path $powershellScriptPath
 }
 
+# Behavioral fixtures for diagsession extraction + report contract (synthetic .diagsession; no tool needed).
+$diagFixtures = Join-Path $RepositoryRoot "tests\diagsession-fixtures.ps1"
+Assert-Condition (Test-Path -LiteralPath $diagFixtures) "Missing diagsession fixture runner"
+Test-PowerShellSyntax -Path $diagFixtures
+& $diagFixtures -RepositoryRoot $RepositoryRoot
+
 $claude = Get-Command claude -ErrorAction SilentlyContinue
 if ($claude) {
     Push-Location $RepositoryRoot

@@ -1,0 +1,12 @@
+FixtureGeneric`1
+FixtureGeneric`1..ctor(1)
+FixtureGeneric`1.Payload
+FixtureMode
+FixtureMode.Fast
+FixtureMode.Slow
+FixtureSeries
+FixtureSeries..ctor(0)
+FixtureSeries..ctor(3)
+FixtureSeries.Clear
+FixtureSeries.LineColor
+FixtureSeries.Visible

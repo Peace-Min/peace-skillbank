@@ -23,6 +23,9 @@ NOISE = re.compile(r"LightningChart Ultimate SDK User|Copyright Arction Ltd", re
 
 
 def clean(s: str) -> str:
+    # Repairs only the apostrophe artifacts pypdf emits for this manual's font; any other
+    # encoding artifact passes through unchanged (cosmetic only -- it does not affect grounding,
+    # which is anchored on the Tier 1 DLL index, not the manual text).
     return (s.replace("��", "'").replace("�", "'")
              .replace("´", "'").replace("’", "'"))
 
@@ -48,6 +51,9 @@ def main():
         except Exception: pages.append("")
 
     def is_toc(t):
+        # Heuristic tuned to this manual: a page with >=5 dot-leader lines is a table-of-contents
+        # page (excluded from body chunking). It holds for the shipped 7.2 manual; a different
+        # edition with many dotted body lines may need this tightened to the TOC_LINE shape.
         return sum(1 for ln in t.splitlines() if DOTLEADER.search(ln)) >= 5
 
     # 1) Authoritative section list from the TOC pages.
@@ -94,7 +100,8 @@ def main():
         path = os.path.join(manual_dir, fname)
         with open(path, "w", encoding="utf-8") as f:
             f.write(f"# {c['section']} {c['title']}\n_(manual p{c['page']})_\n\n{body}\n")
-        kw = sorted(set(re.findall(r"[A-Za-z][A-Za-z0-9]{2,}", c["title"])))
+        # Keep digit-bearing domain terms too (e.g. "3D", "2D", "View3D"), not just letter-led words.
+        kw = sorted(set(t for t in re.findall(r"[A-Za-z0-9]{2,}", c["title"]) if re.search(r"[A-Za-z]", t)))
         index.append({"section": c["section"], "title": c["title"], "page": c["page"],
                       "file": f"manual/{fname}", "keywords": kw})
 

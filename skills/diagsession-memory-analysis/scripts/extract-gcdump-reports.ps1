@@ -235,6 +235,10 @@ function Extract-GcdumpsFromDiagSession {
     }
 }
 
+# Allow dot-sourcing for tests: when sourced (InvocationName '.'), expose the functions above
+# without running the extraction pipeline below. Normal invocation (-File / & ) is unaffected.
+if ($MyInvocation.InvocationName -eq '.') { return }
+
 $resolvedInputs = foreach ($path in $InputPath) {
     if (-not (Test-Path -LiteralPath $path)) {
         throw "Input file not found: $path"

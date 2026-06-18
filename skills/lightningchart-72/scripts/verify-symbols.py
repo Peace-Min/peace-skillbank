@@ -22,23 +22,30 @@ except Exception:
     pass
 
 
+def _strip_arity(name):
+    # Reflection renders a generic type as "Name`N" (e.g. EventArgs`2); the model cites it
+    # without the backtick arity. Normalize both sides so real generic members still verify.
+    return re.sub(r"`\d+$", "", name)
+
+
 def load_index(ref_dir):
     types, qualified, members, ctor_arities = set(), set(), {}, {}
     j = os.path.join(ref_dir, "api-index.json")
     if os.path.exists(j):
         data = json.load(open(j, encoding="utf-8-sig"))
         for t in data.get("types", []):
-            types.add(t["name"])
+            tname = _strip_arity(t["name"])
+            types.add(tname)
             if t.get("kind") == "enum":
                 names = t.get("values", [])
             else:
                 names = [x["n"] for x in t.get("props", [])] + [x["n"] for x in t.get("methods", [])]
                 arities = set(len(c.get("params", [])) for c in t.get("ctors", []))
                 if arities:
-                    ctor_arities[t["name"]] = arities
+                    ctor_arities[tname] = arities
             for nm in names:
-                qualified.add(f'{t["name"]}.{nm}')
-                members.setdefault(nm, set()).add(t["name"])
+                qualified.add(f"{tname}.{nm}")
+                members.setdefault(nm, set()).add(tname)
         return types, qualified, members, ctor_arities
     s = os.path.join(ref_dir, "api-symbols.txt")
     if os.path.exists(s):
@@ -48,14 +55,16 @@ def load_index(ref_dir):
                 continue
             m = re.match(r"^(.+)\.\.ctor\((\d+)\)$", ln)
             if m:
-                ctor_arities.setdefault(m.group(1), set()).add(int(m.group(2)))
-                types.add(m.group(1))
+                tname = _strip_arity(m.group(1))
+                ctor_arities.setdefault(tname, set()).add(int(m.group(2)))
+                types.add(tname)
                 continue
             if "." in ln:
                 a, b = ln.split(".", 1)
-                qualified.add(ln); types.add(a); members.setdefault(b, set()).add(a)
+                a = _strip_arity(a)
+                qualified.add(f"{a}.{b}"); types.add(a); members.setdefault(b, set()).add(a)
             else:
-                types.add(ln)
+                types.add(_strip_arity(ln))
     return types, qualified, members, ctor_arities
 
 
@@ -68,10 +77,49 @@ def candidates(text):
     return qual, bare
 
 
-def constructor_calls(text):
-    """Find `new Type(...)` and count its top-level arguments (paren/bracket aware)."""
+def _strip_code_literals(s):
+    """Replace string/char literals with a single placeholder and drop comments, so commas or
+    parens inside them cannot corrupt constructor argument counting. A literal still counts as
+    one argument, so it collapses to a non-delimiter placeholder rather than vanishing."""
     out = []
-    for m in re.finditer(r"\bnew\s+([A-Z][A-Za-z0-9_]*)\s*\(", text):
+    i, n = 0, len(s)
+    while i < n:
+        c = s[i]
+        if c == '"' or c == "'":
+            q = c
+            i += 1
+            while i < n:
+                if s[i] == "\\":
+                    i += 2
+                    continue
+                if s[i] == q:
+                    i += 1
+                    break
+                i += 1
+            out.append("0")
+            continue
+        if c == "/" and i + 1 < n and s[i + 1] == "/":
+            while i < n and s[i] != "\n":
+                i += 1
+            continue
+        if c == "/" and i + 1 < n and s[i + 1] == "*":
+            i += 2
+            while i + 1 < n and not (s[i] == "*" and s[i + 1] == "/"):
+                i += 1
+            i += 2
+            continue
+        out.append(c)
+        i += 1
+    return "".join(out)
+
+
+def constructor_calls(text):
+    """Find `new Type(...)` (incl. `new Type<T>(...)`) and count its top-level arguments,
+    paren/bracket aware and ignoring commas/parens inside string literals or comments."""
+    text = _strip_code_literals(text)
+    out = []
+    # Optional <...> generic argument list between the type name and `(` (one nesting level).
+    for m in re.finditer(r"\bnew\s+([A-Z][A-Za-z0-9_]*)\s*(?:<[^()]*>)?\s*\(", text):
         typ = m.group(1)
         i = m.end()
         depth = 1
@@ -94,6 +142,14 @@ def constructor_calls(text):
         count = (len(args) + 1) if (buf.strip() or args) else 0
         out.append((typ, count))
     return out
+
+
+def inline_code_tokens(text):
+    """Contents of single-backtick inline-code spans (`like.this`) -- the high-signal place a
+    model cites an API. A single-word PascalCase member (`Visible`, `Smoothing`) is invisible to
+    candidates() (which needs 2+ humps), so an invented one would otherwise slip through unchecked.
+    Restricting this to backtick spans keeps ordinary capitalized prose from being flagged."""
+    return [m.strip() for m in re.findall(r"`([^`\n]+)`", text)]
 
 
 def main():
@@ -122,6 +178,15 @@ def main():
     bare_known = sorted(b for b in bare if b in types or b in members)
     bare_unknown = sorted(b for b in bare if b not in types and b not in members)
 
+    # Single-word PascalCase identifiers cited inside inline-code spans. These bypass candidates()
+    # entirely, so they are the main leak path for invented members on a weak model.
+    code_single = set()
+    for tok in inline_code_tokens(text):
+        if re.match(r"^[A-Z][A-Za-z0-9]+$", tok):  # one PascalCase word (no dot/space/parens)
+            code_single.add(tok)
+    code_unknown = sorted(t for t in code_single if t not in types and t not in members)
+    code_member_bare = sorted(t for t in code_single if t in members and t not in types)
+
     ctor_issues = []
     for typ, count in constructor_calls(text):
         if typ in ctor_arities and count not in ctor_arities[typ]:
@@ -143,8 +208,14 @@ def main():
     if bare_unknown:
         tag = "REVIEW -- strict: qualify as Type.Member or remove" if strict else "info"
         print(f"({tag}) bare PascalCase not in index ({len(bare_unknown)}): " + ", ".join(bare_unknown[:30]))
+    if code_unknown:
+        tag = "UNVERIFIED inline-code -- NOT in the 7.2 API index" if strict else "info"
+        print(f"({tag}) inline-code identifiers not found ({len(code_unknown)}): " + ", ".join(code_unknown[:30]))
+    if strict and code_member_bare:
+        print(f"(REVIEW -- strict: qualify as Type.Member) bare inline members ({len(code_member_bare)}): "
+              + ", ".join(code_member_bare[:30]))
 
-    fail = bool(unverified) or bool(ctor_issues) or (strict and bool(bare_unknown))
+    fail = bool(unverified) or bool(ctor_issues) or (strict and bool(bare_unknown)) or (strict and bool(code_unknown))
     sys.exit(1 if fail else 0)
 
 

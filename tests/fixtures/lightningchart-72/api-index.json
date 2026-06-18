@@ -1,6 +1,6 @@
 {
-  "_note": "SYNTHETIC fixture for verify-symbols.py behavior tests. Fictional types only -- contains NO LightningChart/Arction licensed API surface. Mirrors the api-index.json shape produced by build-api-index.ps1.",
-  "typeCount": 2,
+  "_note": "SYNTHETIC fixture for verify-symbols.py behavior tests. Fictional types only -- contains NO LightningChart/Arction licensed API surface. Mirrors the api-index.json shape produced by build-api-index.ps1. FixtureGeneric`1 carries a backtick arity on purpose to exercise generic-name normalization.",
+  "typeCount": 3,
   "types": [
     {
       "name": "FixtureSeries",
@@ -20,6 +20,15 @@
       "name": "FixtureMode",
       "kind": "enum",
       "values": ["Fast", "Slow"]
+    },
+    {
+      "name": "FixtureGeneric`1",
+      "props": [
+        { "n": "Payload" }
+      ],
+      "ctors": [
+        { "params": ["item"] }
+      ]
     }
   ]
 }

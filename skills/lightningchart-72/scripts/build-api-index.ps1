@@ -65,7 +65,9 @@ $out = New-Object System.Collections.Generic.List[object]
 foreach ($t in $types) {
     if (-not $t.Namespace) { continue }
     if ($t.Namespace -like "*Licensing*") { continue }
-    $rec = [ordered]@{ ns = $t.Namespace; name = $t.Name; kind = (Get-Kind $t) }
+    # Reflection renders generic type names as "Name`N" (e.g. EventArgs`2); the model cites
+    # them without the backtick arity, so strip it for grep/verify-friendly symbols.
+    $rec = [ordered]@{ ns = $t.Namespace; name = ($t.Name -replace '`\d+$', ''); kind = (Get-Kind $t) }
     try { if ($t.BaseType -and $t.BaseType.Name -ne "Object") { $rec.base = $t.BaseType.Name } } catch {}
 
     if ($t.IsEnum) {

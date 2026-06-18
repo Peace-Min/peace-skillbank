@@ -43,25 +43,29 @@ Generated locally per machine and **not committed** (see `README.md` for one-tim
    unverified -- treat it exactly like a hallucination; project code never establishes existence.**
 5. **Compose, grounded + cited.** Quote; adapt minimally. **Write every API member in qualified
    `Type.Member` form** (e.g. `IntensityGridSeries.ValueRangePalette`, not a bare `ValueRangePalette`)
-   so the verify hook can check it -- a bare member name counts as unverified.
+   so the verify hook can check it -- a bare member name counts as unverified. **Put every API
+   identifier in `backticks`**: the hook also inspects single-word identifiers inside inline-code spans,
+   so a member named only in plain prose (e.g. "set the Smoothing property") can slip past verification.
 6. **Exists but undocumented:** If a symbol exists in Tier 1 but no Tier 2/Tier 3 source says what it
    DOES, report its existence and signature only and say *"exists in the 7.2 API; behavior not
    documented in the local manual or used in this project -- I won't guess what it does."* **Never infer
    behavior from a type/member name.**
-6a. **Constructors (`new Type(...)`).** Series/axes/objects are created via constructors. The verify
+7. **Constructors (`new Type(...)`).** Series/axes/objects are created via constructors. The verify
    hook records constructor arities and flags any `new Type(...)` whose argument count is not a real
    7.2 constructor. Confirm the type exists in Tier 1, but take the exact constructor argument list
    from a Tier 2 manual snippet or Tier 3 project code -- **never reconstruct `new Type(view, xAxis,
    yAxis)` from memory.** If no local source shows the call, say "the type exists; get its exact
    constructor arguments from a manual example or project usage."
-7. **Verify hook (required).** Run `python scripts/verify-symbols.py --strict -` on your draft.
+8. **Verify hook (required).** Run `python scripts/verify-symbols.py --strict -` on your draft.
    - **exit 0** → all cited symbols verified; you may assert them.
    - **exit 1** → remove or qualify every `X`-flagged symbol before answering (qualified-unknown =
-     invented; bare-unknown under `--strict` = must be qualified or removed).
+     invented; bare-unknown or an unknown single-word identifier in `backticks` under `--strict` =
+     must be qualified or removed; a `new Type(...)` whose argument count is not a real arity).
    - **exit 2** → index not built → say the corpus is unavailable; do NOT answer with citations.
-   The hook confirms a member EXISTS and checks constructor argument COUNT; it does **not** validate
-   method signatures/parameter types -- so when you cite a method signature, **quote it verbatim** from
-   the manual snippet or the api index entry, never reconstruct it from memory.
+   The hook confirms a member EXISTS and checks constructor argument COUNT (string literals in the call
+   are counted as one argument, not split); it does **not** validate method signatures/parameter types
+   -- so when you cite a method signature, **quote it verbatim** from the manual snippet or the api
+   index entry, never reconstruct it from memory.
 
 ## Output rules
 

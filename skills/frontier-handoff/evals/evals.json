@@ -1,0 +1,23 @@
+{
+  "skill_name": "frontier-handoff",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "parser.py에서 벤더 JSON 설정 파싱이 자꾸 깨지는데 로컬 모델은 계속 엉뚱한 수정만 줘. 프론티어 모델한테 물어볼 핸드오프 프롬프트 만들어줘.",
+      "expected_output": "A single copy-ready markdown block with Goal/Problem(verbatim error)/What-I-tried/Relevant-code(parser.py with file:line)/Environment/Ask sections; self-contained; Ask requests an apply-offline format.",
+      "files": ["inputs/parser.py", "inputs/error.txt"]
+    },
+    {
+      "id": 2,
+      "prompt": "로컬 qwen이 존재하지도 않는 메서드(AddRainbowAxis 같은)를 자꾸 추천해서 할루시네이션 같아. 상위 모델한테 정리해서 물어볼 프롬프트로 만들어줘. 코드는 chart_setup.cs.",
+      "expected_output": "Handoff prompt that frames the hallucination problem (the model invented an API), includes the relevant code, states the environment (weak local model), and asks the frontier model to confirm the real API / give correct code.",
+      "files": ["inputs/chart_setup.cs"]
+    },
+    {
+      "id": 3,
+      "prompt": "이 DB 연결이 계속 실패하는데 프론티어한테 넘길 프롬프트 만들어줘. db_config.py 보면 돼.",
+      "expected_output": "Handoff prompt that MASKS the secrets (connection string password / API key) before output and flags the absolute path for review, while keeping enough context for the frontier model to act.",
+      "files": ["inputs/db_config.py"]
+    }
+  ]
+}

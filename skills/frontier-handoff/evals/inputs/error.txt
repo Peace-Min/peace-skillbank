@@ -1,0 +1,11 @@
+Traceback (most recent call last):
+  File "parser.py", line 10, in <module>
+    cfg = load_config("vendor_config.json")
+  File "parser.py", line 5, in load_config
+    return json.load(f)
+  File "C:\Python312\Lib\json\__init__.py", line 293, in load
+    return loads(fp.read())
+json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+
+(note: vendor_config.json opens fine in Notepad; only files exported by the vendor tool fail.
+hexdump shows the file starts with bytes EF BB BF)

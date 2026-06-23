@@ -21,10 +21,14 @@ this machine could not act on the prompt, it is not finished. Build for that rea
 2. **Auto-collect the context** (do not make the user retype what you can read yourself):
    - **Code**: read the file(s) in play -- the one being edited, or the ones the user names. Include the
      *minimal relevant span* (the failing function plus the symbols it depends on), each marked with
-     `path:line`. Do NOT dump the whole repo; a focused, complete excerpt beats a giant paste.
+     `path:line`. Do NOT dump the whole repo; a focused, complete excerpt beats a giant paste. The
+     function **at the heart of the problem must appear in FULL** -- never elide its body with `// ...`
+     or a summary comment; a truncated core function forces the reader to guess the exact bug.
    - **Problem**: capture the exact symptom -- the error text, stack trace, wrong output, or the
      hallucinated claim -- **quoted verbatim**, not paraphrased. Paraphrasing loses the detail the
-     frontier model needs.
+     frontier model needs. If the symptom is *observed or measured* (a perf/memory number, a flaky or
+     intermittent failure), also state **how it was measured and over how many runs** -- a single-shot
+     delta can mislead, and the reader needs the methodology to judge whether the evidence is real.
    - **What was tried**: recent attempts and why they failed. If this is a git repo, `git diff` /
      `git log -p -3` shows what was just changed; include the relevant part.
    - **Environment & constraints**: language + framework + versions; that you are offline / air-gapped
@@ -54,14 +58,16 @@ Fill every section. Drop a section only if it is genuinely not applicable. Keep 
 
 ## Problem
 <The exact failure, quoted verbatim: error/stack trace, wrong output, or the hallucinated claim.
-What I expected vs what happened.>
+What I expected vs what happened. If the symptom is measured/observed (perf, memory, flakiness):
+how it was measured and over how many runs.>
 
 ## What I already tried
 <Recent attempts and why each did not work. Relevant recent changes (diff) if any.>
 
 ## Relevant code
-<Minimal but COMPLETE code to understand the problem, each block tagged with its path:line.
-Include the symbols the failing code depends on so the reader is not guessing.>
+<Minimal but COMPLETE code, each block tagged with its path:line. The function at the heart of the
+problem in FULL -- never elided with `// ...`. Include the symbols the failing code depends on so the
+reader is not guessing.>
 
 ## Environment & constraints
 <Language + framework + versions. Offline / air-gapped on a weak local model. Anything the

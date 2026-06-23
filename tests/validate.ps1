@@ -314,6 +314,12 @@ Assert-Condition ($fhShort.Groups[1].Value.Length -ge 25 -and $fhShort.Groups[1]
 $fhSkillContent = Get-Content -Raw -Encoding UTF8 -LiteralPath $fhSkillPath
 Assert-Condition ($fhSkillContent -notmatch "(?i)mask") "frontier-handoff SKILL.md must not claim secret masking"
 
+# Quality rules from real-world handoff feedback (keep the two adopted improvements from drifting out):
+#  - the core function must be collected in FULL, not elided;
+#  - an observed/measured symptom must carry its measurement methodology (how / how many runs).
+Assert-Condition ($fhSkillContent -match "(?i)at the heart of the problem must appear in FULL") "frontier-handoff SKILL.md must require the core function in full (no elision)"
+Assert-Condition ($fhSkillContent -match "(?i)how it was measured and over how many runs") "frontier-handoff SKILL.md must require measurement methodology for observed/measured symptoms"
+
 # finalize-handoff.py: syntax + behavior (appends the directive once; no duplicate on a second pass).
 if ($python) {
     & $python.Source -c "import ast,sys; ast.parse(open(sys.argv[1], encoding='utf-8').read())" $fhFinalize

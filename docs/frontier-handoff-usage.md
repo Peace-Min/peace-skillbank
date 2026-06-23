@@ -26,6 +26,52 @@ LightningChart·diagsession 같은 다른 스킬과 달리 **트리거하면 바
    - **필수 응답 지시문**을 verbatim으로 끝에 붙임.
 5. **복사용 블록 1개**를 내놓는다 → 인터넷 되는 PC의 프론티어 모델에 붙여넣기.
 
+## 예시 — 막혔을 때 어떻게 요청하고 무엇을 받나
+
+**상황**: 로컬 qwen이 LightningChart에 없는 `AddRainbowAxis()`를 자꾸 추천해서 빌드가 안 된다.
+
+**당신은 이렇게만 말하면 된다:**
+
+> 로컬 모델이 없는 메서드(AddRainbowAxis 같은)를 자꾸 추천해. 상위 모델한테 정리해서 물어볼 프롬프트 만들어줘. 코드는 chart_setup.cs.
+
+**받는 것** — 복사용 블록 1개 (인터넷 PC의 프론티어 모델에 그대로 붙여넣음):
+
+````markdown
+## Goal
+Build a LightningChart (Arction) WPF XY chart in C# -- add an axis and a point-line series.
+
+## Problem
+The local model keeps generating `chart.ViewXY.AddRainbowAxis();`, but it won't compile and isn't in
+IntelliSense. I suspect AddRainbowAxis() is a hallucinated API.
+
+## What I already tried
+Let the local Qwen model autocomplete it -- it insists on AddRainbowAxis(). Searched IntelliSense; nothing.
+
+## Relevant code
+`chart_setup.cs:1`
+```csharp
+chart.ViewXY.AddRainbowAxis();   // <-- suspected hallucinated API; does not compile
+var series = new PointLineSeries(chart.ViewXY, chart.ViewXY.XAxes[0], chart.ViewXY.YAxes[0]);
+```
+
+## Environment & constraints
+C#, WPF, Arction LightningChart Ultimate. I do NOT know the exact LightningChart version -- flag any
+version-dependent API. Offline / air-gapped on a weak local model, no internet, no LightningChart docs.
+
+## Ask
+Confirm whether AddRainbowAxis() is a real Arction API; if not, give the corrected code using only real
+ViewXY axis/series APIs, as a complete C# block.
+
+## How to answer (the implementer is a weak offline model)
+- Open with ONE recommended approach -- decide, don't just list options.
+- Then a numbered plan of SMALL steps: exact `file:line`, the complete code to add/replace, a one-line check.
+- Be explicit; assume offline (no internet, no new packages), stay on the stated versions.
+````
+
+**그다음**: 이 블록을 인터넷 PC의 Claude/GPT에 붙여넣으면 → "AddRainbowAxis는 7.2에 없다, 대신 ~를
+써라" + **단계별 수정 계획**을 받는다 → 각 단계를 로컬 qwen에 붙여 그대로 적용. (마지막 지시문 덕에
+큰 덩어리 답이 아니라 약한 모델이 따라갈 수 있는 작은 단계로 옴.)
+
 ## 결과 프롬프트가 항상 보장하는 것
 
 - **자기완결성** — 프론티어는 당신 파일을 못 여니, 필요한 코드/에러/제약이 프롬프트 안에 다 있다.

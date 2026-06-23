@@ -17,7 +17,7 @@ When you're stuck on the offline box:
    - "이 함수가 자꾸 NullReference 나는데 로컬 모델이 못 고쳐. **프론티어한테 넘길 프롬프트 만들어줘**"
    - "make me a handoff prompt for this JSON parsing bug"
    - "로컬 모델이 없는 메서드를 자꾸 추천해. 상위 모델한테 물어보게 정리해줘"
-2. The skill collects the context, masks any secrets, and gives you **ONE copy-ready block**.
+2. The skill collects the context and gives you **ONE copy-ready block**.
 3. **Copy that block** and paste it into a frontier model (Claude / GPT / Gemini) on an internet machine.
 4. The answer comes back as a **small-step plan**; paste each step back into your local model to apply it.
 
@@ -68,18 +68,11 @@ to reply as a step-by-step plan your weak local model can actually apply, instea
 
 You don't need this to use the skill, but for the curious: it fills a fixed 6-section template (Goal /
 Problem / What I tried / Relevant code / Environment / Ask), then runs `scripts/finalize-handoff.py`,
-which deterministically (a) masks secrets and flags absolute paths/emails/IPs for your review, and
-(b) appends the response directive -- so the redaction and the directive happen on every handoff even
-when a weak model runs the skill.
+which **appends the response directive verbatim** -- so the directive ends every handoff even when a
+weak model runs the skill and can't be trusted to remember it.
 
 ## No setup
 
 Standard-library Python only -- no corpus, no dependencies, no install. Verified end-to-end against a
-real weak local model (`qwen2.5-coder:7b` via Ollama): it fills the template, and the script masks the
-secrets the weak model left in the draft.
-
-## Privacy (the one thing to check)
-
-The prompt leaves the air-gapped box for an external model, so **glance at the redaction report before
-you paste**. Secrets are auto-masked, but absolute paths / internal names are only *flagged* -- you
-decide whether to keep them. A leaked secret going to an outside model is the one irreversible mistake.
+real weak local model (`qwen2.5-coder:7b` via Ollama): it fills the 6-section template and the script
+appends the directive every time.

@@ -1,6 +1,6 @@
 ---
 name: frontier-handoff
-description: Package the user's current stuck situation -- the code they're working on, the exact problem or hallucination they hit, what they already tried, their environment, and what they want -- into ONE clean, self-contained prompt that a frontier model on another machine (Claude / GPT / Gemini) can act on immediately with zero access to their files. Use this WHENEVER the user is on a weak, local, offline, or air-gapped model and says they are stuck, hitting hallucinations or quality/performance limits, or asks for a prompt to send to a "stronger / frontier / 상위 / better" model -- phrases like "이거 정리해서 프론티어 모델한테 물어볼 프롬프트 만들어줘", "상위 모델용 프롬프트", "hand this off", "escalate this to a better model", "make a prompt I can paste into Claude", even if they never say the word "handoff". Auto-collects the relevant code/error/diff and masks sensitive paths and secrets before the prompt leaves the box.
+description: Package the user's current stuck situation -- the code they're working on, the exact problem or hallucination they hit, what they already tried, their environment, and what they want -- into ONE clean, self-contained prompt that a frontier model on another machine (Claude / GPT / Gemini) can act on immediately with zero access to their files. Use this WHENEVER the user is on a weak, local, offline, or air-gapped model and says they are stuck, hitting hallucinations or quality/performance limits, or asks for a prompt to send to a "stronger / frontier / 상위 / better" model -- phrases like "이거 정리해서 프론티어 모델한테 물어볼 프롬프트 만들어줘", "상위 모델용 프롬프트", "hand this off", "escalate this to a better model", "make a prompt I can paste into Claude", even if they never say the word "handoff". Auto-collects the relevant code/error/diff and always ends the prompt with a directive telling the frontier model to answer as a small-step plan a weak offline model can apply.
 
 # Frontier Handoff Prompt Builder
 
@@ -36,15 +36,11 @@ this machine could not act on the prompt, it is not finished. Build for that rea
 3. **Assemble** the Goal..Ask sections using the template below.
 
 4. **Finalize deterministically -- always run the script.** Run
-   `python scripts/finalize-handoff.py <draft-file>` on the assembled draft. The script does two things
-   you must NOT leave to your own discretion, so they happen on every single handoff:
-   - **Redacts**: masks secrets (keys, tokens, passwords, connection strings, private keys) and flags
-     review items (absolute paths, emails, IPs) -- because the prompt is leaving the box. Show the user
-     the redaction report and confirm any REVIEW items; when unsure, err toward masking.
-   - **Appends the mandatory response directive verbatim**: the block that tells the frontier model to
-     answer as a small-step, explicit, offline-aware plan. Because the script appends it, it is in
-     EVERY handoff and a weak model running this skill can never forget it.
-   Emit the script's `FINAL HANDOFF PROMPT` output as ONE copy-ready fenced block, nothing else around it.
+   `python scripts/finalize-handoff.py <draft-file>` on the assembled draft. The script **appends the
+   mandatory response directive verbatim** -- the block telling the frontier model to answer as a
+   small-step, explicit, offline-aware plan -- so it is in EVERY handoff and a weak model running this
+   skill can never forget it. Emit the script's output as ONE copy-ready fenced block, nothing else
+   around it.
 
 ## Template
 
@@ -112,7 +108,7 @@ Python 3.12, Windows PowerShell 5.1, offline (no pip). Must use stdlib only.
 Give the corrected `load_config` as a complete code block that handles the BOM with stdlib only.
 ```
 
-(You stop at `## Ask`. Then `finalize-handoff.py` redacts and appends the standard
+(You stop at `## Ask`. Then `finalize-handoff.py` appends the standard
 "## How to answer (the implementer is a weak offline model)" directive, so the final emitted prompt
 ends with the small-step / explicit / offline-aware instruction every time.)
 

@@ -1,10 +1,8 @@
 import pyodbc
 
-# Connection keeps failing intermittently under load.
-CONN = "Driver={SQL Server};Server=PHMIN-PROD;Database=netcus;Uid=sa;Password=Pr0d!Secret;"
-API_KEY = "sk-live-9f8e7d6c5b4a3210fedcba98"
-LOG_PATH = r"C:\Users\CEO\netcus\logs\db.log"
+# Connection keeps failing intermittently under load. The connection string is built elsewhere from an
+# untracked settings file (no credentials in this file).
 
 
-def get_conn():
-    return pyodbc.connect(CONN, timeout=5)
+def get_conn(conn_string):
+    return pyodbc.connect(conn_string, timeout=5)

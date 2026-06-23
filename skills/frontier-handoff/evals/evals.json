@@ -16,7 +16,7 @@
     {
       "id": 3,
       "prompt": "이 DB 연결이 계속 실패하는데 프론티어한테 넘길 프롬프트 만들어줘. db_config.py 보면 돼.",
-      "expected_output": "Handoff prompt that MASKS the secrets (connection string password / API key) before output and flags the absolute path for review, while keeping enough context for the frontier model to act.",
+      "expected_output": "Self-contained handoff prompt for the intermittent connection failure (pyodbc timeout, no pooling/retry/per-call scoping), with the relevant code and environment, ending with the mandatory response directive.",
       "files": ["inputs/db_config.py"]
     }
   ]

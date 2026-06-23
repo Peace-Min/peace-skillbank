@@ -1,6 +1,6 @@
 {
   "name": "peace-skillbank",
-  "version": "0.1.15",
+  "version": "0.1.16",
   "description": "Reusable Claude Code skills: .NET diagsession/gcdump memory-leak analysis and grounded LightningChart 7.2 (Arction) API assistance.",
   "author": {
     "name": "Peace-Min",

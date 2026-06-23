@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-Verify hook (Tier 1). Check that every API symbol cited in a draft answer exists in the local DLL
-API index:
+Verify step / script (Tier 1) -- an agent-run verifier, NOT an automatic Claude Code hook (nothing
+in the harness runs it for you). Check that every API symbol cited in a draft answer exists in the
+local DLL API index:
 - qualified Type.Member must exist (unknown -> UNVERIFIED, blocks).
 - bare PascalCase not in the index -> info, or (with --strict) blocks.
 - new Type(args) constructor calls: the argument count must match a real 7.2 constructor arity

@@ -36,7 +36,7 @@ script-relative `references/`).
    `references/manual/*.md` directly before concluding a topic is undocumented.
 2. **Existence + signature ← Tier 1 only.** Confirm every symbol by grepping `api-symbols.txt` (sorted,
    grep-friendly) or `python scripts/search.py "<term>"`. **Never `Read` `api-index.json` directly: it
-   is a single ~740 KB line and will blow your context** -- only the verify hook parses it. For a type's
+   is a single ~740 KB line and will blow your context** -- only the verify script parses it. For a type's
    members or a method/constructor signature, `grep "^TypeName\." references/api-symbols.txt`. Never
    answer an existence question from the manual.
 3. **Meaning ← Tier 2.** Read the matched manual chunk for what it does + any C# snippet; cite
@@ -48,10 +48,10 @@ script-relative `references/`).
    unverified -- treat it exactly like a hallucination; project code never establishes existence.**
 5. **Compose, grounded + cited.** Quote; adapt minimally. **Write every API member in qualified
    `Type.Member` form** (e.g. `IntensityGridSeries.ValueRangePalette`, not a bare `ValueRangePalette`)
-   so the verify hook can check it. Under `--strict` the hook **blocks** (exit 1) a bare name that is
+   so the verify script can check it. Under `--strict` the script **blocks** (exit 1) a bare name that is
    *not* in the index, and **flags for review** (still exit 0, does not block) a bare name that *is* a
    known member somewhere -- qualify those too so the citation is unambiguous about which type. **Put
-   every API identifier in `backticks`**: the hook only inspects single-word identifiers inside
+   every API identifier in `backticks`**: the script only inspects single-word identifiers inside
    inline-code spans, so a member named only in plain prose (e.g. "set the Smoothing property") can slip
    past verification.
 6. **Exists but undocumented:** If a symbol exists in Tier 1 but no Tier 2/Tier 3 source says what it
@@ -59,18 +59,22 @@ script-relative `references/`).
    documented in the local manual or used in this project -- I won't guess what it does."* **Never infer
    behavior from a type/member name.**
 7. **Constructors (`new Type(...)`).** Series/axes/objects are created via constructors. The verify
-   hook records constructor arities and flags any `new Type(...)` whose argument count is not a real
+   script records constructor arities and flags any `new Type(...)` whose argument count is not a real
    7.2 constructor. Confirm the type exists in Tier 1, but take the exact constructor argument list
    from a Tier 2 manual snippet or Tier 3 project code -- **never reconstruct `new Type(view, xAxis,
    yAxis)` from memory.** If no local source shows the call, say "the type exists; get its exact
    constructor arguments from a manual example or project usage."
-8. **Verify hook (required).** Run `python scripts/verify-symbols.py --strict -` on your draft.
+8. **Verify step (contract-required, agent-run -- NOT a harness hook).** Run
+   `python scripts/verify-symbols.py --strict -` on your draft. This is a script *you (the agent) must
+   run yourself* -- nothing in the Claude Code runtime runs it for you, so it is a **contract obligation
+   of this skill, not a guarantee the harness enforces**. (For a hard guarantee, run it yourself before
+   trusting the answer, or wire a Claude Code Stop hook to it -- this repo ships no such hook.)
    - **exit 0** → all cited symbols verified; you may assert them.
    - **exit 1** → remove or qualify every `X`-flagged symbol before answering (qualified-unknown =
      invented; bare-unknown or an unknown single-word identifier in `backticks` under `--strict` =
      must be qualified or removed; a `new Type(...)` whose argument count is not a real arity).
    - **exit 2** → index not built → say the corpus is unavailable; do NOT answer with citations.
-   The hook confirms a member EXISTS and checks constructor argument COUNT (string literals in the call
+   The script confirms a member EXISTS and checks constructor argument COUNT (string literals in the call
    are counted as one argument, not split); it does **not** validate method signatures/parameter types
    -- so when you cite a method signature, **quote it verbatim** from the manual snippet or the api
    index entry, never reconstruct it from memory.

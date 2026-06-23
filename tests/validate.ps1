@@ -213,6 +213,12 @@ foreach ($marker in @("verify-symbols", "Tier 1", "Type.Member", "not found")) {
     Assert-Condition ($lcSkillContent -match [regex]::Escape($marker)) "lightningchart-72 SKILL.md must keep grounding-contract marker: $marker"
 }
 
+# Enforcement-honesty: the verification step is an AGENT-RUN script, not an automatic Claude Code
+# hook (this repo ships no hook). Forbid the misleading "verify hook" label and require the honest
+# "agent-run" framing so the contract never silently reverts to implying harness enforcement.
+Assert-Condition ($lcSkillContent -notmatch "(?i)verify hook") "lightningchart-72 SKILL.md must not call the verify script a 'verify hook' (it is agent-run, not a harness hook)"
+Assert-Condition ($lcSkillContent -match "agent-run") "lightningchart-72 SKILL.md must state the verify step is agent-run (not a harness hook)"
+
 Test-PowerShellSyntax -Path $lcApiIndexScript
 Test-PowerShellSyntax -Path (Join-Path $lcRoot "scripts\setup-local-corpus.ps1")
 

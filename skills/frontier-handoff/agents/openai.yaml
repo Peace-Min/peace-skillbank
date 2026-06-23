@@ -1,0 +1,8 @@
+interface:
+  display_name: "Frontier Handoff Prompt Builder"
+  short_description: "Package a stuck situation into a frontier-model prompt."
+  brand_color: "#2563EB"
+  default_prompt: "Use $frontier-handoff to package my current code, the exact problem, what I tried, and my ask into ONE self-contained, paste-ready prompt for a frontier model on another machine."
+
+policy:
+  allow_implicit_invocation: true

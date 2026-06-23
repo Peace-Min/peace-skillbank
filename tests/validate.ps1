@@ -263,4 +263,63 @@ $lcShort = [regex]::Match($lcOpenAiYaml, 'short_description:\s*"([^"]+)"')
 Assert-Condition $lcShort.Success "lightningchart-72 openai.yaml needs a short_description"
 Assert-Condition ($lcShort.Groups[1].Value.Length -ge 25 -and $lcShort.Groups[1].Value.Length -le 64) "lightningchart-72 short_description must be 25-64 characters"
 
+# --- frontier-handoff skill (offline -> frontier handoff prompt builder; machinery only) ---
+$fhRoot = Join-Path $RepositoryRoot "skills\frontier-handoff"
+$fhSkillPath = Join-Path $fhRoot "SKILL.md"
+$fhFinalize = Join-Path $fhRoot "scripts\finalize-handoff.py"
+$fhOpenAi = Join-Path $fhRoot "agents\openai.yaml"
+$fhEvals = Join-Path $fhRoot "evals\evals.json"
+$fhReadme = Join-Path $fhRoot "README.md"
+$fhUsageDoc = Join-Path $RepositoryRoot "docs\frontier-handoff-usage.md"
+$fhProjectEntry = Join-Path $RepositoryRoot ".claude\skills\frontier-handoff\SKILL.md"
+foreach ($fhFile in @($fhSkillPath, $fhFinalize, $fhOpenAi, $fhEvals, $fhReadme, $fhUsageDoc, $fhProjectEntry)) {
+    Assert-Condition (Test-Path -LiteralPath $fhFile) "Missing frontier-handoff file: $fhFile"
+}
+
+# Canonical SKILL.md frontmatter -- catches an unclosed/invalid frontmatter that breaks discovery.
+$fhFrontMatter = Get-FrontMatter -Path $fhSkillPath
+Assert-Condition ($fhFrontMatter -match "(?m)^name:\s*frontier-handoff\s*$") "Invalid frontier-handoff skill name / unclosed frontmatter"
+Assert-Condition ($fhFrontMatter -match "(?m)^description:\s+.+") "Missing frontier-handoff skill description"
+
+# Clone-time project-skill entrypoint must exist, be valid, and delegate to the canonical skill + script.
+$fhProjectFront = Get-FrontMatter -Path $fhProjectEntry
+Assert-Condition ($fhProjectFront -match "(?m)^name:\s*frontier-handoff\s*$") "frontier-handoff project entrypoint must expose /frontier-handoff"
+$fhProjectContent = Get-Content -Raw -LiteralPath $fhProjectEntry
+Assert-Condition ($fhProjectContent -match "skills/frontier-handoff/SKILL.md") "frontier-handoff project entrypoint must delegate to the canonical skill"
+Assert-Condition ($fhProjectContent -match "finalize-handoff.py") "frontier-handoff project entrypoint must reference the finalize script"
+Assert-Condition ($readmeContent -match [regex]::Escape("/frontier-handoff")) "README clone-time list must include /frontier-handoff"
+Assert-Condition ($readmeContent.Contains('[`frontier-handoff`](docs/frontier-handoff-usage.md)')) "README current-skill list must link the frontier-handoff usage guide"
+
+# openai.yaml metadata.
+$fhOpenAiContent = Get-Content -Raw -LiteralPath $fhOpenAi
+Assert-Condition ($fhOpenAiContent -match 'display_name:\s*"[^"]+"') "frontier-handoff openai.yaml needs a display_name"
+Assert-Condition ($fhOpenAiContent -match 'default_prompt:\s*"Use \$frontier-handoff') "frontier-handoff openai.yaml default_prompt must mention the skill name"
+$fhShort = [regex]::Match($fhOpenAiContent, 'short_description:\s*"([^"]+)"')
+Assert-Condition $fhShort.Success "frontier-handoff openai.yaml needs a short_description"
+Assert-Condition ($fhShort.Groups[1].Value.Length -ge 25 -and $fhShort.Groups[1].Value.Length -le 64) "frontier-handoff short_description must be 25-64 characters"
+
+# Policy: the canonical skill must NOT claim automatic secret masking (it was removed by design).
+$fhSkillContent = Get-Content -Raw -Encoding UTF8 -LiteralPath $fhSkillPath
+Assert-Condition ($fhSkillContent -notmatch "(?i)mask") "frontier-handoff SKILL.md must not claim secret masking"
+
+# finalize-handoff.py: syntax + behavior (appends the directive once; no duplicate on a second pass).
+if ($python) {
+    & $python.Source -c "import ast,sys; ast.parse(open(sys.argv[1], encoding='utf-8').read())" $fhFinalize
+    Assert-Condition ($LASTEXITCODE -eq 0) "Python syntax error in finalize-handoff.py"
+
+    $fhTmp = [System.IO.Path]::GetTempFileName()
+    try {
+        [System.IO.File]::WriteAllText($fhTmp, "## Goal`nx`n## Ask`ny", (New-Object System.Text.UTF8Encoding($false)))
+        $fhOut1 = (& $python.Source $fhFinalize $fhTmp | Out-String)
+        Assert-Condition ($fhOut1 -match "How to answer \(the implementer is a weak offline model\)") "finalize-handoff.py must append the mandatory response directive"
+        [System.IO.File]::WriteAllText($fhTmp, $fhOut1, (New-Object System.Text.UTF8Encoding($false)))
+        $fhOut2 = (& $python.Source $fhFinalize $fhTmp | Out-String)
+        $fhDirCount = ([regex]::Matches($fhOut2, "How to answer \(the implementer is a weak offline model\)")).Count
+        Assert-Condition ($fhDirCount -eq 1) "finalize-handoff.py must not duplicate the directive on a second pass"
+    }
+    finally {
+        Remove-Item -LiteralPath $fhTmp -Force -ErrorAction SilentlyContinue
+    }
+}
+
 Write-Host "Validation passed."

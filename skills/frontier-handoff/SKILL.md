@@ -1,6 +1,7 @@
 ---
 name: frontier-handoff
 description: Package the user's current stuck situation -- the code they're working on, the exact problem or hallucination they hit, what they already tried, their environment, and what they want -- into ONE clean, self-contained prompt that a frontier model on another machine (Claude / GPT / Gemini) can act on immediately with zero access to their files. Use this WHENEVER the user is on a weak, local, offline, or air-gapped model and says they are stuck, hitting hallucinations or quality/performance limits, or asks for a prompt to send to a "stronger / frontier / 상위 / better" model -- phrases like "이거 정리해서 프론티어 모델한테 물어볼 프롬프트 만들어줘", "상위 모델용 프롬프트", "hand this off", "escalate this to a better model", "make a prompt I can paste into Claude", even if they never say the word "handoff". Auto-collects the relevant code/error/diff and always ends the prompt with a directive telling the frontier model to answer as a small-step plan a weak offline model can apply.
+---
 
 # Frontier Handoff Prompt Builder
 

@@ -1,7 +1,7 @@
 {
   "name": "peace-skillbank",
-  "version": "0.1.16",
-  "description": "Reusable Claude Code skills: .NET diagsession/gcdump memory-leak analysis and grounded LightningChart 7.2 (Arction) API assistance.",
+  "version": "0.1.17",
+  "description": "Reusable Claude Code skills: .NET diagsession/gcdump memory-leak analysis, grounded LightningChart 7.2 (Arction) API assistance, and frontier-model handoff prompt packaging for offline/air-gapped work.",
   "author": {
     "name": "Peace-Min",
     "url": "https://github.com/Peace-Min"
@@ -16,6 +16,9 @@
     "memory-analysis",
     "lightningchart",
     "charting",
-    "api-grounding"
+    "api-grounding",
+    "handoff",
+    "offline",
+    "prompt-packaging"
   ]
 }

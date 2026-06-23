@@ -32,7 +32,7 @@ if (-not $python) {
 
 $verify = Join-Path $RepositoryRoot "skills\lightningchart-72\scripts\verify-symbols.py"
 if (-not (Test-Path -LiteralPath $verify)) {
-    throw "Missing verify hook: $verify"
+    throw "Missing verify script: $verify"
 }
 
 $indexDir = Join-Path $PSScriptRoot "fixtures\lightningchart-72"           # has api-index.json
@@ -103,6 +103,16 @@ $cases = @(
     @{ Name = "prose apostrophe does not swallow a following bad ctor -> 1"; Draft = 'Adjust the chart''s color, then new FixtureSeries(view, xAxis, yAxis, zAxis, extra).'; Dir = $indexDir; Strict = $false; Expect = 1 }
     @{ Name = "chained invented member is flagged -> 1"; Draft = 'Call FixtureSeries.Clear.Deeper to reset.'; Dir = $indexDir; Strict = $true; Expect = 1 }
     @{ Name = "generic ctor with nested angle brackets, bad arity -> 1"; Draft = 'Create with new FixtureGeneric<Func<int>>(a, b, c).'; Dir = $indexDir; Strict = $false; Expect = 1 }
+
+    # --- audit over-block fixes: `using`/`namespace` lines and BCL/collection members must NOT
+    #     false-flag (the contract tells the model to quote real code), while real invented
+    #     members in the SAME draft must still be caught. ---
+    @{ Name = "using directive line is not flagged -> 0"; Draft = "using Arction.Wpf.Charting;`nUse FixtureSeries.LineColor here."; Dir = $indexDir; Strict = $true; Expect = 0 }
+    @{ Name = "namespace declaration is not flagged -> 0"; Draft = "namespace Demo.App;`nUse FixtureSeries.LineColor here."; Dir = $indexDir; Strict = $true; Expect = 0 }
+    @{ Name = "BCL member on a chain (.Count) is not flagged -> 0"; Draft = 'Read FixtureSeries.Clear.Count after reset.'; Dir = $indexDir; Strict = $true; Expect = 0 }
+    @{ Name = "BCL member qualified (.Add) is not flagged -> 0"; Draft = 'Call FixtureSeries.Add to append an item.'; Dir = $indexDir; Strict = $true; Expect = 0 }
+    @{ Name = "stripping using lines does not hide a real invented member -> 1"; Draft = "using Arction.Wpf.Charting;`nSet FixtureSeries.RainbowMode here."; Dir = $indexDir; Strict = $false; Expect = 1 }
+    @{ Name = "BCL leniency still flags a non-BCL invented chain segment -> 1"; Draft = 'Call FixtureSeries.Clear.Frobnicate to reset.'; Dir = $indexDir; Strict = $true; Expect = 1 }
 )
 
 $failures = @()

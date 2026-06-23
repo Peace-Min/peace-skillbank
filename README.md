@@ -25,7 +25,7 @@ skills/
     references/         # 프롬프트·로컬 코퍼스 (민감/라이선스 자료는 gitignore)
     agents/             # (선택) Codex 등 외부 에이전트 메타데이터
 
-# 현재: diagsession-memory-analysis, lightningchart-72
+# 스킬 목록은 아래 "현재 스킬" 섹션 참고(여기 직접 나열하지 않아 드리프트 방지)
 ```
 
 ## Codex에서 사용

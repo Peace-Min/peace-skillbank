@@ -36,8 +36,9 @@ this machine could not act on the prompt, it is not finished. Build for that rea
 
 3. **Assemble** the Goal..Ask sections using the template below.
 
-4. **Finalize deterministically -- always run the script.** Run
-   `python scripts/finalize-handoff.py <draft-file>` on the assembled draft. The script **appends the
+4. **Finalize deterministically -- always run the script.** Write the assembled Goal..Ask sections to
+   a temp file (e.g. `handoff-draft.md`), then run `python scripts/finalize-handoff.py handoff-draft.md`
+   (or pipe the draft in: `... | python scripts/finalize-handoff.py -`). The script **appends the
    mandatory response directive verbatim** -- the block telling the frontier model to answer as a
    small-step, explicit, offline-aware plan -- so it is in EVERY handoff and a weak model running this
    skill can never forget it. Emit the script's output as ONE copy-ready fenced block, nothing else
@@ -80,7 +81,8 @@ because you will paste it back into the air-gapped box by hand.>
 
 **User (on the air-gapped box):** "json 파싱이 자꾸 깨지는데 로컬 모델은 계속 엉뚱한 답만 줘. 프론티어한테 물어볼 프롬프트 만들어줘"
 
-After reading `parser.py`, the traceback, and the recent diff, you emit:
+After reading `parser.py`, the traceback, and the recent diff, you write the draft below to
+`handoff-draft.md` and run the finalize script on it:
 
 ```markdown
 ## Goal
@@ -95,7 +97,7 @@ Expected: a parsed dict. Happens only for files exported by the vendor tool.
 Switched to `open(path, encoding="utf-8")` -- still fails. The file starts with bytes EF BB BF (a UTF-8 BOM).
 
 ## Relevant code
-`config_loader.py:14`
+`parser.py:4`
 ```python
 def load_config(path):
     with open(path, encoding="utf-8") as f:

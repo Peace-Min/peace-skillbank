@@ -278,9 +278,15 @@ $fhEvals = Join-Path $fhRoot "evals\evals.json"
 $fhReadme = Join-Path $fhRoot "README.md"
 $fhUsageDoc = Join-Path $RepositoryRoot "docs\frontier-handoff-usage.md"
 $fhProjectEntry = Join-Path $RepositoryRoot ".claude\skills\frontier-handoff\SKILL.md"
-foreach ($fhFile in @($fhSkillPath, $fhFinalize, $fhOpenAi, $fhEvals, $fhReadme, $fhUsageDoc, $fhProjectEntry)) {
+$fhCommand = Join-Path $RepositoryRoot "commands\frontier-handoff.md"
+foreach ($fhFile in @($fhSkillPath, $fhFinalize, $fhOpenAi, $fhEvals, $fhReadme, $fhUsageDoc, $fhProjectEntry, $fhCommand)) {
     Assert-Condition (Test-Path -LiteralPath $fhFile) "Missing frontier-handoff file: $fhFile"
 }
+
+# Short-command alias must exist at parity with the other two skills, pass $ARGUMENTS, and delegate.
+$fhCommandContent = Get-Content -Raw -LiteralPath $fhCommand
+Assert-Condition ($fhCommandContent -match [regex]::Escape('$ARGUMENTS')) "commands/frontier-handoff.md must pass `$ARGUMENTS to the skill"
+Assert-Condition ($fhCommandContent -match "finalize-handoff.py") "commands/frontier-handoff.md must reference the finalize script"
 
 # Canonical SKILL.md frontmatter -- catches an unclosed/invalid frontmatter that breaks discovery.
 $fhFrontMatter = Get-FrontMatter -Path $fhSkillPath
@@ -322,6 +328,15 @@ if ($python) {
         $fhOut2 = (& $python.Source $fhFinalize $fhTmp | Out-String)
         $fhDirCount = ([regex]::Matches($fhOut2, "How to answer \(the implementer is a weak offline model\)")).Count
         Assert-Condition ($fhDirCount -eq 1) "finalize-handoff.py must not duplicate the directive on a second pass"
+
+        # Dedup must be anchored to the heading LINE: a draft that merely *mentions* the directive
+        # title in prose must still get the directive appended (the heading must not be suppressed
+        # by a bare substring match).
+        $fhProse = "## Problem`nthe model keeps ignoring the How to answer (the implementer is a weak offline model) section.`n## Ask`nhelp"
+        [System.IO.File]::WriteAllText($fhTmp, $fhProse, (New-Object System.Text.UTF8Encoding($false)))
+        $fhOut3 = (& $python.Source $fhFinalize $fhTmp | Out-String)
+        $fhHeadingCount = ([regex]::Matches($fhOut3, "(?m)^## How to answer \(the implementer is a weak offline model\)")).Count
+        Assert-Condition ($fhHeadingCount -eq 1) "finalize-handoff.py must still append the directive when the draft only mentions its title in prose"
     }
     finally {
         Remove-Item -LiteralPath $fhTmp -Force -ErrorAction SilentlyContinue

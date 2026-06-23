@@ -273,6 +273,10 @@ $manifestPath = Join-Path $OutputDirectory "MANIFEST.txt"
 New-Item -ItemType Directory -Force -Path $extractDirectory, $reportDirectory | Out-Null
 
 $snapshots = New-Object System.Collections.Generic.List[object]
+# Per-.diagsession extract subdirs (<extract-directory>\<user-session-name>). Tracked so the
+# redaction map can scrub a bare directory echo, which would otherwise leak the original
+# .diagsession filename embedded in the subdir name.
+$sessionExtractDirectories = New-Object System.Collections.Generic.List[string]
 
 foreach ($resolvedInput in $resolvedInputs) {
     $extension = [System.IO.Path]::GetExtension($resolvedInput)
@@ -293,6 +297,7 @@ foreach ($resolvedInput in $resolvedInputs) {
         $sessionName = Get-SafeFileName -Name ([System.IO.Path]::GetFileNameWithoutExtension($resolvedInput))
         $sessionExtractDirectory = Join-Path $extractDirectory $sessionName
         New-Item -ItemType Directory -Force -Path $sessionExtractDirectory | Out-Null
+        $sessionExtractDirectories.Add($sessionExtractDirectory)
 
         foreach ($extracted in (Extract-GcdumpsFromDiagSession -DiagSessionPath $resolvedInput -ExtractDirectory $sessionExtractDirectory)) {
             $snapshots.Add([pscustomobject]@{
@@ -361,9 +366,14 @@ foreach ($snapshot in $snapshots) {
         [pscustomobject]@{ FullPath = $snapshot.Gcdump; SafeName = $llmGcdump }
         [pscustomobject]@{ FullPath = $reportPath; SafeName = $llmReport }
         [pscustomobject]@{ FullPath = $OutputDirectory; SafeName = "<output-directory>" }
-        [pscustomobject]@{ FullPath = $extractDirectory; SafeName = "<extract-directory>" }
-        [pscustomobject]@{ FullPath = $tool; SafeName = "dotnet-gcdump" }
     )
+    # Scrub per-session extract subdirs BEFORE the parent extract dir (longest first), so a bare
+    # directory echo collapses to <extract-directory> instead of leaking the .diagsession filename.
+    foreach ($sessionDir in ($sessionExtractDirectories | Sort-Object -Property Length -Descending)) {
+        $pathMap += [pscustomobject]@{ FullPath = $sessionDir; SafeName = "<extract-directory>" }
+    }
+    $pathMap += [pscustomobject]@{ FullPath = $extractDirectory; SafeName = "<extract-directory>" }
+    $pathMap += [pscustomobject]@{ FullPath = $tool; SafeName = "dotnet-gcdump" }
 
     $reportOutput = Invoke-GcdumpReport -Tool $tool -GcdumpPath $snapshot.Gcdump
     $llmReportOutput = ConvertTo-LlmSafeText -Text $reportOutput -PathMap $pathMap -IncludeFullPath:$IncludeFullPathsInLlmInput

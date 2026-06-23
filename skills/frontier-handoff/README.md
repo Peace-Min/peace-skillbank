@@ -42,7 +42,7 @@ Expected a parsed dict. Fails only for files exported by the vendor tool.
 `encoding="utf-8"` still fails; a hexdump shows the file starts with bytes `EF BB BF` (a UTF-8 BOM).
 
 ## Relevant code
-`parser.py:1`
+`parser.py:4`
 ```python
 def load_config(path):
     with open(path, encoding="utf-8") as f:

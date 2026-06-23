@@ -12,12 +12,20 @@ data into a question meant for an external model.)
 Usage:
   python finalize-handoff.py <draft-file>      # draft = the assembled Goal..Ask sections
   type draft.md | python finalize-handoff.py -
-Exit 0 always. Reads UTF-8 (BOM-safe), prints UTF-8.
+Exit 0 on success; exit 2 if <draft-file> cannot be read. Reads UTF-8 (BOM-safe) from a file or
+stdin, prints UTF-8.
 """
 import sys
 
 try:
     sys.stdout.reconfigure(encoding="utf-8")
+except Exception:
+    pass
+try:
+    # Without this, Windows decodes stdin with the locale codepage (cp949 here), so a piped UTF-8
+    # draft -- Korean text, or a BOM -- mis-decodes and print() then raises. The file path already
+    # reads UTF-8 explicitly; this makes the documented `... | finalize-handoff.py -` form safe too.
+    sys.stdin.reconfigure(encoding="utf-8")
 except Exception:
     pass
 
@@ -38,10 +46,22 @@ Your answer will be applied by a WEAK local LLM with no internet, not by me dire
 
 def main():
     src = sys.argv[1] if len(sys.argv) > 1 else "-"
-    text = sys.stdin.read() if src == "-" else open(src, encoding="utf-8-sig").read()
+    if src == "-":
+        text = sys.stdin.read()
+    else:
+        try:
+            text = open(src, encoding="utf-8-sig").read()
+        except OSError as e:
+            sys.stderr.write(f"finalize-handoff: cannot read draft file {src!r}: {e}\n")
+            sys.exit(2)
     body = text.rstrip()
-    # Guard: never duplicate the directive if the draft already pasted it.
-    if "How to answer (the implementer is a weak offline model)" in body:
+    # Guard: never duplicate the directive if the draft already contains it. Anchor to the actual
+    # heading LINE, not a bare substring -- otherwise a draft that merely *mentions* the directive's
+    # title in prose (e.g. "the model ignores the How to answer (...) section") would suppress the
+    # append and silently drop the one thing this script exists to guarantee.
+    heading = "## How to answer (the implementer is a weak offline model)"
+    already = any(ln.strip() == heading for ln in body.splitlines())
+    if already:
         final = body + "\n"
     else:
         final = body + "\n\n" + RESPONSE_DIRECTIVE.rstrip() + "\n"

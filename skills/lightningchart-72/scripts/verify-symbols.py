@@ -22,6 +22,21 @@ try:
 except Exception:
     pass
 
+# Common BCL / LINQ / collection members. These are .NET framework members, NOT LightningChart 7.2
+# API, so they are absent from the index by design -- yet they appear constantly in real usage
+# answers (e.g. `ViewXY.XAxes.Count`, `series.Add(...)`, `XAxes.First()`). Treat them as
+# non-flagging on the dotted-path nets, the symmetric escape hatch the constructor-arity check
+# already grants to legitimate BCL types. They are not the hallucination this script targets
+# (invented LC-specific members like RainbowMode/AddRainbowAxis), and a model "inventing" a member
+# named exactly `Count`/`Add` on the wrong type is not the failure mode worth false-rejecting for.
+BCL_MEMBERS = {
+    "Count", "Length", "Add", "AddRange", "Remove", "RemoveAt", "RemoveRange", "Clear",
+    "Insert", "Contains", "IndexOf", "First", "FirstOrDefault", "Last", "LastOrDefault",
+    "Item", "ToString", "Equals", "GetHashCode", "GetType", "ToList", "ToArray", "AsEnumerable",
+    "Where", "Select", "Any", "All", "Key", "Value", "Keys", "Values", "Sort", "Reverse",
+    "Min", "Max", "Sum", "Average", "CopyTo", "Find", "Exists", "ForEach", "GetEnumerator",
+}
+
 
 def default_ref_dir():
     # Resolve where the local corpus lives, kept SYMMETRIC with setup-local-corpus.ps1's output dir:
@@ -88,6 +103,23 @@ def load_index(ref_dir):
             else:
                 types.add(_strip_arity(ln))
     return types, qualified, members, ctor_arities
+
+
+def _strip_namespace_lines(text):
+    """Drop C# `using ...;` directives and `namespace ...` declarations before symbol extraction.
+    They are import/scoping lines, not API assertions; their dotted namespace paths (e.g.
+    `Arction.Wpf.Charting`) would otherwise be misread as qualified Type.Member citations and
+    false-flagged as unverified. The snippet's actual API usage lives on its own lines and is still
+    checked. SKILL.md tells the agent to QUOTE real code, so quoted `using` lines are expected input."""
+    out = []
+    for ln in text.splitlines():
+        s = ln.strip()
+        if s.startswith("using ") and s.endswith(";"):
+            continue
+        if s.startswith("namespace "):
+            continue
+        out.append(ln)
+    return "\n".join(out)
 
 
 def candidates(text):
@@ -183,19 +215,24 @@ def main():
     src = args[0] if len(args) > 0 else "-"
     ref_dir = args[1] if len(args) > 1 else default_ref_dir()
     text = sys.stdin.read() if src == "-" else open(src, encoding="utf-8-sig").read()
+    # Strip `using`/`namespace` lines once; all symbol nets below scan this, never the raw text,
+    # so quoted import directives don't get misread as invented qualified symbols.
+    scan = _strip_namespace_lines(text)
 
     types, qualified, members, ctor_arities = load_index(ref_dir)
     if not types:
         print(f"api-index not built at {ref_dir} (run scripts/setup-local-corpus.ps1). Cannot verify.")
         sys.exit(2)
 
-    qual, bare = candidates(text)
+    qual, bare = candidates(scan)
     verified, unverified = [], []
     for c in sorted(qual):
         base, mem = c.split(".", 1)
         mem0 = mem.split(".")[0]
         if c in qualified or f"{base}.{mem0}" in qualified:
             verified.append(c)
+        elif mem0 in BCL_MEMBERS:
+            continue  # BCL/collection member (e.g. .Count/.Add), not an invented 7.2 API -- do not flag
         else:
             unverified.append(c)
 
@@ -206,15 +243,15 @@ def main():
     # invented segment (e.g. an extra .Frobnicate) would otherwise escape every net. Flag any chain
     # whose deeper segment is not a known member/type name.
     chain_unverified = []
-    for ch in sorted(set(re.findall(r"\b[A-Z][A-Za-z0-9]+(?:\.[A-Za-z_][A-Za-z0-9_]+){2,}\b", text))):
+    for ch in sorted(set(re.findall(r"\b[A-Z][A-Za-z0-9]+(?:\.[A-Za-z_][A-Za-z0-9_]+){2,}\b", scan))):
         deeper = ch.split(".")[2:]
-        if any(seg not in members and seg not in types for seg in deeper):
+        if any(seg not in members and seg not in types and seg not in BCL_MEMBERS for seg in deeper):
             chain_unverified.append(ch)
 
     # Single-word PascalCase identifiers cited inside inline-code spans. These bypass candidates()
     # entirely, so they are the main leak path for invented members on a weak model.
     code_single = set()
-    for tok in inline_code_tokens(text):
+    for tok in inline_code_tokens(scan):
         if re.match(r"^[A-Z][A-Za-z0-9]+$", tok):  # one PascalCase word (no dot/space/parens)
             code_single.add(tok)
     code_unknown = sorted(t for t in code_single if t not in types and t not in members)
@@ -226,7 +263,7 @@ def main():
     # bare-name net; flagging every unknown ctor type would false-positive on legitimate BCL types
     # used in examples (new List<int>(), new StringBuilder(), new Point(...)), which are out of the
     # 7.2 API scope but not hallucinations.
-    for typ, count in constructor_calls(text):
+    for typ, count in constructor_calls(scan):
         if typ in ctor_arities and count not in ctor_arities[typ]:
             ctor_issues.append(
                 f"new {typ}(...{count} args) -- no 7.2 constructor takes {count} args (valid: {sorted(ctor_arities[typ])})")

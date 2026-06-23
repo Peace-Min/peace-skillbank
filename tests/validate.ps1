@@ -319,6 +319,8 @@ Assert-Condition ($fhSkillContent -notmatch "(?i)mask") "frontier-handoff SKILL.
 #  - an observed/measured symptom must carry its measurement methodology (how / how many runs).
 Assert-Condition ($fhSkillContent -match "(?i)at the heart of the problem must appear in FULL") "frontier-handoff SKILL.md must require the core function in full (no elision)"
 Assert-Condition ($fhSkillContent -match "(?i)how it was measured and over how many runs") "frontier-handoff SKILL.md must require measurement methodology for observed/measured symptoms"
+# A pre-finalize self-check turns the "core function in full" rule from an aspiration into a checked step.
+Assert-Condition ($fhSkillContent -match "(?i)before finalizing, re-read") "frontier-handoff SKILL.md must keep the pre-finalize completeness self-check"
 
 # finalize-handoff.py: syntax + behavior (appends the directive once; no duplicate on a second pass).
 if ($python) {

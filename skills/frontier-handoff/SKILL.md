@@ -9,8 +9,10 @@ You are on a weak / offline model and have hit a wall. Your job is to package ev
 frontier model on a DIFFERENT machine needs to solve this **cold**, in a single paste-ready prompt.
 
 The one rule that drives everything: **the frontier model has NONE of your local context.** It cannot
-open your files, run your code, see your error, or read your repo. If a stranger with zero access to
-this machine could not act on the prompt, it is not finished. Build for that reader.
+open your files, run your code, see your error, or read your repo. **And it is one-shot** -- the reader
+cannot ask you a follow-up question, so every decision-relevant fact must be in the prompt; if one is
+genuinely unknowable, say so explicitly so the reader can branch rather than guess. If a stranger with
+zero access to this machine could not act on the prompt, it is not finished. Build for that reader.
 
 ## Workflow
 
@@ -19,11 +21,14 @@ this machine could not act on the prompt, it is not finished. Build for that rea
    the conversation, ask one short question -- do not guess.
 
 2. **Auto-collect the context** (do not make the user retype what you can read yourself):
-   - **Code**: read the file(s) in play -- the one being edited, or the ones the user names. Include the
-     *minimal relevant span* (the failing function plus the symbols it depends on), each marked with
-     `path:line`. Do NOT dump the whole repo; a focused, complete excerpt beats a giant paste. The
-     function **at the heart of the problem must appear in FULL** -- never elide its body with `// ...`
-     or a summary comment; a truncated core function forces the reader to guess the exact bug.
+   - **Code**: read the file(s) in play. Be **minimal at the file/repo level but complete at the
+     function level**: include only the functions the failure actually involves (do NOT dump the whole
+     repo or unrelated files), but include each of those in full -- marked with `path:line`, and with its
+     original line breaks intact (never collapse a body to one line). "The core" is the function named in
+     the Problem text or at the top of the stack trace; that function
+     **at the heart of the problem must appear in FULL** -- never elide its body with `// ...` or a
+     summary comment, since a truncated core function forces the reader to guess the exact bug. Include
+     the symbols the failing code directly depends on so the reader is not guessing.
    - **Problem**: capture the exact symptom -- the error text, stack trace, wrong output, or the
      hallucinated claim -- **quoted verbatim**, not paraphrased. Paraphrasing loses the detail the
      frontier model needs. If the symptom is *observed or measured* (a perf/memory number, a flaky or
@@ -36,11 +41,17 @@ this machine could not act on the prompt, it is not finished. Build for that rea
      run a specific tool, must stay in this framework version). For any library/API question, include
      the **exact library version** -- API availability differs by version, so a vague "LightningChart"
      turns the answer into a guess. Also state the hard constraint that decides the approach (e.g. "this
-     runs before render -- is deferring acceptable, or must it work synchronously?").
+     runs before render -- is deferring acceptable, or must it work synchronously?"), and any
+     **framework/library configuration or mode that could change the recommended fix** (a shared
+     manager/singleton, a global option, hardware vs software rendering...) -- or say you checked and
+     there is none, so the reader can give a definitive step instead of a conditional one.
 
 3. **Assemble** the Goal..Ask sections using the template below.
 
-4. **Finalize deterministically -- always run the script.** Write the assembled Goal..Ask sections to
+4. **Self-check, then finalize deterministically -- always run the script.** Before finalizing, re-read
+   your draft: is every function referenced in the Problem present **in full**, with no `// ...` and no
+   one-line compression, and is every decision-relevant fact stated (or marked "checked, none")? If not,
+   go back and fix it first. Then write the assembled Goal..Ask sections to
    a temp file (e.g. `handoff-draft.md`), then run `python scripts/finalize-handoff.py handoff-draft.md`
    (or pipe the draft in: `... | python scripts/finalize-handoff.py -`). The script **appends the
    mandatory response directive verbatim** -- the block telling the frontier model to answer as a
@@ -71,7 +82,8 @@ reader is not guessing.>
 
 ## Environment & constraints
 <Language + framework + versions. Offline / air-gapped on a weak local model. Anything the
-frontier model must not assume (no internet, cannot run X, must stay on version Y).>
+frontier model must not assume (no internet, cannot run X, must stay on version Y). Any framework
+config/mode that changes the fix (shared manager, rendering mode...) -- or "checked, none".>
 
 ## Ask
 <ONE clear sentence: exactly what you want back. Request the answer in a form you can apply

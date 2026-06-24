@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!-- net8.0 on purpose: the dump must be of a runtime ClrMD reads cleanly (not net10-preview). -->
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AssemblyName>LeakSample</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- DiagnosticsClient.WriteDump(WithHeap) gives a deterministic self heap-dump for Phase 0. -->
+    <PackageReference Include="Microsoft.Diagnostics.NETCore.Client" Version="0.2.510501" />
+  </ItemGroup>
+
+</Project>

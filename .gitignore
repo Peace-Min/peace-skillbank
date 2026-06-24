@@ -29,3 +29,10 @@ skills/lightningchart-72/references/demos/*
 # Python bytecode (e.g. from syntax checks)
 __pycache__/
 *.pyc
+
+# diagsession root-chain tools: commit the .NET machinery (csproj/.cs), never the build outputs,
+# self-contained publish, or captured dumps.
+skills/diagsession-memory-analysis/tools/**/bin/
+skills/diagsession-memory-analysis/tools/**/obj/
+skills/diagsession-memory-analysis/tools/**/pub/
+*.dmp

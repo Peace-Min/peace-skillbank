@@ -82,6 +82,24 @@ If context is limited, provide only:
 
 The Size/Count comparison, container clues, and retention-hypothesis taxonomy live in `references/model-agnostic-prompt.md`; use them there rather than restating them here. Connect growing types back to source only when names or ownership make the inference plausible.
 
+## Root-cause evidence (optional enrichment)
+
+`LLM_MEMORY_INPUT.txt` may carry extra evidence from `scripts/enrich-root-chains.ps1` (run after
+extraction when before/after reports -- and optionally an `after.dmp` -- are available). It degrades
+gracefully; absence just means HeapStat-only.
+
+- **`## Heap growth summary`** -- candidates ranked by Delta Size + Delta Count; both-increased
+  app-owned types are highest priority, retention containers are clues (not conclusions), and the
+  native boundary line tells you when to escalate.
+- **`## Reference-chain evidence`** -- managed paths-to-root per candidate (from `after.dmp` via ClrMD),
+  grouped with coverage. Weigh each path by its **root**: a *sticky* root (Static / handle / finalizer)
+  is the retention cause; a `Stack` root means the object is currently in use, not leaked. Treat
+  **truncated** or **unresolved** instances as incomplete evidence, never a confirmed root cause.
+
+When this evidence is present, ground retention claims in it instead of guessing the container. When it
+is absent or says "root-chain unavailable", fall back to HeapStat candidates + the native escalation
+boundary above.
+
 ## Scope Boundary
 
 This skill is analysis-only. Do not modify source code, create commits, or apply fixes as part of this skill unless the user explicitly starts a separate fix task. Produce a handoff summary that another coding session or fix-oriented skill can use.

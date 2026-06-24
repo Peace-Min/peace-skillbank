@@ -160,6 +160,13 @@ Assert-Condition (Test-Path -LiteralPath $diagFixtures) "Missing diagsession fix
 Test-PowerShellSyntax -Path $diagFixtures
 & $diagFixtures -RepositoryRoot $RepositoryRoot
 
+# Behavioral fixtures for the #29 root-cause enrichment (candidate selection + native boundary +
+# graceful fallback; the ClrMD root-chain stage needs a local dump and is dev-tested separately).
+$rcFixtures = Join-Path $RepositoryRoot "tests\diagsession-rootchain-fixtures.ps1"
+Assert-Condition (Test-Path -LiteralPath $rcFixtures) "Missing diagsession-rootchain fixture runner"
+Test-PowerShellSyntax -Path $rcFixtures
+& $rcFixtures -RepositoryRoot $RepositoryRoot
+
 $claude = Get-Command claude -ErrorAction SilentlyContinue
 if ($claude) {
     Push-Location $RepositoryRoot

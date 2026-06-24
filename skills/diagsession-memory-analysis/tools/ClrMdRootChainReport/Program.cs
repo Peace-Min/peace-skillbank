@@ -24,13 +24,16 @@ namespace ClrMdRootChainReport
     {
         private static int Main(string[] args)
         {
-            string dumpPath = null, typesArg = null, outDir = ".";
+            string dumpPath = null, outDir = ".";
             int maxDepth = 40, maxInstances = 20000;
+            var wantTypes = new List<string>();
             for (int i = 0; i < args.Length; i++)
             {
                 switch (args[i])
                 {
-                    case "--types": typesArg = args[++i]; break;
+                    case "--types": wantTypes.AddRange(args[++i].Split(',')); break;
+                    // one type per line -- robust against commas inside generic type names.
+                    case "--types-file": wantTypes.AddRange(File.ReadAllLines(args[++i])); break;
                     case "--out": outDir = args[++i]; break;
                     case "--max-depth": maxDepth = int.Parse(args[++i]); break;
                     case "--max-instances": maxInstances = int.Parse(args[++i]); break;
@@ -39,10 +42,10 @@ namespace ClrMdRootChainReport
             }
             if (dumpPath == null)
             {
-                Console.Error.WriteLine("usage: ClrMdRootChainReport <dump> [--types A,B,C] [--out dir] [--max-depth N] [--max-instances N]");
+                Console.Error.WriteLine("usage: ClrMdRootChainReport <dump> [--types A,B,C | --types-file f] [--out dir] [--max-depth N] [--max-instances N]");
                 return 2;
             }
-            var wantTypes = (typesArg ?? "").Split(',').Select(s => s.Trim()).Where(s => s.Length > 0).ToList();
+            wantTypes = wantTypes.Select(s => s.Trim()).Where(s => s.Length > 0).Distinct().ToList();
 
             using DataTarget dt = DataTarget.LoadDump(dumpPath);
             using ClrRuntime runtime = dt.ClrVersions[0].CreateRuntime();

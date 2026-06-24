@@ -130,6 +130,27 @@ ANALYSIS.md (분석 완료 후)
 
 외부 LLM에 넘기기 전에는 `LLM_MEMORY_INPUT.txt`를 먼저 검토한다. 타입명, 네임스페이스, 프로젝트명 자체가 민감 정보일 수 있다.
 
+## 근본 원인 추적 (선택: root-chain 분석)
+
+HeapStat은 "무엇이 늘었나"만 알려준다. "왜 회수되지 않나"(GC root / 참조 체인)까지 보려면 선택 단계인
+`scripts/enrich-root-chains.ps1`를 추출 이후에 돌린다. 입력에 따라 **graceful**하게 동작한다.
+
+```text
+before/after report 2개            -> 후보 선정(성장 요약: ΔSize/ΔCount/both-app-owned/컨테이너/native 경계)
++ after.dmp + 빌드된 ClrMD 툴       -> 후보별 managed paths-to-root (reference-chains.{json,md,html})
+.dmp나 툴이 없으면                  -> "root-chain unavailable" 안내 + HeapStat 후보만으로 진행
+```
+
+`.dmp` 캡처 표준:
+
+```text
+dotnet-dump collect -p <PID> --type heap -o after.dmp
+```
+
+root-chain 툴은 폐쇄망에선 **인터넷 PC에서 한 번 빌드한 self-contained exe를 반입**해 쓴다(빌드/번들 방법은
+`skills/diagsession-memory-analysis/tools/ClrMdRootChainReport/README.md`). 경로는 sticky root(Static/handle/
+finalizer)=retention 원인, `Stack` root=현재 사용 중(누수 아님)으로 읽고, truncated/unresolved는 불완전 증거로 본다.
+
 ## 피해야 할 요청
 
 다음처럼 매번 긴 내부 작업 목록을 직접 붙일 필요는 없다.

@@ -1,0 +1,13 @@
+## Heap growth summary (before -> after)
+
+### Selected candidates for root-chain analysis
+- LeakSample.DeviceViewModel
+
+## Reference-chain evidence (from after.dmp)
+
+### Candidate: LeakSample.DeviceViewModel
+Path groups (shortest path, root -> ... -> candidate):
+- [8000 objs] root=StrongHandle (STICKY), depth=4
+    Object[] -> DeviceManager -> Dictionary<...> -> DeviceViewModel
+- [1000 objs] root=StrongHandle (STICKY), depth=7
+    Object[] -> TimerQueue -> TimerQueueTimer -> TimerHolder -> List<...> -> DeviceViewModel

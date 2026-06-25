@@ -27,6 +27,7 @@ foreach ($f in @("A_synthetic.md", "B_synthetic.md", "B_negative.md")) {
 $a = Score-RootChainAnalysis ([System.IO.File]::ReadAllText((Join-Path $fx "A_synthetic.md")))
 $b = Score-RootChainAnalysis ([System.IO.File]::ReadAllText((Join-Path $fx "B_synthetic.md")))
 $neg = Score-RootChainAnalysis ([System.IO.File]::ReadAllText((Join-Path $fx "B_negative.md")))
+$c = Score-RootChainAnalysis ([System.IO.File]::ReadAllText((Join-Path $fx "C_synthetic.md")))
 
 # enrichment-style answer beats baseline-style, and on the discriminators the rubric was built on
 Check "B beats A on Total" { $b.Total -gt $a.Total }
@@ -40,5 +41,27 @@ Check "negative control penalized below real B" { $neg.Total -lt $b.Total }
 Check "negative control flagged as hallucination" { $neg.Hallucination -ge 1 }
 Check "negative control does not get root-cause credit" { $neg.RootCause -lt $b.RootCause }
 
+# --- Arm C (wrong-evidence control): a model that faithfully USES falsified evidence must land in the
+#     low-RootCause / high-Hallucination region B never touches (proves the rubric tests correctness). ---
+Check "C (faithful-to-wrong-evidence) scores below B on root cause" { $c.RootCause -lt $b.RootCause }
+Check "C is flagged as hallucination (wrong holders asserted)" { $c.Hallucination -ge ($b.Hallucination + 1) }
+Check "C does not beat the no-evidence baseline on root cause" { $c.RootCause -le $a.RootCause }
+
+# --- Convert-ToWrongEvidence invariant: falsifying real enrichment must neutralize EVERY discriminator
+#     (so if a model parrots C verbatim it scores RootCause=0 + a hallucination spike), at ~B length. ---
+$enrReal = [System.IO.File]::ReadAllText((Join-Path $fx "B_enrichment_sample.txt"))
+$enrWrong = Convert-ToWrongEvidence $enrReal
+$enrWrongScore = Score-RootChainAnalysis $enrWrong
+Check "falsifier neutralizes all root-cause discriminators (RootCause=0)" { $enrWrongScore.RootCause -eq 0 }
+Check "falsifier injects hallucination tokens (>=2)" { $enrWrongScore.Hallucination -ge 2 }
+Check "falsifier keeps the leak TYPE intact (DeviceViewModel still present)" { $enrWrong -match 'DeviceViewModel' }
+Check "falsifier preserves length (no degenerate-to-empty)" { [math]::Abs($enrWrong.Length - $enrReal.Length) -le ($enrReal.Length * 0.30) }
+
+# --- statistics helpers must compute the verdict math correctly ---
+Check "sign-test: 8/8 is significant (p<=0.05)" { (Get-SignTestP 8 8) -le 0.05 }
+Check "sign-test: 6/8 is NOT significant (p>0.05)" { (Get-SignTestP 6 8) -gt 0.05 }
+Check "Wilson lower: 8/8 > 0.5" { (Get-WilsonLower 8 8) -gt 0.5 }
+Check "Wilson lower: 5/8 <= 0.5 (not above chance)" { (Get-WilsonLower 5 8) -le 0.5 }
+
 if ($failures.Count) { throw ("rootchain-eval scorer fixtures failed:`n  " + ($failures -join "`n  ")) }
-Write-Host "rootchain-eval scorer fixtures passed (A.Total=$($a.Total) B.Total=$($b.Total) neg.Total=$($neg.Total))."
+Write-Host "rootchain-eval scorer fixtures passed (A=$($a.Total) B=$($b.Total) C=$($c.Total) neg=$($neg.Total))."

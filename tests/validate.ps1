@@ -167,6 +167,12 @@ Assert-Condition (Test-Path -LiteralPath $rcFixtures) "Missing diagsession-rootc
 Test-PowerShellSyntax -Path $rcFixtures
 & $rcFixtures -RepositoryRoot $RepositoryRoot
 
+# Offline gate for the #29 A/B eval scorer (deterministic canned answers; no dump/tool/Ollama).
+$rcEvalFixtures = Join-Path $RepositoryRoot "tests\rootchain-eval-fixtures.ps1"
+Assert-Condition (Test-Path -LiteralPath $rcEvalFixtures) "Missing rootchain-eval scorer fixture runner"
+Test-PowerShellSyntax -Path $rcEvalFixtures
+& $rcEvalFixtures -RepositoryRoot $RepositoryRoot
+
 $claude = Get-Command claude -ErrorAction SilentlyContinue
 if ($claude) {
     Push-Location $RepositoryRoot

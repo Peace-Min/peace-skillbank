@@ -29,6 +29,7 @@ namespace ClrMdRootChainReport
             string dumpPath = null, outDir = ".";
             int maxDepth = 40, maxInstances = 20000;
             long maxNodes = 5_000_000;   // safety budget: bound the whole-heap BFS so a multi-GB dump can't OOM the tool
+            bool includeFullPaths = false;   // #34: default redacts the local dump path to its filename
             var wantTypes = new List<string>();
             for (int i = 0; i < args.Length; i++)
             {
@@ -41,12 +42,13 @@ namespace ClrMdRootChainReport
                     case "--max-depth": maxDepth = int.Parse(args[++i]); break;
                     case "--max-instances": maxInstances = int.Parse(args[++i]); break;
                     case "--max-nodes": maxNodes = long.Parse(args[++i]); break;
+                    case "--include-full-paths": includeFullPaths = true; break;
                     default: dumpPath = dumpPath ?? args[i]; break;
                 }
             }
             if (dumpPath == null)
             {
-                Console.Error.WriteLine("usage: ClrMdRootChainReport <dump> [--types A,B,C | --types-file f] [--out dir] [--max-depth N] [--max-instances N] [--max-nodes N]");
+                Console.Error.WriteLine("usage: ClrMdRootChainReport <dump> [--types A,B,C | --types-file f] [--out dir] [--max-depth N] [--max-instances N] [--max-nodes N] [--include-full-paths]");
                 return 2;
             }
             wantTypes = wantTypes.Select(s => s.Trim()).Where(s => s.Length > 0).Distinct().ToList();
@@ -56,18 +58,22 @@ namespace ClrMdRootChainReport
             ClrHeap heap = runtime.Heap;
             if (!heap.CanWalkHeap) { Console.Error.WriteLine("cannot walk heap"); return 1; }
 
-            // 1+2: collect candidate instances (capped per type). If no --types, fall back to "everything app-ish".
+            // 1+2: collect candidate instances. Reservoir-sample (seeded -> reproducible) so the analyzed
+            // set is a UNIFORM sample of the whole population rather than a head-of-heap slice that could
+            // miss a minority retention group (#33). When total <= maxInstances every instance is kept.
             var instancesByType = new Dictionary<string, List<ulong>>();
             var totalByType = new Dictionary<string, long>();
+            var rng = new Random(42);
             foreach (ClrObject o in heap.EnumerateObjects())
             {
                 string tn = o.Type?.Name;
                 if (tn == null) continue;
                 string key = MatchKey(tn, wantTypes);
                 if (key == null) continue;
-                totalByType.TryGetValue(key, out long tot); totalByType[key] = tot + 1;
+                totalByType.TryGetValue(key, out long tot); long count = tot + 1; totalByType[key] = count;
                 if (!instancesByType.TryGetValue(key, out var lst)) { lst = new List<ulong>(); instancesByType[key] = lst; }
                 if (lst.Count < maxInstances) lst.Add(o.Address);
+                else { int j = rng.Next((int)Math.Min(count, int.MaxValue)); if (j < maxInstances) lst[j] = o.Address; }
             }
             if (instancesByType.Count == 0) { Console.Error.WriteLine("no candidate instances found"); return 1; }
 
@@ -88,6 +94,7 @@ namespace ClrMdRootChainReport
             var parent = new Dictionary<ulong, ulong>();
             var depthOf = new Dictionary<ulong, int>();
             var rootKindOf = new Dictionary<ulong, string>();
+            var edgeOf = new Dictionary<ulong, string>();   // #30: field on the parent that holds this object
             bool depthCapped = false, nodeBudgetHit = false;
             void Bfs(List<(ulong addr, string kind)> roots)
             {
@@ -104,10 +111,13 @@ namespace ClrMdRootChainReport
                     int d = depthOf[a];
                     if (d >= maxDepth) { depthCapped = true; continue; }            // exploration cut by depth
                     ClrObject obj = heap.GetObject(a);
-                    foreach (ClrObject r in obj.EnumerateReferences(false, true))
+                    foreach (ClrReference rf in obj.EnumerateReferencesWithFields(false, true))
                     {
+                        ClrObject r = rf.Object;
                         if (r.IsNull || parent.ContainsKey(r.Address)) continue;
-                        parent[r.Address] = a; depthOf[r.Address] = d + 1; q.Enqueue(r.Address);
+                        parent[r.Address] = a;
+                        edgeOf[r.Address] = rf.Field?.Name;   // null for array elements / unknown
+                        depthOf[r.Address] = d + 1; q.Enqueue(r.Address);
                     }
                 }
             }
@@ -116,6 +126,7 @@ namespace ClrMdRootChainReport
 
             // 5: per type, group reached instances by path signature; coverage accounting
             var report = new List<object>();
+            var kindCounts = new Dictionary<string, long>();   // #32: objects per ROOT KIND across all candidates
             foreach (var kv in instancesByType.OrderByDescending(k => totalByType[k.Key]))
             {
                 string type = kv.Key;
@@ -126,23 +137,38 @@ namespace ClrMdRootChainReport
                 {
                     if (!parent.ContainsKey(c)) continue; // unresolved: beyond max-depth/node-budget OR unrooted
                     reached++;
-                    var nodes = new List<string>();
+                    // walk candidate -> root, capturing each node's type and the field that holds the NEXT node
+                    var chain = new List<(string type, string edge)>();
                     ulong cur = c, rootObj = c;
-                    while (cur != 0UL) { nodes.Add(ShortName(heap.GetObject(cur).Type?.Name)); rootObj = cur; cur = parent[cur]; }
-                    nodes.Reverse();
+                    while (cur != 0UL)
+                    {
+                        string ed = (parent[cur] != 0UL && edgeOf.TryGetValue(cur, out string e)) ? e : null;
+                        chain.Add((ShortName(heap.GetObject(cur).Type?.Name), ed));
+                        rootObj = cur; cur = parent[cur];
+                    }
+                    chain.Reverse();   // root .. candidate; chain[i].edge = field on chain[i-1] that points to chain[i]
+                    var nodes = new List<string>();
+                    for (int idx = 0; idx < chain.Count; idx++)
+                    {
+                        // append the OUTGOING field so the actionable edge (e.g. DeviceManager._devices) shows on the holder
+                        string label = chain[idx].type;
+                        if (idx + 1 < chain.Count && !string.IsNullOrEmpty(chain[idx + 1].edge)) label += "." + chain[idx + 1].edge;
+                        nodes.Add(label);
+                    }
                     string sig = string.Join(" -> ", nodes);
                     string rk = rootKindOf.TryGetValue(rootObj, out string k) ? k : "?";
                     if (!groups.TryGetValue(sig, out GroupInfo gi))
                     { gi = new GroupInfo { RootKind = rk, Depth = nodes.Count - 1, Nodes = nodes }; groups[sig] = gi; }
                     gi.Count++;
                 }
+                foreach (var g in groups.Values) { kindCounts.TryGetValue(g.RootKind, out long kc); kindCounts[g.RootKind] = kc + g.Count; }
                 int unresolved = analyzed.Count - reached;
                 report.Add(new
                 {
                     type,
                     totalInstances = totalByType[type],
                     analyzedInstances = analyzed.Count,
-                    sampled = analyzed.Count < totalByType[type],   // analyzed is a head-of-heap sample when true
+                    sampled = analyzed.Count < totalByType[type],   // analyzed is a uniform reservoir sample when true
                     rootReached = reached,
                     unresolved,
                     coveragePctOfAnalyzed = analyzed.Count == 0 ? 0.0 : Math.Round(100.0 * reached / analyzed.Count, 1),
@@ -150,6 +176,7 @@ namespace ClrMdRootChainReport
                     {
                         objects = g.Value.Count,
                         rootKind = g.Value.RootKind,
+                        rootInterpretation = InterpretRootKind(g.Value.RootKind),   // #32
                         sticky = g.Value.RootKind != "Stack",
                         depth = g.Value.Depth,
                         signature = g.Key,
@@ -157,21 +184,24 @@ namespace ClrMdRootChainReport
                     }).ToList()
                 });
             }
+            var rootKindSummary = kindCounts.OrderByDescending(x => x.Value)
+                .Select(x => new { rootKind = x.Key, interpretation = InterpretRootKind(x.Key), objects = x.Value }).ToList();
 
             Directory.CreateDirectory(outDir);
             var bundle = new
             {
-                dump = Path.GetFullPath(dumpPath),
+                dump = includeFullPaths ? Path.GetFullPath(dumpPath) : Path.GetFileName(dumpPath),   // #34: redact local path by default
                 maxDepth,
                 maxNodes,
                 nodesVisited = (long)parent.Count,
                 depthCapped,        // exploration was cut by max-depth somewhere
                 nodeBudgetHit,      // BFS aborted at the node budget -> coverage is partial
+                rootKindSummary,    // #32: objects per root kind + how to read each
                 candidates = report
             };
             File.WriteAllText(Path.Combine(outDir, "reference-chains.json"),
                 JsonSerializer.Serialize(bundle, new JsonSerializerOptions { WriteIndented = true }));
-            File.WriteAllText(Path.Combine(outDir, "reference-chains.md"), RenderMarkdown(report, maxDepth, depthCapped, nodeBudgetHit), new UTF8Encoding(false));
+            File.WriteAllText(Path.Combine(outDir, "reference-chains.md"), RenderMarkdown(report, maxDepth, depthCapped, nodeBudgetHit, rootKindSummary.Cast<object>().ToList()), new UTF8Encoding(false));
             File.WriteAllText(Path.Combine(outDir, "reference-chains.html"), RenderHtml(report), new UTF8Encoding(false));
 
             Console.WriteLine("wrote reference-chains.{json,md,html} to " + Path.GetFullPath(outDir));
@@ -234,18 +264,23 @@ namespace ClrMdRootChainReport
             return lt >= 0 ? s + "<...>" : s;
         }
 
-        private static string RenderMarkdown(List<object> report, int maxDepth, bool depthCapped, bool nodeBudgetHit)
+        private static string RenderMarkdown(List<object> report, int maxDepth, bool depthCapped, bool nodeBudgetHit, List<object> rootKinds)
         {
             var sb = new StringBuilder();
             sb.AppendLine("## Reference-chain evidence (from after.dmp)");
             sb.AppendLine();
-            sb.AppendLine("Root-chain evidence shows *why* candidates are still alive. A **sticky** root (any non-Stack root --");
-            sb.AppendLine("StrongHandle / PinnedHandle / FinalizerQueue) indicates retention; a `Stack` root means the object is");
-            sb.AppendLine("currently in use, not leaked. NOTE: a leaked **static field** surfaces as");
-            sb.AppendLine("`StrongHandle -> Object[] -> <holder>` in this ClrMD build (there is no `Static` root kind), so read a");
-            sb.AppendLine("StrongHandle into an `Object[]` as a likely static/runtime root. Native allocations are not traced");
-            sb.AppendLine("unless retained by a managed wrapper.");
+            sb.AppendLine("Root-chain evidence shows *why* candidates are still alive. A `Stack` root means the object is");
+            sb.AppendLine("currently in use, not leaked; every other root kind means it is retained -- but the *reason* differs");
+            sb.AppendLine("by kind (see below). NOTE: a leaked **static field** surfaces as `StrongHandle -> Object[] -> <holder>`");
+            sb.AppendLine("in this ClrMD build (there is no `Static` root kind). Native allocations are not traced unless retained");
+            sb.AppendLine("by a managed wrapper. Path edges show the holding field (e.g. `DeviceManager._devices`) where known.");
             sb.AppendLine();
+            if (rootKinds != null && rootKinds.Count > 0)
+            {
+                sb.AppendLine("Root kinds reached (how to read each):");
+                foreach (dynamic rk in rootKinds) sb.AppendLine($"- {rk.rootKind} ({rk.objects} objs) -- {rk.interpretation}");
+                sb.AppendLine();
+            }
             sb.AppendLine($"Limits: shortest path is searched to max-depth {maxDepth}; the heap walk is bounded by a node budget.");
             string capNote = (nodeBudgetHit ? " Node budget WAS hit -- coverage is partial; raise --max-nodes if RAM allows."
                               : depthCapped ? " Max-depth WAS hit on some paths." : "");
@@ -261,8 +296,7 @@ namespace ClrMdRootChainReport
                 sb.AppendLine("Path groups (shortest path, root -> ... -> candidate):");
                 foreach (dynamic g in r.pathGroups)
                 {
-                    string tag = g.sticky ? "STICKY" : "stack(in-use?)";
-                    sb.AppendLine($"- [{g.objects} objs] root={g.rootKind} ({tag}), depth={g.depth}");
+                    sb.AppendLine($"- [{g.objects} objs] root={g.rootKind} -- {g.rootInterpretation}, depth={g.depth}");
                     sb.AppendLine($"    {g.signature}");
                 }
                 sb.AppendLine();
@@ -289,6 +323,22 @@ namespace ClrMdRootChainReport
                 sb.AppendLine("</table>");
             }
             return sb.ToString();
+        }
+
+        // #32: each ClrMD root kind implies a DIFFERENT root cause -- do not treat them all as a static leak.
+        private static string InterpretRootKind(string kind)
+        {
+            switch (kind)
+            {
+                case "StrongHandle": return "retention -- likely a static / long-lived cache (statics surface as StrongHandle -> Object[])";
+                case "PinnedHandle":
+                case "AsyncPinnedHandle": return "pinned -- interop / native pressure or a pinned buffer, not a plain managed cache leak";
+                case "FinalizerQueue": return "awaiting finalization -- a Dispose / finalizer-backlog delay, not a permanent root";
+                case "DependentHandle": return "dependent handle -- ConditionalWeakTable / event / runtime infra; review the dependency";
+                case "RefCounted": return "ref-counted (COM/interop) handle -- check interop lifetime";
+                case "Stack": return "transient -- on a thread stack, may just be in use; confirm with repeat snapshots";
+                default: return "retained root (" + kind + ") -- review";
+            }
         }
 
         private static string Esc(string s) => (s ?? "").Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;");

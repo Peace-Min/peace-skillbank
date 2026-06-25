@@ -5,7 +5,13 @@ param(
     [string]$OutputDirectory,
     [string]$ToolPath,
     [switch]$IncludeFullPathsInLlmInput,
-    [switch]$KeepExtractedGcdump
+    [switch]$KeepExtractedGcdump,
+
+    # #31: optional root-cause enrichment in the default run. When an after.dmp is given (and the built
+    # ClrMD tool is found), managed paths-to-root are folded into LLM_MEMORY_INPUT.txt. Absent/failed ->
+    # HeapStat-only analysis still stands (graceful).
+    [string]$AfterDumpPath,
+    [string]$RootChainToolExe
 )
 
 $ErrorActionPreference = "Stop"
@@ -424,5 +430,28 @@ finally {
 
 Write-Host "Processed $($snapshots.Count) gcdump snapshot(s)."
 Write-Host "Combined LLM input: $combinedReportPath"
+
+# #31: optional root-cause enrichment, additive and graceful -- the core extraction above is unchanged.
+# When an after.dmp is supplied, fold managed paths-to-root into LLM_MEMORY_INPUT.txt; any missing input
+# (no dump, no built tool, <2 reports, tool error) degrades to HeapStat-only with a clear note.
+if ($AfterDumpPath) {
+    $enrichScript = Join-Path $PSScriptRoot "enrich-root-chains.ps1"
+    if (Test-Path -LiteralPath $enrichScript) {
+        $enrichArgs = @{
+            ReportsDir = $reportDirectory
+            DumpPath = $AfterDumpPath
+            OutputDir = $OutputDirectory
+            MemoryInput = $combinedReportPath
+        }
+        if ($RootChainToolExe) { $enrichArgs.ToolExe = $RootChainToolExe }
+        try {
+            & $enrichScript @enrichArgs | Out-Null
+            Write-Host "Root-cause enrichment: folded into $combinedReportPath"
+        }
+        catch {
+            Write-Host "Root-cause enrichment skipped ($($_.Exception.Message)); HeapStat-only analysis stands."
+        }
+    }
+}
 Write-Host "Manifest: $manifestPath"
 Write-Host "Reports: $reportDirectory"

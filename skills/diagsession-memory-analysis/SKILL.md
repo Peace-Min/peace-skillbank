@@ -84,9 +84,10 @@ The Size/Count comparison, container clues, and retention-hypothesis taxonomy li
 
 ## Root-cause evidence (optional enrichment)
 
-`LLM_MEMORY_INPUT.txt` may carry extra evidence from `scripts/enrich-root-chains.ps1` (run after
-extraction when before/after reports -- and optionally an `after.dmp` -- are available). It degrades
-gracefully; absence just means HeapStat-only.
+`LLM_MEMORY_INPUT.txt` may carry extra root-cause evidence. Get it in the **default run** by passing
+`-AfterDumpPath <after.dmp> [-RootChainToolExe <exe>]` to `extract-gcdump-reports.ps1` (it folds the
+evidence in automatically), or run `scripts/enrich-root-chains.ps1` separately. Either way it degrades
+gracefully -- no `.dmp` / tool, or <2 snapshots, just means HeapStat-only with a clear note.
 
 - **`## Heap growth summary`** -- candidates ranked by Delta Size + Delta Count; both-increased
   app-owned types are highest priority, retention containers are clues (not conclusions), and the

@@ -1,5 +1,6 @@
 param(
-    [string]$RepositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+    [string]$RepositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path,
+    [switch]$IncludeClrMdE2E   # opt-in: also build+dump+run the ClrMD root-chain tool (needs .NET SDK; heavy)
 )
 
 $ErrorActionPreference = "Stop"
@@ -172,6 +173,12 @@ $rcEvalFixtures = Join-Path $RepositoryRoot "tests\rootchain-eval-fixtures.ps1"
 Assert-Condition (Test-Path -LiteralPath $rcEvalFixtures) "Missing rootchain-eval scorer fixture runner"
 Test-PowerShellSyntax -Path $rcEvalFixtures
 & $rcEvalFixtures -RepositoryRoot $RepositoryRoot
+
+# ClrMD root-chain E2E (#35): always syntax-check; only RUN when opted in (builds + dumps; needs the SDK).
+$clrmdE2E = Join-Path $RepositoryRoot "tests\diagsession-clrmd-e2e.ps1"
+Assert-Condition (Test-Path -LiteralPath $clrmdE2E) "Missing ClrMD E2E smoke test"
+Test-PowerShellSyntax -Path $clrmdE2E
+if ($IncludeClrMdE2E) { & $clrmdE2E -RepositoryRoot $RepositoryRoot }
 
 $claude = Get-Command claude -ErrorAction SilentlyContinue
 if ($claude) {

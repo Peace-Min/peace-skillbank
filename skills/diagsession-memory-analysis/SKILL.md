@@ -93,11 +93,16 @@ gracefully -- no `.dmp` / tool, or <2 snapshots, just means HeapStat-only with a
   app-owned types are highest priority, retention containers are clues (not conclusions), and the
   native boundary line tells you when to escalate.
 - **`## Reference-chain evidence`** -- managed paths-to-root per candidate (from `after.dmp` via ClrMD),
-  grouped with coverage. Weigh each path by its **root**: a *sticky* root (any non-Stack root --
-  StrongHandle / handle / finalizer; a leaked static field appears as `StrongHandle -> Object[] ->
-  holder`, not a "Static" kind) is the retention cause; a `Stack` root means the object is currently in
-  use, not leaked. Treat **unresolved** instances (which may lie beyond the max-depth / node-budget caps,
-  or be unrooted) and a **sampled** coverage as incomplete evidence, never a confirmed root cause.
+  grouped with coverage. A `Stack` root means the object is currently **in use, not leaked**. Every other
+  root kind is retained, but the *reason differs by kind* -- read the report's `rootInterpretation` and do
+  NOT lump all non-Stack roots together as one "static leak":
+    - **StrongHandle** -- likely a static / long-lived cache (a leaked **static field** appears as
+      `StrongHandle -> Object[] -> holder`, not a "Static" kind).
+    - **PinnedHandle / AsyncPinnedHandle** -- pinning / interop / native pressure, not a plain managed cache.
+    - **FinalizerQueue** -- a Dispose / finalizer-backlog delay, not a permanent root.
+    - **RefCountedHandle** -- a COM / interop ref-counted lifetime to check.
+  Treat **unresolved** instances (which may lie beyond the max-depth / node-budget caps, or be unrooted)
+  and a **sampled** (uniform reservoir) coverage as incomplete evidence, never a confirmed root cause.
 
 When this evidence is present, ground retention claims in it instead of guessing the container. When it
 is absent or says "root-chain unavailable", fall back to HeapStat candidates + the native escalation

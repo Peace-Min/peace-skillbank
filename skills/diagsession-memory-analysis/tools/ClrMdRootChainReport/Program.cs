@@ -202,7 +202,7 @@ namespace ClrMdRootChainReport
             File.WriteAllText(Path.Combine(outDir, "reference-chains.json"),
                 JsonSerializer.Serialize(bundle, new JsonSerializerOptions { WriteIndented = true }));
             File.WriteAllText(Path.Combine(outDir, "reference-chains.md"), RenderMarkdown(report, maxDepth, depthCapped, nodeBudgetHit, rootKindSummary.Cast<object>().ToList()), new UTF8Encoding(false));
-            File.WriteAllText(Path.Combine(outDir, "reference-chains.html"), RenderHtml(report), new UTF8Encoding(false));
+            File.WriteAllText(Path.Combine(outDir, "reference-chains.html"), RenderHtml(report, rootKindSummary.Cast<object>().ToList()), new UTF8Encoding(false));
 
             Console.WriteLine("wrote reference-chains.{json,md,html} to " + Path.GetFullPath(outDir));
             if (nodeBudgetHit) Console.WriteLine($"  NOTE: node budget ({maxNodes}) hit -- coverage is partial; raise --max-nodes if RAM allows.");
@@ -304,21 +304,34 @@ namespace ClrMdRootChainReport
             return sb.ToString();
         }
 
-        private static string RenderHtml(List<object> report)
+        private static string RenderHtml(List<object> report, List<object> rootKinds)
         {
             var sb = new StringBuilder();
             sb.AppendLine("<!doctype html><meta charset=\"utf-8\"><title>Reference chains</title>");
-            sb.AppendLine("<style>body{font:14px system-ui;margin:2rem}h3{margin-top:1.5rem}table{border-collapse:collapse}td,th{border:1px solid #ccc;padding:4px 8px;text-align:left}.s{color:#b00;font-weight:600}.t{color:#888}</style>");
+            sb.AppendLine("<style>body{font:14px system-ui;margin:2rem}h3{margin-top:1.5rem}table{border-collapse:collapse;margin:.4rem 0}td,th{border:1px solid #ccc;padding:4px 8px;text-align:left;vertical-align:top}.s{color:#b00;font-weight:600}.t{color:#888}.i{color:#555;font-size:13px}</style>");
             sb.AppendLine("<h1>Reference-chain evidence (after.dmp)</h1>");
+            // #37: HTML carries the same root-kind meaning as md/json -- a summary table + a per-group
+            // interpretation column, so a reader never sees every non-Stack root as one "sticky leak".
+            if (rootKinds != null && rootKinds.Count > 0)
+            {
+                sb.AppendLine("<h2>Root kinds reached</h2>");
+                sb.AppendLine("<table><tr><th>root kind</th><th>objs</th><th>how to read</th></tr>");
+                foreach (dynamic rk in rootKinds)
+                {
+                    string rcls = ((string)rk.rootKind) == "Stack" ? "t" : "s";
+                    sb.AppendLine($"<tr><td class=\"{rcls}\">{Esc((string)rk.rootKind)}</td><td>{rk.objects}</td><td class=\"i\">{Esc((string)rk.interpretation)}</td></tr>");
+                }
+                sb.AppendLine("</table>");
+            }
             foreach (dynamic r in report)
             {
                 sb.AppendLine($"<h3>{Esc((string)r.type)}</h3>");
                 sb.AppendLine($"<p>total {r.totalInstances} &middot; analyzed {r.analyzedInstances} &middot; rootReached {r.rootReached} ({r.coveragePctOfAnalyzed}% of analyzed) &middot; unresolved {r.unresolved}</p>");
-                sb.AppendLine("<table><tr><th>objs</th><th>root</th><th>depth</th><th>path</th></tr>");
+                sb.AppendLine("<table><tr><th>objs</th><th>root</th><th>interpretation</th><th>depth</th><th>path</th></tr>");
                 foreach (dynamic g in r.pathGroups)
                 {
                     string cls = g.sticky ? "s" : "t";
-                    sb.AppendLine($"<tr><td>{g.objects}</td><td class=\"{cls}\">{Esc((string)g.rootKind)}</td><td>{g.depth}</td><td>{Esc((string)g.signature)}</td></tr>");
+                    sb.AppendLine($"<tr><td>{g.objects}</td><td class=\"{cls}\">{Esc((string)g.rootKind)}</td><td class=\"i\">{Esc((string)g.rootInterpretation)}</td><td>{g.depth}</td><td>{Esc((string)g.signature)}</td></tr>");
                 }
                 sb.AppendLine("</table>");
             }

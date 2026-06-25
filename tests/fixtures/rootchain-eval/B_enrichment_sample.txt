@@ -1,3 +1,14 @@
+<!--
+LEGACY FORMAT, INTENTIONAL -- do NOT "modernize" this to match the live report. (This comment is kept
+deliberately free of the holder/root token NAMES so it cannot perturb the deterministic scorer.)
+This is a representative B-arm enrichment snapshot for the A/B/C scorer gate
+(tests/score-rootchain.ps1 + tests/rootchain-eval-fixtures.ps1), not a live tool snapshot. It keeps the
+pre-v0.1.24 markdown shape on purpose so the gate stays independent of the report's exact wording; the
+scorer and the wrong-evidence falsifier key on the body's stable holder tokens, not on formatting. The
+current live format (field-label edges, per-root-kind interpretation, uniform reservoir sampling) is
+exercised end-to-end by tests/diagsession-clrmd-e2e.ps1 instead.
+-->
+
 ## Heap growth summary (before -> after)
 
 ### Selected candidates for root-chain analysis

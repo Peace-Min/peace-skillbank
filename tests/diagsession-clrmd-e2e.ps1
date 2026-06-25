@@ -55,6 +55,10 @@ try {
     Check "path reaches the DeviceManager holder (field edge present)" { @($dvm.pathGroups | Where-Object { $_.signature -match 'DeviceManager' }).Count -ge 1 }
     Check "dump path redacted to filename in json (#34)" { $json.dump -notmatch '[\\/]' }
     Check "rootKindSummary present (#32)" { $null -ne $json.rootKindSummary }
+    # #37: HTML must carry the same root-kind meaning as md/json (summary table + interpretation column).
+    $html = Get-Content (Join-Path $out "reference-chains.html") -Raw
+    Check "html shows root-kind summary table (#37)" { $html -match 'Root kinds reached' }
+    Check "html shows per-group interpretation (#37)" { ($html -match 'how to read') -and ($html -match 'cache') }
 }
 finally { Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue }
 

@@ -290,7 +290,7 @@ namespace ClrMdRootChainReport
             foreach (dynamic r in report)
             {
                 sb.AppendLine($"### Candidate: {r.type}");
-                string samp = r.sampled ? $" (head-of-heap sample of {r.totalInstances})" : "";
+                string samp = r.sampled ? $" (uniform reservoir sample of {r.totalInstances})" : "";
                 sb.AppendLine($"Total instances: {r.totalInstances}  |  analyzed: {r.analyzedInstances}{samp}  |  rootReached: {r.rootReached} ({r.coveragePctOfAnalyzed}% of analyzed)  |  unresolved: {r.unresolved}");
                 sb.AppendLine();
                 sb.AppendLine("Path groups (shortest path, root -> ... -> candidate):");
@@ -326,6 +326,9 @@ namespace ClrMdRootChainReport
         }
 
         // #32: each ClrMD root kind implies a DIFFERENT root cause -- do not treat them all as a static leak.
+        // Names verified against the shipped Microsoft.Diagnostics.Runtime 3.1.512801 ClrRootKind enum:
+        // None, FinalizerQueue, StrongHandle, PinnedHandle, Stack, RefCountedHandle, AsyncPinnedHandle, SizedRefHandle.
+        // (There is no DependentHandle root kind in this build -- CWT dependent links are not surfaced as roots.)
         private static string InterpretRootKind(string kind)
         {
             switch (kind)
@@ -334,8 +337,8 @@ namespace ClrMdRootChainReport
                 case "PinnedHandle":
                 case "AsyncPinnedHandle": return "pinned -- interop / native pressure or a pinned buffer, not a plain managed cache leak";
                 case "FinalizerQueue": return "awaiting finalization -- a Dispose / finalizer-backlog delay, not a permanent root";
-                case "DependentHandle": return "dependent handle -- ConditionalWeakTable / event / runtime infra; review the dependency";
-                case "RefCounted": return "ref-counted (COM/interop) handle -- check interop lifetime";
+                case "RefCountedHandle": return "ref-counted (COM / interop) handle -- check interop lifetime";
+                case "SizedRefHandle": return "sized-ref handle -- usually runtime / framework-owned; review only if the holder is app code";
                 case "Stack": return "transient -- on a thread stack, may just be in use; confirm with repeat snapshots";
                 default: return "retained root (" + kind + ") -- review";
             }

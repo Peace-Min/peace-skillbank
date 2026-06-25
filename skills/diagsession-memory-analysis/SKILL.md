@@ -92,9 +92,11 @@ gracefully; absence just means HeapStat-only.
   app-owned types are highest priority, retention containers are clues (not conclusions), and the
   native boundary line tells you when to escalate.
 - **`## Reference-chain evidence`** -- managed paths-to-root per candidate (from `after.dmp` via ClrMD),
-  grouped with coverage. Weigh each path by its **root**: a *sticky* root (Static / handle / finalizer)
-  is the retention cause; a `Stack` root means the object is currently in use, not leaked. Treat
-  **truncated** or **unresolved** instances as incomplete evidence, never a confirmed root cause.
+  grouped with coverage. Weigh each path by its **root**: a *sticky* root (any non-Stack root --
+  StrongHandle / handle / finalizer; a leaked static field appears as `StrongHandle -> Object[] ->
+  holder`, not a "Static" kind) is the retention cause; a `Stack` root means the object is currently in
+  use, not leaked. Treat **unresolved** instances (which may lie beyond the max-depth / node-budget caps,
+  or be unrooted) and a **sampled** coverage as incomplete evidence, never a confirmed root cause.
 
 When this evidence is present, ground retention claims in it instead of guessing the container. When it
 is absent or says "root-chain unavailable", fall back to HeapStat candidates + the native escalation

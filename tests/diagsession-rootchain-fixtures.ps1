@@ -42,6 +42,9 @@ try {
     Check "native-wrapper (Bitmap) flagged" { $md -match "native-wrapper.*Bitmap" }
     Check "retention container (Dictionary) flagged" { ($md -match "Retention containers") -and ($md -match "Dictionary") }
     Check "candidate list has DeviceViewModel" { ((Get-Content (Join-Path $tmp "c.txt") -Raw)) -match "DeviceViewModel" }
+    # annotated "(Bytes > 1M)" bucket must collapse into the plain type, not leak the annotation as a type.
+    Check "annotated bucket collapsed (no '(Bytes >' in candidates)" { -not (((Get-Content (Join-Path $tmp "c.txt") -Raw)) -match "\(Bytes >") }
+    Check "Byte[] candidate present (annotated+plain merged)" { ((Get-Content (Join-Path $tmp "c.txt") -Raw)) -match "System\.Byte\[\]" }
 
     $reps = Join-Path $tmp "reps"; New-Item -ItemType Directory -Force -Path $reps | Out-Null
     Copy-Item $before (Join-Path $reps "01-before.heapstat.txt")

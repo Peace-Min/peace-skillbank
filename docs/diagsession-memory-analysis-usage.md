@@ -148,8 +148,10 @@ dotnet-dump collect -p <PID> --type heap -o after.dmp
 ```
 
 root-chain 툴은 폐쇄망에선 **인터넷 PC에서 한 번 빌드한 self-contained exe를 반입**해 쓴다(빌드/번들 방법은
-`skills/diagsession-memory-analysis/tools/ClrMdRootChainReport/README.md`). 경로는 sticky root(Static/handle/
-finalizer)=retention 원인, `Stack` root=현재 사용 중(누수 아님)으로 읽고, truncated/unresolved는 불완전 증거로 본다.
+`skills/diagsession-memory-analysis/tools/ClrMdRootChainReport/README.md`). 경로는 sticky root(non-Stack:
+StrongHandle/handle/finalizer; **static 필드는 `StrongHandle → Object[] → holder`로 나타남**, `Static` kind은 없음)
+=retention 원인, `Stack` root=현재 사용 중(누수 아님)으로 읽는다. unresolved(=max-depth/node-budget 초과 또는 unrooted)와
+sampled coverage는 불완전 증거로 본다. 멀티-GB 덤프는 메모리를 많이 쓰니(힙 크기 비례) RAM 여유 있는 PC에서 돌린다.
 
 ## 피해야 할 요청
 

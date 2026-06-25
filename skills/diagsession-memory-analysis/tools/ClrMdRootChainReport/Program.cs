@@ -2,8 +2,10 @@
 // managed paths-to-root grouped by signature, with coverage accounting, as JSON + MD + HTML.
 //
 // Design points baked in:
-//  - STICKY-root preference: a leak's real root is sticky (Static / handle / finalizer). A Stack root
-//    means "currently in use", not leaked. Two-phase BFS claims objects from sticky roots first, then
+//  - STICKY-root preference: a leak's real root is sticky (any non-Stack root: StrongHandle / handle /
+//    finalizer; a static field surfaces as StrongHandle -> Object[] -> holder in this ClrMD build, NOT
+//    as a "Static" kind). A Stack root means "currently in use", not leaked. Two-phase BFS claims from
+//    sticky roots first, then
 //    stack roots, so a sticky path wins whenever one exists. rootKind is reported either way.
 //  - path GROUPS + coverage, not top-N raw paths: every candidate instance is bucketed by its shortest
 //    path signature; we report rootReached vs unresolved (>max-depth / unrooted).
@@ -26,6 +28,7 @@ namespace ClrMdRootChainReport
         {
             string dumpPath = null, outDir = ".";
             int maxDepth = 40, maxInstances = 20000;
+            long maxNodes = 5_000_000;   // safety budget: bound the whole-heap BFS so a multi-GB dump can't OOM the tool
             var wantTypes = new List<string>();
             for (int i = 0; i < args.Length; i++)
             {
@@ -37,12 +40,13 @@ namespace ClrMdRootChainReport
                     case "--out": outDir = args[++i]; break;
                     case "--max-depth": maxDepth = int.Parse(args[++i]); break;
                     case "--max-instances": maxInstances = int.Parse(args[++i]); break;
+                    case "--max-nodes": maxNodes = long.Parse(args[++i]); break;
                     default: dumpPath = dumpPath ?? args[i]; break;
                 }
             }
             if (dumpPath == null)
             {
-                Console.Error.WriteLine("usage: ClrMdRootChainReport <dump> [--types A,B,C | --types-file f] [--out dir] [--max-depth N] [--max-instances N]");
+                Console.Error.WriteLine("usage: ClrMdRootChainReport <dump> [--types A,B,C | --types-file f] [--out dir] [--max-depth N] [--max-instances N] [--max-nodes N]");
                 return 2;
             }
             wantTypes = wantTypes.Select(s => s.Trim()).Where(s => s.Length > 0).Distinct().ToList();
@@ -78,10 +82,13 @@ namespace ClrMdRootChainReport
                 if (kind == "Stack") stack.Add((ro.Address, kind)); else sticky.Add((ro.Address, kind));
             }
 
-            // 4: two-phase BFS (sticky first, then stack) -> parent/depth/rootKind maps
+            // 4: two-phase BFS (sticky first, then stack) -> parent/depth/rootKind maps.
+            // depthCapped/nodeBudgetHit keep the limits HONEST: an unresolved instance may simply lie
+            // beyond max-depth or the node budget rather than being genuinely unrooted, and we say so.
             var parent = new Dictionary<ulong, ulong>();
             var depthOf = new Dictionary<ulong, int>();
             var rootKindOf = new Dictionary<ulong, string>();
+            bool depthCapped = false, nodeBudgetHit = false;
             void Bfs(List<(ulong addr, string kind)> roots)
             {
                 var q = new Queue<ulong>();
@@ -92,9 +99,10 @@ namespace ClrMdRootChainReport
                 }
                 while (q.Count > 0)
                 {
+                    if (parent.Count >= maxNodes) { nodeBudgetHit = true; break; }  // bound memory on huge heaps
                     ulong a = q.Dequeue();
                     int d = depthOf[a];
-                    if (d >= maxDepth) continue;
+                    if (d >= maxDepth) { depthCapped = true; continue; }            // exploration cut by depth
                     ClrObject obj = heap.GetObject(a);
                     foreach (ClrObject r in obj.EnumerateReferences(false, true))
                     {
@@ -116,7 +124,7 @@ namespace ClrMdRootChainReport
                 int reached = 0;
                 foreach (ulong c in analyzed)
                 {
-                    if (!parent.ContainsKey(c)) continue; // unresolved (>max-depth or unrooted)
+                    if (!parent.ContainsKey(c)) continue; // unresolved: beyond max-depth/node-budget OR unrooted
                     reached++;
                     var nodes = new List<string>();
                     ulong cur = c, rootObj = c;
@@ -134,17 +142,16 @@ namespace ClrMdRootChainReport
                     type,
                     totalInstances = totalByType[type],
                     analyzedInstances = analyzed.Count,
+                    sampled = analyzed.Count < totalByType[type],   // analyzed is a head-of-heap sample when true
                     rootReached = reached,
                     unresolved,
-                    coveragePct = analyzed.Count == 0 ? 0.0 : Math.Round(100.0 * reached / analyzed.Count, 1),
+                    coveragePctOfAnalyzed = analyzed.Count == 0 ? 0.0 : Math.Round(100.0 * reached / analyzed.Count, 1),
                     pathGroups = groups.OrderByDescending(g => g.Value.Count).Select(g => new
                     {
                         objects = g.Value.Count,
                         rootKind = g.Value.RootKind,
                         sticky = g.Value.RootKind != "Stack",
                         depth = g.Value.Depth,
-                        rootReached = true,
-                        truncated = false,
                         signature = g.Key,
                         nodes = g.Value.Nodes
                     }).ToList()
@@ -152,15 +159,25 @@ namespace ClrMdRootChainReport
             }
 
             Directory.CreateDirectory(outDir);
-            var bundle = new { dump = Path.GetFullPath(dumpPath), maxDepth, candidates = report };
+            var bundle = new
+            {
+                dump = Path.GetFullPath(dumpPath),
+                maxDepth,
+                maxNodes,
+                nodesVisited = (long)parent.Count,
+                depthCapped,        // exploration was cut by max-depth somewhere
+                nodeBudgetHit,      // BFS aborted at the node budget -> coverage is partial
+                candidates = report
+            };
             File.WriteAllText(Path.Combine(outDir, "reference-chains.json"),
                 JsonSerializer.Serialize(bundle, new JsonSerializerOptions { WriteIndented = true }));
-            File.WriteAllText(Path.Combine(outDir, "reference-chains.md"), RenderMarkdown(report, maxDepth), new UTF8Encoding(false));
+            File.WriteAllText(Path.Combine(outDir, "reference-chains.md"), RenderMarkdown(report, maxDepth, depthCapped, nodeBudgetHit), new UTF8Encoding(false));
             File.WriteAllText(Path.Combine(outDir, "reference-chains.html"), RenderHtml(report), new UTF8Encoding(false));
 
             Console.WriteLine("wrote reference-chains.{json,md,html} to " + Path.GetFullPath(outDir));
+            if (nodeBudgetHit) Console.WriteLine($"  NOTE: node budget ({maxNodes}) hit -- coverage is partial; raise --max-nodes if RAM allows.");
             foreach (dynamic r in report)
-                Console.WriteLine($"  {r.type}: total={r.totalInstances} reached={r.rootReached}/{r.analyzedInstances} ({r.coveragePct}%) groups={((System.Collections.ICollection)r.pathGroups).Count}");
+                Console.WriteLine($"  {r.type}: total={r.totalInstances} reached={r.rootReached}/{r.analyzedInstances} ({r.coveragePctOfAnalyzed}% of analyzed) groups={((System.Collections.ICollection)r.pathGroups).Count}");
             return 0;
         }
 
@@ -170,13 +187,28 @@ namespace ClrMdRootChainReport
         {
             if (wanted.Count == 0) return clrName; // no filter -> all (caller usually passes --types)
             string cSimple = SimpleName(clrName, out bool cArr);
+            bool cNs = HasNamespace(clrName);
             foreach (string w in wanted)
             {
                 if (clrName == w) return w;                       // exact full-name fast path
-                string wSimple = SimpleName(w, out bool wArr);    // else match the leading type name + array-ness,
-                if (cArr == wArr && cSimple == wSimple) return w; // so Dictionary<...,DeviceViewModel> does NOT match "DeviceViewModel"
+                string wSimple = SimpleName(w, out bool wArr);    // else match leading type name + array-ness,
+                if (cArr == wArr && cSimple == wSimple)           // so Dictionary<...,DeviceViewModel> != "DeviceViewModel".
+                {
+                    // Guard a cross-namespace collision: if BOTH are namespaced and not exact-equal, they
+                    // are different types (Foo.Bar must not absorb Baz.Bar). Only fall back to the simple
+                    // name when at least one side is namespace-free (e.g. gcdump lists "RuntimeTypeCache").
+                    if (!cNs || !HasNamespace(w)) return w;
+                }
             }
             return null;
+        }
+
+        private static bool HasNamespace(string n)
+        {
+            string s = n ?? "";
+            int cut = s.IndexOf('<'); if (cut >= 0) s = s.Substring(0, cut);
+            cut = s.IndexOf('['); if (cut >= 0) s = s.Substring(0, cut);
+            return s.Contains('.');
         }
 
         // Leading type name without namespace / generic args, plus whether it is an array.
@@ -202,20 +234,29 @@ namespace ClrMdRootChainReport
             return lt >= 0 ? s + "<...>" : s;
         }
 
-        private static string RenderMarkdown(List<object> report, int maxDepth)
+        private static string RenderMarkdown(List<object> report, int maxDepth, bool depthCapped, bool nodeBudgetHit)
         {
             var sb = new StringBuilder();
             sb.AppendLine("## Reference-chain evidence (from after.dmp)");
             sb.AppendLine();
-            sb.AppendLine("Root-chain evidence shows *why* candidates are still alive. Sticky roots (Static / handle /");
-            sb.AppendLine("finalizer) indicate retention; a `Stack` root means the object is currently in use, not leaked.");
-            sb.AppendLine("Native allocations are not traced unless retained by a managed wrapper. Unresolved instances");
-            sb.AppendLine($"may exceed max-depth ({maxDepth}) or be unrooted -- treat them as incomplete evidence.");
+            sb.AppendLine("Root-chain evidence shows *why* candidates are still alive. A **sticky** root (any non-Stack root --");
+            sb.AppendLine("StrongHandle / PinnedHandle / FinalizerQueue) indicates retention; a `Stack` root means the object is");
+            sb.AppendLine("currently in use, not leaked. NOTE: a leaked **static field** surfaces as");
+            sb.AppendLine("`StrongHandle -> Object[] -> <holder>` in this ClrMD build (there is no `Static` root kind), so read a");
+            sb.AppendLine("StrongHandle into an `Object[]` as a likely static/runtime root. Native allocations are not traced");
+            sb.AppendLine("unless retained by a managed wrapper.");
+            sb.AppendLine();
+            sb.AppendLine($"Limits: shortest path is searched to max-depth {maxDepth}; the heap walk is bounded by a node budget.");
+            string capNote = (nodeBudgetHit ? " Node budget WAS hit -- coverage is partial; raise --max-nodes if RAM allows."
+                              : depthCapped ? " Max-depth WAS hit on some paths." : "");
+            sb.AppendLine("**Unresolved** instances may lie beyond these caps rather than being truly unrooted -- treat them as");
+            sb.AppendLine("incomplete evidence, not \"no leak\"." + capNote);
             sb.AppendLine();
             foreach (dynamic r in report)
             {
                 sb.AppendLine($"### Candidate: {r.type}");
-                sb.AppendLine($"Total instances: {r.totalInstances}  |  analyzed: {r.analyzedInstances}  |  rootReached: {r.rootReached} ({r.coveragePct}%)  |  unresolved: {r.unresolved}");
+                string samp = r.sampled ? $" (head-of-heap sample of {r.totalInstances})" : "";
+                sb.AppendLine($"Total instances: {r.totalInstances}  |  analyzed: {r.analyzedInstances}{samp}  |  rootReached: {r.rootReached} ({r.coveragePctOfAnalyzed}% of analyzed)  |  unresolved: {r.unresolved}");
                 sb.AppendLine();
                 sb.AppendLine("Path groups (shortest path, root -> ... -> candidate):");
                 foreach (dynamic g in r.pathGroups)
@@ -238,7 +279,7 @@ namespace ClrMdRootChainReport
             foreach (dynamic r in report)
             {
                 sb.AppendLine($"<h3>{Esc((string)r.type)}</h3>");
-                sb.AppendLine($"<p>total {r.totalInstances} &middot; analyzed {r.analyzedInstances} &middot; rootReached {r.rootReached} ({r.coveragePct}%) &middot; unresolved {r.unresolved}</p>");
+                sb.AppendLine($"<p>total {r.totalInstances} &middot; analyzed {r.analyzedInstances} &middot; rootReached {r.rootReached} ({r.coveragePctOfAnalyzed}% of analyzed) &middot; unresolved {r.unresolved}</p>");
                 sb.AppendLine("<table><tr><th>objs</th><th>root</th><th>depth</th><th>path</th></tr>");
                 foreach (dynamic g in r.pathGroups)
                 {

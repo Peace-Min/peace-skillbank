@@ -3,8 +3,10 @@
 Managed **paths-to-root** reporter for issue #29. Given an `after.dmp` and a candidate type list, it
 reads the managed heap with [ClrMD](https://www.nuget.org/packages/Microsoft.Diagnostics.Runtime) and
 emits `reference-chains.{json,md,html}`: per-candidate path **groups** (shortest path, root → … →
-candidate) with **coverage** accounting and **sticky-root preference** (Static / handle / finalizer
-roots are retention; a `Stack` root means the object is currently in use, not leaked).
+candidate) with **coverage** accounting and **sticky-root preference** (any non-Stack root --
+StrongHandle / handle / finalizer -- is retention; a leaked static field appears as
+`StrongHandle -> Object[] -> holder`, not a `Static` kind in this ClrMD build; a `Stack` root means
+the object is in use, not leaked).
 
 This is the optional second stage of `diagsession-memory-analysis`. HeapStat (`dotnet-gcdump report`)
 shows *what* grew; this shows *why* candidates are still retained. It is orchestrated by
@@ -28,6 +30,13 @@ ClrMdRootChainReport after.dmp --types-file candidates.txt --out <dir> [--max-de
 `--max-depth` is a **safety cap on graph exploration, not a guarantee** of reaching a root; instances
 not reached within it are reported as `unresolved`. Use `--types-file` (one type per line) for
 candidates with commas inside generic names.
+
+**Scale / memory.** The reporter walks the whole reachable managed heap (a `Dictionary` keyed by every
+visited object), so its memory use scales with the **dumped heap size**, not the candidate count. Run
+it on a machine with RAM comparable to the dumped process. `--max-nodes` (default 5,000,000) bounds the
+walk so a multi-GB dump can't OOM the tool; when it is hit, `nodeBudgetHit` is set, `coverage` is
+partial, and the report says so (raise it only if RAM allows). Likewise `coverage` is "of analyzed",
+and `analyzed` is a head-of-heap sample once a type exceeds `--max-instances` (default 20,000).
 
 ## Build / bundle (air-gapped)
 

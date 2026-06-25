@@ -30,9 +30,12 @@ skills/lightningchart-72/references/demos/*
 __pycache__/
 *.pyc
 
-# diagsession root-chain tools: commit the .NET machinery (csproj/.cs), never the build outputs,
-# self-contained publish, or captured dumps.
+# diagsession root-chain tools: commit the .NET machinery (csproj/.cs/README), never the build outputs,
+# self-contained publish, ad-hoc run outputs, generated reports, or captured dumps.
 skills/diagsession-memory-analysis/tools/**/bin/
 skills/diagsession-memory-analysis/tools/**/obj/
-skills/diagsession-memory-analysis/tools/**/pub/
+skills/diagsession-memory-analysis/tools/**/pub*/
+skills/diagsession-memory-analysis/tools/**/run*/
+reference-chains.*
+root-cause-evidence.md
 *.dmp

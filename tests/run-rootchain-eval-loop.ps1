@@ -74,7 +74,9 @@ evidence does not show what retains the objects, say so rather than guessing.
 
 # ---------- grader (temp=0 + fixed seed via /api/generate; clean text, no CLI ANSI noise) ----------
 function Invoke-Ollama([string]$promptText, [string]$outPath) {
-    $body = @{ model = $OllamaModel; prompt = $promptText; stream = $false; options = @{ temperature = 0; seed = 42; top_p = 1 } } | ConvertTo-Json -Depth 6
+    # num_predict caps generation so a weak model that loops can't hang the request past the timeout
+    # (the 3h hang that the bare -TimeoutSec did not catch was an unbounded qwen generation).
+    $body = @{ model = $OllamaModel; prompt = $promptText; stream = $false; options = @{ temperature = 0; seed = 42; top_p = 1; num_predict = 1200 } } | ConvertTo-Json -Depth 6
     try {
         $resp = Invoke-RestMethod -Uri "http://localhost:11434/api/generate" -Method Post -Body $body -ContentType "application/json" -TimeoutSec $OllamaTimeoutSeconds
     }

@@ -1,6 +1,9 @@
 *.diagsession
 *.gcdump
 *.heapstat.txt
+# ...but the committed root-chain test fixtures are synthetic HeapStat inputs, not real outputs.
+!tests/fixtures/diagsession-rootchain/
+!tests/fixtures/diagsession-rootchain/*.heapstat.txt
 *.log
 *.llm/
 LLM_MEMORY_INPUT.txt

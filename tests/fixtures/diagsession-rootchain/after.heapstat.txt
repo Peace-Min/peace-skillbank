@@ -1,0 +1,9 @@
+     20,000,000  GC Heap bytes
+          9,200  GC Heap objects
+
+   Object Bytes     Count  Type
+     18,000,000      9000  LeakSample.DeviceViewModel  [LeakSample.dll]
+      2,000,000         2  System.Byte[] (Bytes > 1M)  [System.Private.CoreLib.dll]
+        100,000        20  System.Byte[]  [System.Private.CoreLib.dll]
+         12,000        30  System.Collections.Generic.Dictionary<System.Int32,LeakSample.DeviceViewModel>  [System.Private.CoreLib.dll]
+          4,000        12  System.Drawing.Bitmap  [System.Drawing.Common.dll]

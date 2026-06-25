@@ -5,7 +5,20 @@
 
 ## Reference-chain evidence (from after.dmp)
 
+Root-chain evidence shows *why* candidates are still alive. A **sticky** root (any non-Stack root --
+StrongHandle / PinnedHandle / FinalizerQueue) indicates retention; a `Stack` root means the object is
+currently in use, not leaked. NOTE: a leaked **static field** surfaces as
+`StrongHandle -> Object[] -> <holder>` in this ClrMD build (there is no `Static` root kind), so read a
+StrongHandle into an `Object[]` as a likely static/runtime root. Native allocations are not traced
+unless retained by a managed wrapper.
+
+Limits: shortest path is searched to max-depth 40; the heap walk is bounded by a node budget.
+**Unresolved** instances may lie beyond these caps rather than being truly unrooted -- treat them as
+incomplete evidence, not "no leak".
+
 ### Candidate: LeakSample.DeviceViewModel
+Total instances: 9000  |  analyzed: 9000  |  rootReached: 9000 (100% of analyzed)  |  unresolved: 0
+
 Path groups (shortest path, root -> ... -> candidate):
 - [8000 objs] root=StrongHandle (STICKY), depth=4
     Object[] -> DeviceManager -> Dictionary<...> -> DeviceViewModel

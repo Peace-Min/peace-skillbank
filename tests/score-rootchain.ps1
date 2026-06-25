@@ -33,9 +33,10 @@ function Convert-ToWrongEvidence([string]$fullText) {
     $enr = $enr -creplace 'Dictionary', 'ObservableCollection'
     $enr = $enr -creplace '\bList\b', 'EventHandlerList'
     $enr = $enr -creplace 'StrongHandle', 'Stack'
-    $enr = $enr -creplace 'STICKY', 'in-use'
-    $enr = $enr -creplace 'sticky', 'stack'
-    $enr = $enr -creplace 'static', 'local'
+    # case-INSENSITIVE: the prose emits capital 'Static'/'STICKY' too, and a surviving "Static root"
+    # would hand a parroting-C answer a free RootKindHit (the exact bug the inspection caught).
+    $enr = $enr -replace '(?i)sticky', 'stack'
+    $enr = $enr -replace '(?i)static', 'local'
     $enr = $enr -creplace 'Object\[\]', 'Frame'
     return $base + $enr
 }

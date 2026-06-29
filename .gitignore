@@ -38,6 +38,7 @@ __pycache__/
 skills/diagsession-memory-analysis/tools/**/bin/
 skills/diagsession-memory-analysis/tools/**/obj/
 skills/diagsession-memory-analysis/tools/**/pub*/
+skills/diagsession-memory-analysis/tools/**/dist/
 skills/diagsession-memory-analysis/tools/**/run*/
 reference-chains.*
 root-cause-evidence.md

@@ -25,10 +25,22 @@ $ErrorActionPreference = "Stop"
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 
 function Resolve-Tool {
+    # 1) explicit path wins
     if ($ToolExe -and (Test-Path -LiteralPath $ToolExe)) { return (Resolve-Path -LiteralPath $ToolExe).Path }
+    # 2) env override -- set once on the (offline) machine: setx CLRMD_ROOTCHAIN_EXE <path>
+    if ($env:CLRMD_ROOTCHAIN_EXE -and (Test-Path -LiteralPath $env:CLRMD_ROOTCHAIN_EXE)) {
+        return (Resolve-Path -LiteralPath $env:CLRMD_ROOTCHAIN_EXE).Path
+    }
+    # 3) common install / build locations, in priority order. The first is the offline-bundle default
+    #    install path (Install-ClrMd.ps1 in github.com/Peace-Min/dotnet-gcdump-offline), so a bundle
+    #    install is auto-detected with no -RootChainToolExe argument.
+    $candidates = @("C:\tools\ClrMdRootChainReport\ClrMdRootChainReport.exe")
     foreach ($rel in @("..\tools\ClrMdRootChainReport\pub\ClrMdRootChainReport.exe",
+                       "..\tools\ClrMdRootChainReport\dist\win-x64\ClrMdRootChainReport.exe",
                        "..\tools\ClrMdRootChainReport\ClrMdRootChainReport.exe")) {
-        $p = Join-Path $here $rel
+        $candidates += (Join-Path $here $rel)
+    }
+    foreach ($p in $candidates) {
         if (Test-Path -LiteralPath $p) { return (Resolve-Path -LiteralPath $p).Path }
     }
     return $null

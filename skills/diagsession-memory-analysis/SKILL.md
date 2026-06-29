@@ -85,9 +85,12 @@ The Size/Count comparison, container clues, and retention-hypothesis taxonomy li
 ## Root-cause evidence (optional enrichment)
 
 `LLM_MEMORY_INPUT.txt` may carry extra root-cause evidence. Get it in the **default run** by passing
-`-AfterDumpPath <after.dmp> [-RootChainToolExe <exe>]` to `extract-gcdump-reports.ps1` (it folds the
-evidence in automatically), or run `scripts/enrich-root-chains.ps1` separately. Either way it degrades
-gracefully -- no `.dmp` / tool, or <2 snapshots, just means HeapStat-only with a clear note.
+`-AfterDumpPath <after.dmp>` to `extract-gcdump-reports.ps1` (it folds the evidence in automatically),
+or run `scripts/enrich-root-chains.ps1` separately. The ClrMD tool is **auto-detected** at
+`C:\tools\ClrMdRootChainReport\ClrMdRootChainReport.exe` (the offline-bundle install path), via the
+`CLRMD_ROOTCHAIN_EXE` env var, or under `tools/ClrMdRootChainReport/{pub,dist\win-x64}/` -- so
+`-RootChainToolExe <exe>` is only needed for a non-default location. Either way it degrades gracefully:
+no `.dmp` / tool, or <2 snapshots, just means HeapStat-only with a clear note.
 
 - **`## Heap growth summary`** -- candidates ranked by Delta Size + Delta Count; both-increased
   app-owned types are highest priority, retention containers are clues (not conclusions), and the

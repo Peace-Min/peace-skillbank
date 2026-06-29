@@ -7,6 +7,23 @@ description: Analyze Visual Studio .diagsession and .gcdump snapshots for .NET m
 
 Use this skill to turn Visual Studio `.diagsession` or `.gcdump` files into model-readable managed-memory leak evidence and a follow-up handoff summary.
 
+## ⛔ Do NOT write your own parser
+
+A `.gcdump` is an **opaque binary** (TraceEvent / EventPipe format) -- it is NOT text, JSON, or XML, and
+**only `dotnet-gcdump` can read it**. A hand-written parser -- in **Python** or any language -- *cannot
+work* and must never be written. Do not re-implement `.diagsession` extraction, `.gcdump` reading, or
+HeapStat parsing either: the bundled PowerShell scripts already do all of it.
+
+Your ONLY job is to **run the bundled scripts** and interpret their TEXT output:
+
+1. `scripts/extract-gcdump-reports.ps1` -- extract snapshots + HeapStat reports + `LLM_MEMORY_INPUT.txt`
+2. (optional) `scripts/enrich-root-chains.ps1` or `-AfterDumpPath` -- managed root-chains
+
+If a required tool or script is missing (`dotnet-gcdump`, a bundled script, the ClrMD exe), or you
+cannot locate the skill's `scripts/` folder, **STOP and report exactly what is missing** -- never
+substitute a parser, a re-implementation, or fabricated heap numbers. A correct "I can't read this
+without `dotnet-gcdump`" beats a confident hand-rolled parser, which is always wrong here.
+
 ## Default Behavior
 
 When the user provides one or more `.diagsession` or `.gcdump` paths, run the bundled extraction/report script immediately unless an essential input is missing.

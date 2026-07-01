@@ -154,6 +154,55 @@ root-chain 툴은 폐쇄망에선 **인터넷 PC에서 한 번 빌드한 self-co
 압력, FinalizerQueue=Dispose·finalizer 지연, RefCountedHandle=COM·interop 수명. unresolved(=max-depth/node-budget 초과 또는
 unrooted)와 sampled(uniform reservoir) coverage는 불완전 증거로 본다. 멀티-GB 덤프는 메모리를 많이 쓰니(힙 크기 비례) RAM 여유 있는 PC에서 돌린다.
 
+## 처리 흐름 (시퀀스)
+
+두 단계 파이프라인이다: **① HeapStat(무엇이 늘었나)** 는 항상, **② root-chain(왜 살아있나)** 는 `after.dmp`+툴이 있을 때만 자동으로 붙는다. 어느 입력이 없어도 깨지지 않고 HeapStat-only로 graceful 폴백한다. `ANALYSIS.md`는 스크립트가 아니라 **모델이** 쓴다.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant L as LLM (판단)
+    participant A as Agent (런타임)
+    participant S as Skill (SKILL.md + scripts)
+    participant T as Tools (dotnet-gcdump / ClrMdRootChainReport)
+
+    Note over A: .diagsession/.gcdump [+ after.dmp] 경로 수신 -> 스킬 트리거
+    A->>S: SKILL.md(계약) 로드
+    A->>L: SKILL.md + 경로 주입
+    Note over L: ⛔ 가드레일 - 파서 자작 금지(.gcdump=불투명 바이너리), 번들 스크립트만 실행
+
+    Note over A,S: 1) 추출 + HeapStat (항상)
+    L->>A: extract-gcdump-reports.ps1 -InputPath ... [-AfterDumpPath after.dmp]
+    A->>S: 실행
+    S->>T: .diagsession 풀기 + dotnet-gcdump report (스냅샷별)
+    T-->>S: reports/*.heapstat.txt
+    S-->>A: MANIFEST.txt + LLM_MEMORY_INPUT.txt (무엇이 늘었나)
+
+    alt after.dmp 제공 (root-chain 보강, #31 자동 호출)
+        S->>S: enrich-root-chains.ps1
+        S->>S: select-candidates.ps1 (전/후 Δ -> 후보 타입: ΔSize·ΔCount·native-wrapper)
+        S->>S: Resolve-Tool (명시 -> $env:CLRMD_ROOTCHAIN_EXE -> C:\tools -> skill-relative)
+        alt 덤프 + 툴 모두 있음
+            S->>T: ClrMdRootChainReport after.dmp --types-file 후보
+            T-->>S: reference-chains.{json,md,html}<br/>(reservoir 샘플·root-kind별 해석·필드 라벨 경로)
+            S-->>A: root-chain 증거를 LLM_MEMORY_INPUT.txt에 fold
+        else 덤프/툴 없음 · 스냅샷 2개 미만
+            S-->>A: "root-chain unavailable -- [이유]" 노트 (HeapStat-only 유효)
+        end
+    else after.dmp 없음
+        Note over S: HeapStat-only (왜 살아있나는 생략, 한계 명시)
+    end
+
+    A-->>L: LLM_MEMORY_INPUT.txt + MANIFEST 결과
+    Note over L: 판단 - 후보 해석 / 근본 원인 / 끊을 지점 (Stack=사용중, StrongHandle=static 등 root-kind별)
+    L->>A: ANALYSIS.md 작성 (가정·후보·근거·확인절차·한계·핸드오프)
+    Note over A: -> 사용자: ANALYSIS.md + reference-chains.{md,html} + LLM_MEMORY_INPUT.txt (모두 [입력].llm\ 에)
+
+    opt 약한 로컬 모델 (폐쇄망)
+        Note over L,A: LLM_MEMORY_INPUT.txt 를 frontier-handoff 로 상위 모델에 이관
+    end
+```
+
 ## 피해야 할 요청
 
 다음처럼 매번 긴 내부 작업 목록을 직접 붙일 필요는 없다.

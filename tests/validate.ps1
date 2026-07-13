@@ -1,6 +1,7 @@
 param(
     [string]$RepositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path,
-    [switch]$IncludeClrMdE2E   # opt-in: also build+dump+run the ClrMD root-chain tool (needs .NET SDK; heavy)
+    [switch]$IncludeClrMdE2E,   # opt-in: also build+dump+run the ClrMD root-chain tool (needs .NET SDK; heavy)
+    [switch]$IncludeSparrowE2E  # opt-in: also build+run the Sparrow XLS export tool (needs .NET SDK + NPOI restore)
 )
 
 $ErrorActionPreference = "Stop"
@@ -179,6 +180,19 @@ $clrmdE2E = Join-Path $RepositoryRoot "tests\diagsession-clrmd-e2e.ps1"
 Assert-Condition (Test-Path -LiteralPath $clrmdE2E) "Missing ClrMD E2E smoke test"
 Test-PowerShellSyntax -Path $clrmdE2E
 if ($IncludeClrMdE2E) { & $clrmdE2E -RepositoryRoot $RepositoryRoot }
+
+# Sparrow XLS export E2E: always syntax-check + assert the tool/fixture projects exist; only RUN when
+# opted in (builds + restores NPOI; needs the SDK). Mirrors the ClrMD E2E wiring above.
+$sparrowToolProj = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\SparrowXlsExport\SparrowXlsExport.csproj"
+$sparrowToolProgram = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\SparrowXlsExport\Program.cs"
+$sparrowFixtureProj = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\SparrowXlsExport\FixtureGen\FixtureGen.csproj"
+$sparrowFixtureProgram = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\SparrowXlsExport\FixtureGen\Program.cs"
+$sparrowE2E = Join-Path $RepositoryRoot "tests\sparrow-xlsexport-fixtures.ps1"
+foreach ($sparrowFile in @($sparrowToolProj, $sparrowToolProgram, $sparrowFixtureProj, $sparrowFixtureProgram, $sparrowE2E)) {
+    Assert-Condition (Test-Path -LiteralPath $sparrowFile) "Missing Sparrow XLS export file: $sparrowFile"
+}
+Test-PowerShellSyntax -Path $sparrowE2E
+if ($IncludeSparrowE2E) { & $sparrowE2E -RepositoryRoot $RepositoryRoot }
 
 $claude = Get-Command claude -ErrorAction SilentlyContinue
 if ($claude) {

@@ -43,3 +43,10 @@ skills/diagsession-memory-analysis/tools/**/run*/
 reference-chains.*
 root-cause-evidence.md
 *.dmp
+
+# sparrow-static-analysis tools: commit the .NET machinery (csproj/.cs), never build outputs, the
+# test-time generated fixture .xls, or the tool's split output dirs.
+skills/sparrow-static-analysis/tools/**/bin/
+skills/sparrow-static-analysis/tools/**/obj/
+*.items/
+fixture.xls

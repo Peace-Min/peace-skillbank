@@ -1,0 +1,121 @@
+<Window x:Class="SparrowXlsExport.Gui.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Sparrow XLS Export"
+        Width="720" Height="560"
+        MinWidth="620" MinHeight="480"
+        WindowStartupLocation="CenterScreen"
+        FontFamily="Segoe UI, Malgun Gothic" FontSize="13">
+
+    <Window.Resources>
+        <Style x:Key="SectionLabel" TargetType="TextBlock">
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Margin" Value="0,0,0,4"/>
+        </Style>
+        <Style x:Key="HintText" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#666666"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Margin" Value="0,3,0,0"/>
+        </Style>
+        <Style TargetType="Button">
+            <Setter Property="Padding" Value="12,5"/>
+            <Setter Property="MinWidth" Value="88"/>
+        </Style>
+    </Window.Resources>
+
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Title -->
+        <StackPanel Grid.Row="0" Margin="0,0,0,14">
+            <TextBlock Text="Sparrow XLS Export" FontSize="18" FontWeight="Bold"/>
+            <TextBlock Text="파수 정적분석 결과 .xls를 항목별 마크다운 · index.csv · checkers.md로 분할합니다."
+                       Style="{StaticResource HintText}"/>
+        </StackPanel>
+
+        <!-- 1. Input xls -->
+        <StackPanel Grid.Row="1" Margin="0,0,0,12">
+            <TextBlock Text="결과 XLS 파일" Style="{StaticResource SectionLabel}"/>
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBox x:Name="InputPathBox" Grid.Column="0" Height="26"
+                         VerticalContentAlignment="Center" IsReadOnly="True"
+                         Background="#F7F7F7"/>
+                <Button x:Name="BrowseInputButton" Grid.Column="1" Content="찾아보기…"
+                        Margin="8,0,0,0" Click="BrowseInputButton_Click"/>
+            </Grid>
+        </StackPanel>
+
+        <!-- 2. Output dir -->
+        <StackPanel Grid.Row="2" Margin="0,0,0,12">
+            <TextBlock Text="출력 폴더 (선택)" Style="{StaticResource SectionLabel}"/>
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBox x:Name="OutputPathBox" Grid.Column="0" Height="26"
+                         VerticalContentAlignment="Center"/>
+                <Button x:Name="BrowseOutputButton" Grid.Column="1" Content="찾아보기…"
+                        Margin="8,0,0,0" Click="BrowseOutputButton_Click"/>
+            </Grid>
+            <TextBlock Text="비우면 xls 옆 &lt;이름&gt;.items 폴더에 생성됩니다."
+                       Style="{StaticResource HintText}"/>
+        </StackPanel>
+
+        <!-- 3. Advanced options -->
+        <Expander Grid.Row="3" Header="고급 옵션 (선택)" Margin="0,0,0,12" IsExpanded="False">
+            <StackPanel Margin="4,10,0,4">
+                <TextBlock Text="체커 필터 (부분일치)" Style="{StaticResource SectionLabel}"/>
+                <TextBox x:Name="CheckerBox" Height="26" VerticalContentAlignment="Center"
+                         Margin="0,0,0,12"/>
+
+                <TextBlock Text="심각도" Style="{StaticResource SectionLabel}"/>
+                <WrapPanel Margin="0,0,0,12">
+                    <CheckBox x:Name="SevVeryHigh" Content="매우위험" Margin="0,0,16,0"/>
+                    <CheckBox x:Name="SevHigh" Content="높음" Margin="0,0,16,0"/>
+                    <CheckBox x:Name="SevRisk" Content="위험" Margin="0,0,16,0"/>
+                    <CheckBox x:Name="SevMedium" Content="보통" Margin="0,0,16,0"/>
+                    <CheckBox x:Name="SevLow" Content="낮음" Margin="0,0,16,0"/>
+                </WrapPanel>
+
+                <TextBlock Text="최대 건수 (Max)" Style="{StaticResource SectionLabel}"/>
+                <TextBox x:Name="MaxBox" Width="120" HorizontalAlignment="Left" Height="26"
+                         VerticalContentAlignment="Center"/>
+            </StackPanel>
+        </Expander>
+
+        <!-- 4. Action buttons -->
+        <StackPanel Grid.Row="4" Orientation="Horizontal" Margin="0,0,0,12">
+            <Button x:Name="RunButton" Content="확인" Click="RunButton_Click"
+                    MinWidth="110" FontWeight="SemiBold" Background="#0067C0" Foreground="White"/>
+            <Button x:Name="OpenOutputButton" Content="출력 폴더 열기" Click="OpenOutputButton_Click"
+                    Margin="10,0,0,0" IsEnabled="False"/>
+        </StackPanel>
+
+        <!-- 5. Log -->
+        <TextBlock Grid.Row="5" Text="출력 로그" Style="{StaticResource SectionLabel}"/>
+        <TextBox x:Name="LogBox" Grid.Row="6"
+                 IsReadOnly="True" IsUndoEnabled="False"
+                 FontFamily="Consolas" FontSize="12"
+                 VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                 TextWrapping="NoWrap" Background="#1E1E1E" Foreground="#DCDCDC"
+                 Padding="6"/>
+
+        <!-- status bar -->
+        <TextBlock x:Name="StatusText" Grid.Row="7" Text="대기 중" Margin="0,8,0,0"
+                   Foreground="#666666"/>
+    </Grid>
+</Window>

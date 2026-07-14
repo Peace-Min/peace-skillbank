@@ -1,56 +1,48 @@
-# NULL_RETURN — null 반환 (null return)
+# NULL_RETURN — 널 반환 값 역참조
 
 - **건수**: 18  |  **심각도**: 매우위험  |  **트랙**: C
-- **Sparrow 설명**: 메서드가 `null` 을 반환하며, 그 반환값이 호출측에서 검사 없이 역참조될 수 있는(또는 실제로 되는) 경로가 존재한다. 반환 계약이 "항상 객체"인데 특정 경로에서 null 을 흘려보내는 지점을 잡는다. 사실상 CWE-476 결함의 **생산자 쪽**.
+- **Sparrow 설명**: 널 반환 값 역참조 체커는 반환된 널 값을 확인 없이 역참조하는 경우를 검출합니다.
 
 ## 지켜야 할 규칙 (무엇을 왜 검출)
-null 을 반환하는 메서드는 모든 호출측에 null 검사 부담을 전가한다. 한 곳이라도 빠지면 NRE로 이어진다(FORWARD_NULL/UNCHECKED_NULL 의 근원). 방산 코드에서는 "없음"을 null 대신 **빈 컬렉션·Try패턴·명시적 예외**로 표현해 계약을 분명히 하는 것이 신뢰성 기준에 부합한다.
+이 체커는 **호출측**이 메서드가 반환한(널일 수 있는) 값을 null 검사 없이 곧바로 역참조하는 지점을 잡는다(메서드가 null 을 반환하는 것 자체가 아니라 **소비 지점**이 결함). 반환값이 null 인 경로에서 `.멤버`/인덱싱/메서드 호출을 하면 `NullReferenceException`으로 프로세스가 중단된다 — 방산 상주/제어 소프트웨어의 가용성 결함이다. 1차 해법은 **역참조 지점에서 반환값을 null 검사**하는 것이고, 근본적으로는 생산자측 계약을 "없음 → 빈 컬렉션·Try패턴·예외"로 바꾸는 것이 신뢰성 기준에 부합한다(2차/근본 대책).
 
 ## 표준 매핑 (교차참조)
 - CWE: **CWE-476** (역참조 경로) / 설계 관점 **CWE-393**(Return of Wrong Status Code) 인접
-- 무기체계 보안약점 점검 목록: 미매핑 (187 확보 시 "널 포인터 역참조" 계열)
-- CERT-C/행안부/OWASP: 행안부 "널 포인터 역참조"(호출측 결함과 연동)
+- 무기체계 보안약점 점검 목록: **187 항목 100% 적용(설정 확정)**; 개별 항목번호는 Sparrow 체커↔표준 매핑 추출 후 기입(대기)
+- 행안부 SW보안약점(2021): "널 포인터 역참조"(호출측 역참조 결함)
 
 ## 진성 판별 기준
-- 메서드 시그니처/의미상 반환값이 **참조형 객체이며 호출측이 곧바로 사용**한다(컬렉션·문자열·엔티티).
-- 반환 경로 중 `return null;` 이 있고, 호출측 다수가 null 검사를 하지 않는다.
-- "없음/실패"를 나타내려는 의도지만 그 신호가 null 이라 계약이 모호하다.
+- **호출측**이 메서드 반환값(널 가능)을 받아 `?.` / `!= null` / 패턴검사(`is T t`) 없이 **곧바로 `.멤버`·인덱싱·메서드 호출로 역참조**한다.
+- 그 메서드의 시그니처/의미상 반환값이 **null 일 수 있음**(반환 경로 중 `return null;` 존재, 또는 `Find/FirstOrDefault/GetXxx` 계열).
+- 역참조 전에 반환값을 확정적으로 non-null 로 만드는 검사/대입이 **없다**.
 
 ## 흔한 위양성 패턴
-- 반환 타입이 nullable 이 **의도된 계약**이고 **모든 호출측이 null 을 정상 처리**(예: 캐시 조회 `TryGet` 스타일) — 이땐 결함 아님, 위양성 사유서.
-- 인터페이스 구현상 null 반환이 규약(예: `IComparer`가 아닌 팩토리에서 "해당 없음" 의미) — 문서화되어 있으면 사유서.
+- 반환값이 non-null 임이 **상위 계약으로 보장**되나(예: 앞선 존재 확인, 특정 인자 조합에서 항상 객체 반환) 분석기가 그 계약을 인식하지 못함 → 위양성 사유서.
+- 반환 타입이 nullable 이 **의도된 계약**이고 해당 호출측이 실제로는 null 을 정상 처리(분석기가 검사 흐름을 못 이음) → 사유서.
 
 ## 수정 패턴 (C# 예시)
 ```csharp
-// Before — 컬렉션을 null 로 반환
-public List<Item> GetItems(int id)
-{
-    if (!Exists(id)) return null;      // 호출측마다 null 검사 강요
-    return _repo.Load(id);
-}
+// Before — 반환값(널 가능)을 무검사 역참조
+var node = repo.Find(id);
+Process(node.Value);            // repo.Find 가 null 반환 시 NRE
 
-// After (A) 빈 컬렉션 반환 (컬렉션은 null 대신 empty 가 표준)
-public List<Item> GetItems(int id)
-{
-    if (!Exists(id)) return new List<Item>();   // 또는 Array.Empty<Item>()
-    return _repo.Load(id);
-}
+// After (A) 1차: 역참조 지점에서 반환값 null 검사 후 분기
+var node = repo.Find(id);
+if (node == null) return;       // 또는 로깅/throw 로 정책 명시
+Process(node.Value);
 
-// After (B) 단일 객체는 Try 패턴으로 "없음"을 계약에 노출
-public bool TryGetItem(int id, out Item item)
-{
-    item = Exists(id) ? _repo.LoadOne(id) : null;
-    return item != null;
-}
+// After (B) 1차: null 조건 연산자 + 기본값으로 역참조 회피
+Process(node?.Value ?? defaultValue);
 ```
-- 컬렉션 → **빈 컬렉션**. 단일 객체에서 "없음"이 정상 → **Try 패턴** 또는 (net472라면) `Nullable`/명시적 결과객체. "없어선 안 됨" → **예외**.
+- **1차(소비측)**: 위처럼 역참조 지점에서 null 을 검사한다. "없음"이 정상이면 분기 처리, "없어선 안 됨"이면 `throw new InvalidOperationException(...)`로 계약을 드러낸다(조용한 무시 금지).
+- **2차/근본(생산측 계약개선)**: 가능하면 생산자 메서드가 "없음"을 null 대신 **빈 컬렉션**(`Array.Empty<T>()`/새 빈 리스트), **Try 패턴**(`bool TryGetItem(int id, out Item item)`), 또는 **명시적 예외**로 표현하도록 바꿔 모든 호출측의 null 부담을 없앤다.
 
 ## 검증 확인 조건 (G2)
 - 빌드 통과.
-- Sparrow 재분석 시 해당 메서드 NULL_RETURN 소멸 **및 연동 FORWARD_NULL/UNCHECKED_NULL 동반 감소** 확인.
-- 신규 검출 0 (반환 계약 변경이 호출측에 새 경고를 만들지 않는지).
+- Sparrow 재분석 시 해당 역참조 지점 NULL_RETURN 소멸(생산측 계약개선 시 연동 FORWARD_NULL/UNCHECKED_NULL 동반 감소 확인).
+- 신규 검출 0 (가드/계약 변경이 호출측에 새 경고를 만들지 않는지).
 
 ## 기본 처리 분류
-- [ ] 진성 → 수정 (빈 컬렉션/Try/예외 중 계약에 맞게)
-- [ ] 위양성 → 사유서 (nullable 이 의도된 계약이고 호출측 전수 검사)
-- [ ] 보류 → 사유 (호출측 전수 파악 불가 시; frontier-handoff)
+- [ ] 진성 → 수정 (1차: 소비측 null 검사 / 2차: 빈 컬렉션·Try·예외로 계약개선)
+- [ ] 위양성 → 사유서 (반환 non-null 이 상위 계약으로 보장되는 근거)
+- [ ] 보류 → 사유 (반환 계약·호출 흐름 파악 불가 시; frontier-handoff)

@@ -1,46 +1,55 @@
-# NULL_RETURN_STD — 표준 계약 위반 null 반환 (null return, std)
+# NULL_RETURN_STD — 표준 라이브러리의 널 반환 값 역참조
 
 - **건수**: 6  |  **심각도**: 매우위험  |  **트랙**: C
-- **Sparrow 설명**: **표준 라이브러리/오버라이드 계약상 non-null 이 기대되는 위치**에서 null 을 반환한다(NULL_RETURN 의 특수형). 대표적으로 `ToString()`, `IEnumerable` 반환, `object.Equals` 협력 메서드, 팩토리·프로퍼티 getter 등 프레임워크·관례가 non-null 을 전제하는 계약을 어긴다.
+- **Sparrow 설명**: 표준 라이브러리 널 반환 값 역참조 체커는 C# 표준 라이브러리 메소드 중에서 널을 반환할 가능성이 있는 메소드의 반환 값을 확인 없이 역참조하는 경우를 검출합니다.
 
 ## 지켜야 할 규칙 (무엇을 왜 검출)
-프레임워크는 특정 반환이 non-null 임을 암묵 계약으로 삼는다(예: `ToString()`은 절대 null 이 아니어야 하며 문자열 포매팅·로깅·바인딩이 이를 신뢰). 이 계약을 깨면 **호출측이 방어할 수 없는 위치**에서 NRE가 터진다 — 일반 NULL_RETURN 보다 파급이 크고 재현이 어렵다.
+C# 표준 라이브러리(BCL)에는 **실패/부재 시 null 을 반환**하는 메서드가 많다(문서화된 계약). 이런 메서드의 반환값을 null 검사 없이 곧바로 역참조하면 `NullReferenceException`으로 프로세스가 중단된다. 이는 NULL_RETURN 의 **BCL 특수형**(소비측 결함)으로, 반환이 null 일 수 있음이 라이브러리 계약에 이미 명시되어 있으므로 위양성률이 낮고 지적의 근거가 분명하다. 방산 상주/제어 소프트웨어에서 이는 가용성 결함이다.
 
 ## 표준 매핑 (교차참조)
-- CWE: **CWE-476**; 계약 위반 관점 **CWE-573**(Improper Following of Specification)
-- 무기체계 보안약점 점검 목록: 미매핑 (187 확보 시 "널 포인터 역참조" 계열)
-- CERT-C/행안부/OWASP: 행안부 "널 포인터 역참조"; .NET Framework Design Guidelines(ToString/컬렉션 non-null 관례)
+- CWE: **CWE-476** (NULL Pointer Dereference)
+- 무기체계 보안약점 점검 목록: **187 항목 100% 적용(설정 확정)**; 개별 항목번호는 Sparrow 체커↔표준 매핑 추출 후 기입(대기)
+- 행안부 SW보안약점(2021): "널 포인터 역참조"
+- .NET Framework Design Guideline: BCL 메서드의 "없으면 null" 반환 계약을 소비측이 검사해야 함
 
 ## 진성 판별 기준
-- 반환 위치가 **오버라이드/구현/관례상 non-null 계약**: `ToString()`, `GetEnumerator()`/`IEnumerable<T>` 반환, 잘 알려진 팩토리/`Parse` 계열, non-nullable 로 소비되는 프로퍼티.
-- 그 경로에서 `return null;` 이 존재.
+- **null 반환 가능한 BCL 메서드의 결과를 무검사 역참조**한다. 대표 예:
+  - `Type.GetType(name)` / `Assembly.GetType(name)` — 형식을 못 찾으면 null
+  - `Assembly.GetEntryAssembly()` — 관리 진입점이 없으면 null
+  - `Marshal.PtrToStringAnsi(...)` / `Marshal.PtrToStringUni(...)` — 포인터가 널이면 null
+  - `XmlNode.SelectSingleNode(...)` — 매치 없으면 null
+  - `HttpContext.Current` — 요청 컨텍스트 밖이면 null
+  - `Regex.Match(...)` 후 실패한 `Match`(성공 여부 미확인 상태로 사용)
+  - `ConfigurationManager.GetSection(...)` — 섹션 없으면 null
+  - `Nullable<T>` 관련(`.Value` 무검사 접근 등) — "없으면 null" 계약 메서드 전반
+- 반환을 받은 뒤 `!= null` / `?.` / `??` / 패턴검사(`is T t`) 중 **어느 것도 없이** `.멤버`·인덱싱·메서드 호출로 역참조한다.
 
 ## 흔한 위양성 패턴
-- 계약이 실제로는 nullable 로 문서화된 커스텀 인터페이스(표준처럼 보이나 아님) — 사유서.
-- 분석기가 오버라이드 대상 계약을 오인. 드묾.
+- 입력이 항상 유효해 해당 BCL 메서드가 실제로는 null 을 반환하지 않음이 상위 계약으로 보장되지만, 분석기가 보수적으로 판단 → 위양성 사유서(어느 근거로 null 이 불가능한지 명시).
+- 앞선 검증(예: 존재 확인/형식 등록 보장) 이후라 non-null 이 확정되나 분석기가 흐름을 못 이음.
 
 ## 수정 패턴 (C# 예시)
 ```csharp
-// Before — ToString 이 null 반환 가능
-public override string ToString()
-{
-    return _name;                 // _name 이 null 이면 계약 위반
-}
+// Before — BCL 메서드의 널 가능 반환을 무검사 역참조
+var t = Type.GetType(typeName);
+var inst = Activator.CreateInstance(t);   // t 가 null이면 NRE
 
-// After — non-null 보장
-public override string ToString()
-{
-    return _name ?? string.Empty; // 컬렉션이면 Enumerable.Empty<T>()
-}
+// After — 반환을 지역변수로 받아 null 검사 후 사용
+var t = Type.GetType(typeName);
+if (t == null) return null;               // 또는 예외/로깅으로 정책 명시
+var inst = Activator.CreateInstance(t);
+
+// 또는 null 조건/병합 연산자로 역참조 회피
+var name = Assembly.GetEntryAssembly()?.GetName().Name ?? "unknown";
 ```
-- 문자열 계약 → `string.Empty`(또는 의미 있는 대체값). 열거 계약 → `Enumerable.Empty<T>()`. "정말 없음이 오류" → 계약을 지키되 상류에서 상태 검증.
+- 원칙: **BCL 반환을 지역변수로 받아 null 검사 후 사용**하거나 `?.`/`??` 로 역참조를 회피한다. "없으면 오류"면 `throw`/로깅으로 계약을 드러낸다.
 
 ## 검증 확인 조건 (G2)
 - 빌드 통과.
-- Sparrow 재분석 시 해당 위치 NULL_RETURN_STD 소멸.
-- 신규 검출 0.
+- Sparrow 재분석 시 해당 라인 NULL_RETURN_STD 소멸.
+- 신규 검출 0 (추가한 가드가 데드코드/EMPTY_CATCH/새 NULL 결함을 만들지 않는지).
 
 ## 기본 처리 분류
-- [ ] 진성 → 수정 (계약 준수 대체값)
-- [ ] 위양성 → 사유서 (해당 계약이 실제 nullable 근거)
-- [ ] 보류 → 사유 (계약 판정 불가 시; frontier-handoff)
+- [ ] 진성 → 수정 (BCL 반환 null 검사 / `?.`·`??`)
+- [ ] 위양성 → 사유서 (입력 보장으로 null 불가한 근거)
+- [ ] 보류 → 사유 (BCL 반환 계약·입력 보장 판단 불가 시; frontier-handoff)

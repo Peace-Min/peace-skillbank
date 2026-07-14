@@ -1,15 +1,16 @@
-# RESOURCE_LEAK — 자원 누수 (resource leak)
+# RESOURCE_LEAK — 자원 누수
 
 - **건수**: 14  |  **심각도**: 매우위험  |  **트랙**: C
-- **Sparrow 설명**: `IDisposable` 자원(파일/스트림/소켓/DB 연결/GDI 핸들 등)을 획득한 뒤 **모든 경로에서 해제(Dispose/Close)되지 않는다**. 예외 경로나 조기 반환에서 해제가 누락되거나 `using`/`try-finally` 로 감싸이지 않은 지점을 잡는다.
+- **Sparrow 설명**: 리소스 누수 체커는 파일, 소켓 등 리소스를 할당한 후에 해제하지 않는 코드를 검출합니다.
 
 ## 지켜야 할 규칙 (무엇을 왜 검출)
 관리되지 않는 자원을 해제하지 않으면 **핸들/메모리 고갈**로 이어져 장시간 상주하는 방산 소프트웨어에서 점진적 성능 저하·기능 실패를 유발한다(가용성 결함). GC는 관리 메모리만 회수하며 파일 핸들·소켓·DB 커넥션은 비결정적으로만 정리되어 실질적 누수가 된다.
 
 ## 표준 매핑 (교차참조)
 - CWE: **CWE-772** (Missing Release of Resource after Effective Lifetime); 연관 **CWE-404**(Improper Resource Shutdown)
-- 무기체계 보안약점 점검 목록: 미매핑 (187 확보 시 "부적절한 자원 해제" 계열)
-- CERT-C/행안부/OWASP: 행안부 "부적절한 자원 해제"; CERT FIO04-J(개념 대응)
+- 무기체계 보안약점 점검 목록: **187 항목 100% 적용(설정 확정)**; 개별 항목번호는 Sparrow 체커↔표준 매핑 추출 후 기입(대기)
+- 행안부 SW보안약점(2021): "부적절한 자원 해제"
+- .NET Framework Design Guideline: IDisposable 자원은 `using`/Dispose 패턴으로 해제
 
 ## 진성 판별 기준
 - 지역에서 `new`/팩토리로 **IDisposable 을 생성·소유**하고(예: `new FileStream`, `SqlConnection`, `Bitmap`, `StreamReader`), 그 스코프에서 소비 후 종료된다.

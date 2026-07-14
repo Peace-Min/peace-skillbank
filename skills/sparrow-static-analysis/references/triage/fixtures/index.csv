@@ -1,0 +1,3 @@
+﻿md_file,ID,체커 키,위험도,파일명,라인,이슈 상태,체커명
+items/5001_FORWARD_NULL_Foo.cs_88.md,5001,FORWARD_NULL,매우위험,Foo.cs,88,미확인,널 값 역참조
+items/5002_RESOURCE_LEAK_ConnFactory.cs_23.md,5002,RESOURCE_LEAK,매우위험,ConnFactory.cs,23,미확인,자원 누수

@@ -1,0 +1,237 @@
+﻿#requires -Version 5.1
+<#
+    Run-SparrowCommentFix.ps1 — Track B 주석 픽스 원콜 러너.
+    자작 Roslyn 툴 SparrowCommentFix로 주석 trivia 두 규칙을 결정론 처리:
+      - space  : `//x` -> `// x`  (FORMATTING.COMMENT.MISSING_SPACE_AFTER_DELIMITER)
+      - period : 주석 문장 끝 마침표 보정                     (FORMATTING.COMMENT.MISSING_PERIOD)
+    Run-TrackA.ps1 / Run-SparrowSyntaxFix.ps1과 동일 UX: 솔루션/폴더 경로만 주면 동작(내부에서 exe 확보
+    -> 규칙별 실행 -> 규칙별 커밋). -Commit/-DryRun 둘 다 없으면 커밋 여부를 물음. 단, SparrowCommentFix는
+    디렉터리를 받지 않으므로(개별 .cs 경로 또는 --files-from CSV만) 러너가 PowerShell에서 .cs 재귀
+    수집 + 생성/백업 파일 제외를 직접 수행한 뒤, 대상 전체경로를 임시 --files-from CSV로 툴에 넘긴다.
+
+    사용:
+      .\Run-SparrowCommentFix.ps1 -Solution C:\Work\OSTES\OSTES.sln          # 적용. -Commit/-DryRun 없으면 커밋 여부를 물음
+      .\Run-SparrowCommentFix.ps1 -Solution ...\OSTES.sln -Commit            # 규칙별 git 커밋(안 물어봄)
+      .\Run-SparrowCommentFix.ps1 -Solution C:\Work\OSTES -DryRun            # 변경 안 함, 무엇이 바뀔지만 보고
+      .\Run-SparrowCommentFix.ps1 -Solution ...\OSTES.sln -Rules period      # 일부 규칙만
+      .\Run-SparrowCommentFix.ps1 -Solution ...\OSTES.sln -FilesFrom index.csv   # (정밀) 자동 글롭 대신 준 CSV 사용(SparrowXlsExport 산출)
+      .\Run-SparrowCommentFix.ps1 -Solution ...\OSTES -IncludeGenerated      # 생성/백업 파일도 포함(기본 제외)
+      .\Run-SparrowCommentFix.ps1 -Solution ...\OSTES.sln -ExePath C:\tools\SparrowCommentFix.exe  # 폐쇄망: 반입 exe 지정
+
+    폐쇄망 참고: 이 툴은 Roslyn을 품은 컴파일 exe라, 대상 PC에 exe가 있어야 합니다. 러너는
+    (1) -ExePath  (2) 스크립트 옆 publish\SparrowCommentFix.exe  (3) bin\Release\net8.0\SparrowCommentFix.dll
+    (4) 없으면 `dotnet build`(패키지 복원 가능할 때)  순으로 확보합니다. 인터넷 없는 PC는 (1)/(2)로 반입 exe를 주세요.
+#>
+param(
+    [Parameter(Mandatory = $true)][string]$Solution,      # .sln / .csproj / 폴더 경로 (소스 루트)
+    [ValidateSet('space', 'period')][string[]]$Rules = @('space', 'period'),
+    [switch]$Commit,
+    [switch]$DryRun,
+    [string]$FilesFrom,          # (정밀) 이미 있는 index.csv를 주면 자동 글롭 대신 그걸 사용
+    [switch]$IncludeGenerated,   # 기본 off: 생성/백업 파일 제외. on이면 전부 포함
+    [string]$ExePath,            # 폐쇄망: 반입 exe/dll 지정
+    [string]$LogDir
+)
+
+$ErrorActionPreference = 'Stop'
+
+# $PSScriptRoot가 일부 호출에서 비어 있을 수 있어 본문에서 스크립트 폴더 해석
+$scriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
+
+# 규칙 -> 커밋 라벨 (검수 가능한 단위로 규칙별 커밋; Run-TrackA / Run-SparrowSyntaxFix와 동일 방식)
+$labels = [ordered]@{
+    space  = '주석 구분자 뒤 공백 일괄 (//x -> // x)'
+    period = '주석 끝 마침표 일괄'
+}
+
+# 0) preflight
+if (-not (Test-Path -LiteralPath $Solution)) { throw "솔루션/경로 없음: $Solution" }
+$slnFull = (Resolve-Path -LiteralPath $Solution).Path
+# .sln/.csproj 파일이면 그 폴더, 폴더면 그대로 = 소스 루트(러너가 .cs 재귀 + 생성/백업 제외)
+$root = if (Test-Path -LiteralPath $slnFull -PathType Leaf) { Split-Path -Parent $slnFull } else { $slnFull }
+
+# 실행 로그
+if (-not $LogDir) { $LogDir = (Get-Location).Path }
+$stamp = (Get-Date).ToString('yyyyMMdd-HHmmss')
+$logPath = Join-Path $LogDir ("Run-SparrowCommentFix.$stamp.log")
+"Run-SparrowCommentFix | root=$root | rules=$($Rules -join ',') | dryrun=$([bool]$DryRun) | includeGenerated=$([bool]$IncludeGenerated) | time=$stamp" | Out-File -LiteralPath $logPath -Encoding utf8
+Write-Host "실행 로그(전체): $logPath"
+Write-Host "소스 루트      : $root"
+
+# 1) 툴 바이너리 확보: ExePath > publish exe > 빌드된 dll > dotnet build
+function Resolve-Tool {
+    if ($ExePath) {
+        if (-not (Test-Path -LiteralPath $ExePath)) { throw "-ExePath 없음: $ExePath" }
+        $p = (Resolve-Path -LiteralPath $ExePath).Path
+        return @{ kind = $(if ($p -match '\.dll$') { 'dll' } else { 'exe' }); path = $p }
+    }
+    $pubExe = Join-Path $scriptDir 'publish\SparrowCommentFix.exe'
+    if (Test-Path -LiteralPath $pubExe) { return @{ kind = 'exe'; path = $pubExe } }
+    $dll = Join-Path $scriptDir 'bin\Release\net8.0\SparrowCommentFix.dll'
+    if (Test-Path -LiteralPath $dll) { return @{ kind = 'dll'; path = $dll } }
+    $csproj = Join-Path $scriptDir 'SparrowCommentFix.csproj'
+    if (-not (Test-Path -LiteralPath $csproj)) { throw "SparrowCommentFix.csproj/exe 모두 없음: $scriptDir (폐쇄망은 -ExePath로 반입 exe 지정)" }
+    if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) { throw "dotnet SDK 없음 + 발행 exe 없음. -ExePath로 반입 exe 지정하세요." }
+    Write-Host "발행 exe/빌드 산출물이 없어 빌드합니다: dotnet build -c Release ..."
+    $b = & dotnet build $csproj -c Release --nologo 2>&1
+    $b | Out-File -LiteralPath $logPath -Append -Encoding utf8
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $dll)) {
+        throw "빌드 실패(폐쇄망에서 Roslyn 패키지 복원 불가일 수 있음). 인터넷 PC에서 미리 발행한 exe를 -ExePath로 지정하세요. 로그: $logPath"
+    }
+    return @{ kind = 'dll'; path = $dll }
+}
+$tool = Resolve-Tool
+Write-Host "툴            : $($tool.path)"
+
+# 작업트리 오염 경고(자동수정 diff 격리를 위해). native(git) stderr가 EAP=Stop에서 throw되는 것을 막기
+# 위해 이 구간만 Continue. git 없음/비-git 폴더(exit!=0)면 조용히 건너뜀(경고는 편의 기능일 뿐).
+if (-not $DryRun) {
+    $ErrorActionPreference = 'Continue'
+    $dirty = @(& git -C $root status --porcelain 2>$null)
+    $gitCode = $LASTEXITCODE
+    $ErrorActionPreference = 'Stop'
+    if ($gitCode -eq 0 -and $dirty.Count -gt 0) {
+        Write-Warning "작업트리에 미커밋 변경이 있습니다($($dirty.Count)개). 자동수정 diff와 섞일 수 있으니 깨끗한 상태에서 권장."
+    }
+}
+
+# 1b) -Commit/-DryRun 둘 다 없으면 물어봄(플래그 빼먹는 실수 방지). 비대화형은 안 물어보고 커밋 안 함.
+if (-not $Commit -and -not $DryRun) {
+    if ([Environment]::UserInteractive) {
+        $ans = Read-Host "규칙별로 커밋할까요? (Y=규칙별 자동 커밋 / N=파일만 수정, 커밋 안 함)"
+        if ($ans -match '^\s*(y|yes|예|ㅛ)\s*$') { $Commit = $true; Write-Host "-> 규칙별 커밋 진행" }
+        else { Write-Host "-> 파일만 수정(커밋 안 함). 나중에 -Commit으로 재실행 가능." }
+    }
+    else {
+        Write-Host "(비대화형: -Commit 미지정 -> 커밋 안 함)"
+    }
+}
+
+# 2) 대상 .cs 파일 목록 구성.
+#    SparrowCommentFix는 디렉터리를 받지 않으므로 러너가 여기서 재귀 수집 + 생성/백업 제외를 하고,
+#    대상 전체경로를 임시 --files-from CSV로 넘긴다. (-FilesFrom을 주면 자동 글롭을 건너뛰고 그 CSV를 그대로 사용.)
+
+# 생성/백업(자동생성) 파일 판별: 경로에 \obj\ \bin\ 세그먼트가 있거나, 파일명이 생성물 패턴이거나,
+# 이름에 복사본/TemporaryGeneratedFile/GeneratedInternalTypeHelper가 들어가면 제외. (대소문자 무시)
+function Test-GeneratedOrBackup {
+    param([Parameter(Mandatory = $true)][System.IO.FileInfo]$File)
+    $lowerPath = $File.FullName.ToLowerInvariant()
+    if ($lowerPath -like '*\obj\*') { return $true }
+    if ($lowerPath -like '*\bin\*') { return $true }
+    $lowerName = $File.Name.ToLowerInvariant()
+    if ($lowerName -like '*.g.cs') { return $true }
+    if ($lowerName -like '*.g.i.cs') { return $true }
+    if ($lowerName -like '*.designer.cs') { return $true }
+    if ($lowerName -eq 'assemblyinfo.cs') { return $true }
+    if ($lowerName -like '*복사본*') { return $true }
+    if ($lowerName -like '*temporarygeneratedfile*') { return $true }
+    if ($lowerName -like '*generatedinternaltypehelper*') { return $true }
+    return $false
+}
+
+$tmpCsv = $null
+try {
+    if ($FilesFrom) {
+        # 정밀 모드: 자동 글롭 없이 준 CSV를 그대로 툴에 전달
+        if (-not (Test-Path -LiteralPath $FilesFrom)) { throw "-FilesFrom 없음: $FilesFrom" }
+        $csvForTool = (Resolve-Path -LiteralPath $FilesFrom).Path
+        Write-Host "정밀 모드      : $csvForTool"
+    }
+    else {
+        # 자동 글롭: 소스 루트 아래 모든 *.cs 재귀 수집 후 생성/백업 제외
+        $allCs = @(Get-ChildItem -LiteralPath $root -Recurse -File -Filter *.cs -ErrorAction SilentlyContinue)
+        $totalCount = $allCs.Count
+
+        if ($IncludeGenerated) {
+            $targets = @($allCs | ForEach-Object { $_.FullName })
+            $excludedCount = 0
+        }
+        else {
+            $kept = @($allCs | Where-Object { -not (Test-GeneratedOrBackup -File $_) })
+            $targets = @($kept | ForEach-Object { $_.FullName })
+            $excludedCount = $totalCount - $targets.Count
+        }
+        $targetCount = @($targets).Count
+
+        Write-Host ""
+        Write-Host "발견 .cs       : $totalCount"
+        Write-Host "제외(생성/백업): $excludedCount$(if ($IncludeGenerated) { '  (-IncludeGenerated: 제외 안 함)' })"
+        Write-Host "대상           : $targetCount"
+        Add-Content -LiteralPath $logPath -Value ("scan | total=$totalCount | excluded=$excludedCount | targeted=$targetCount")
+
+        if ($targetCount -eq 0) {
+            Write-Host ""
+            Write-Host "대상 .cs 0개 -> 할 일 없음(종료)."
+            Write-Host "전체 로그: $logPath"
+            exit 0
+        }
+
+        # 대상 전체경로를 임시 CSV(--files-from)로 기록. 헤더 1줄 '파일명' + 경로마다 따옴표 감싼 1줄.
+        # CSV 이스케이프: 경로 안의 " 는 "" 로. (툴은 BOM 인지 -> UTF-8 no BOM으로 충분)
+        $sb = New-Object System.Text.StringBuilder
+        [void]$sb.AppendLine('파일명')
+        foreach ($t in $targets) {
+            [void]$sb.AppendLine('"' + ($t -replace '"', '""') + '"')
+        }
+        $tmpCsv = Join-Path $env:TEMP ("SparrowCommentFix.files.$stamp.$PID.csv")
+        [System.IO.File]::WriteAllText($tmpCsv, $sb.ToString(), (New-Object System.Text.UTF8Encoding($false)))
+        $csvForTool = $tmpCsv
+        Add-Content -LiteralPath $logPath -Value ("files-from(temp)=$tmpCsv")
+    }
+
+    # 3) 규칙별 실행(+ -Commit이면 규칙별 커밋) — Run-TrackA / Run-SparrowSyntaxFix와 동일 패턴.
+    #    native(dotnet/git) stderr가 EAP=Stop에서 throw되는 것을 막기 위해 이 구간은 Continue.
+    $ErrorActionPreference = 'Continue'
+    $failed = $false
+    $grand = 0
+    foreach ($r in $Rules) {
+        $toolArgs = @('--files-from', $csvForTool, '--rules', $r, '--root', $root)
+        if ($DryRun) { $toolArgs += '--dry-run' }
+
+        if ($tool.kind -eq 'dll') { $out = & dotnet $tool.path @toolArgs 2>&1 }
+        else { $out = & $tool.path @toolArgs 2>&1 }
+        $code = $LASTEXITCODE
+        $text = ($out | Out-String)
+
+        Add-Content -LiteralPath $logPath -Value ("`n========== $r | exit=$code ==========")
+        Add-Content -LiteralPath $logPath -Value $text
+
+        $nChanged = [regex]::Match($text, 'files changed:\s*(\d+)').Groups[1].Value
+        $nEdits = [regex]::Match($text, 'rule ' + [regex]::Escape($r) + ':\s*(\d+)').Groups[1].Value
+        if ($nEdits) { $grand += [int]$nEdits }
+
+        Write-Host ""
+        Write-Host "=== $r  | exit=$code ==="
+        Write-Host "  변경 파일 : $(if ($nChanged) { $nChanged } else { '? (로그 확인)' })"
+        Write-Host "  수정 건수 : $(if ($nEdits) { $nEdits } else { '0' })"
+
+        if ($DryRun) { Write-Host "  결과      : [dry-run] 파일 변경 안 함"; continue }
+        if ($code -eq 2) { Write-Warning "  사용법 오류(exit 2) - 로그 확인."; $failed = $true; break }
+        if ($code -ne 0) { Write-Warning "  실패(exit $code) - 로그 확인."; $failed = $true; break }
+
+        if ($Commit) {
+            & git -C $root add -- '*.cs' 2>&1 | Out-Null
+            & git -C $root diff --cached --quiet
+            if ($LASTEXITCODE -ne 0) {
+                & git -C $root commit -q -m "sparrow: $($labels[$r]) (SparrowCommentFix)"
+                Write-Host "  커밋      : sparrow: $($labels[$r])"
+            }
+            else { Write-Host "  커밋      : 변경 없음 -> 건너뜀 (이 규칙에서 바뀐 .cs 없음)" }
+        }
+        else { Write-Host "  커밋      : -Commit 미지정 -> 커밋 안 함 (파일만 수정됨)" }
+    }
+    $ErrorActionPreference = 'Stop'
+
+    Write-Host ""
+    if (-not $DryRun) { Write-Host "총 수정 건수(적용된 규칙 합): $grand" }
+    if ($failed) { Write-Host "일부 규칙 미완 -> 로그 확인." }
+}
+finally {
+    if ($tmpCsv -and (Test-Path -LiteralPath $tmpCsv)) {
+        Remove-Item -LiteralPath $tmpCsv -Force -ErrorAction SilentlyContinue
+    }
+}
+
+Write-Host ""
+Write-Host "전체 로그: $logPath"
+Write-Host "다음(필수): (1) 빌드 통과 확인  (2) 스패로우 재분석으로 해당 체커 건수 감소 확인 (Roslyn 경계 != Sparrow 경계)."

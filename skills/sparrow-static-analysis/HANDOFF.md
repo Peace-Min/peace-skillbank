@@ -66,6 +66,9 @@
 - 안전: 주석은 런타임/안전 영향 0 → 자동 OK. 첫글자 대문자·마침표는 "글자/문장부호 없을 때만" 가드.
 - **fixture 게이트**(SparrowXlsExport 패턴): 합성 .cs로 각 규칙 before/after + 멱등성 + 문자열 속 `//` 무손상 검증. validate에 `-IncludeCommentE2E` opt-in.
 - 반입: `dotnet-gcdump-offline` 번들에 exe 동봉(SparrowXlsExport와 동일 패턴).
+- **원콜 러너**: `tools/SparrowCommentFix/Run-SparrowCommentFix.ps1`(Run-TrackA/Run-SparrowSyntaxFix와 동일 CLI: -Solution만 주면 동작, -Commit/-DryRun 없으면 커밋 여부 Y/N 프롬프트, 규칙별 커밋). 툴이 디렉터리 미지원이라 러너가 .cs 재귀+생성/백업 제외 후 임시 --files-from CSV로 전달.
+  폴더/.sln/.csproj를 주면 러너가 `.cs` 재귀 수집 + **생성/백업 제외**(`\obj\`·`\bin\`·`*.g.cs`·`*.Designer.cs`·
+  `AssemblyInfo.cs`·`복사본` 등) 후 임시 `--files-from` CSV로 툴에 넘겨 space+period 1회 실행(`-DryRun`/`-FilesFrom`/`-ExePath`).
 - **커밋은 peace-skillbank에** (OSTES 아님). SparrowXlsExport 커밋 메시지 참고.
 
 ## 6. 남은 작업 브리프 — Track C (체커별 가이드 + LLM triage)

@@ -232,6 +232,12 @@ Assert-Condition (Test-Path -LiteralPath $trackAEditorConfig) "Missing Track A .
 Assert-Condition (Test-Path -LiteralPath $trackARunner) "Missing Track A runner Run-TrackA.ps1"
 Test-PowerShellSyntax -Path $trackARunner
 
+# SparrowCommentFix one-call runner (Track B): assert it exists + parses. Like Run-TrackA.ps1 it carries
+# Korean text -> must stay UTF-8-with-BOM or PS 5.1 mis-parses it.
+$commentRunner = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\SparrowCommentFix\Run-SparrowCommentFix.ps1"
+Assert-Condition (Test-Path -LiteralPath $commentRunner) "Missing SparrowCommentFix runner Run-SparrowCommentFix.ps1"
+Test-PowerShellSyntax -Path $commentRunner
+
 $claude = Get-Command claude -ErrorAction SilentlyContinue
 if ($claude) {
     Push-Location $RepositoryRoot

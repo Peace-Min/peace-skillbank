@@ -1,8 +1,9 @@
 param(
     [string]$RepositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path,
-    [switch]$IncludeClrMdE2E,    # opt-in: also build+dump+run the ClrMD root-chain tool (needs .NET SDK; heavy)
-    [switch]$IncludeSparrowE2E,  # opt-in: also build+run the Sparrow XLS export tool (needs .NET SDK + NPOI restore)
-    [switch]$IncludeSyntaxFixE2E # opt-in: also build+run the SparrowSyntaxFix rewriter tool (needs .NET SDK + Roslyn restore)
+    [switch]$IncludeClrMdE2E,     # opt-in: also build+dump+run the ClrMD root-chain tool (needs .NET SDK; heavy)
+    [switch]$IncludeSparrowE2E,   # opt-in: also build+run the Sparrow XLS export tool (needs .NET SDK + NPOI restore)
+    [switch]$IncludeSyntaxFixE2E, # opt-in: also build+run the SparrowSyntaxFix rewriter tool (needs .NET SDK + Roslyn restore)
+    [switch]$IncludeCommentE2E    # opt-in: also build+run the SparrowCommentFix tool (needs .NET SDK + Roslyn restore)
 )
 
 $ErrorActionPreference = "Stop"
@@ -211,6 +212,17 @@ foreach ($syntaxFile in @($syntaxToolProj, $syntaxToolProgram, $syntaxEngine, $s
 }
 Test-PowerShellSyntax -Path $syntaxE2E
 if ($IncludeSyntaxFixE2E) { & $syntaxE2E -RepositoryRoot $RepositoryRoot }
+
+# SparrowCommentFix E2E (Track B): always syntax-check + assert the tool/program/fixtures files exist; only
+# RUN when opted in (builds + restores Roslyn; needs the SDK). Mirrors the Sparrow XLS export wiring above.
+$commentToolProj = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\SparrowCommentFix\SparrowCommentFix.csproj"
+$commentToolProgram = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\SparrowCommentFix\Program.cs"
+$commentE2E = Join-Path $RepositoryRoot "tests\sparrow-commentfix-fixtures.ps1"
+foreach ($commentFile in @($commentToolProj, $commentToolProgram, $commentE2E)) {
+    Assert-Condition (Test-Path -LiteralPath $commentFile) "Missing SparrowCommentFix file: $commentFile"
+}
+Test-PowerShellSyntax -Path $commentE2E
+if ($IncludeCommentE2E) { & $commentE2E -RepositoryRoot $RepositoryRoot }
 
 # Track A auto-fix kit (LLM-free): assert the .editorconfig + runner exist and the runner parses.
 # (Run-TrackA.ps1 carries Korean text -> must stay UTF-8-with-BOM or PS 5.1 mis-parses it.)

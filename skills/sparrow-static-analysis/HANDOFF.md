@@ -19,7 +19,7 @@
 | 트랙 | 대상(체커) | 방법 | 상태 |
 |---|---|---|---|
 | **A 자동** | var·괄호·이니셜라이저 (~4,100) | **dotnet format + .editorconfig** (SDK 내장, 자작 아님) | ✅ **완료** |
-| **B 결정론(자작)** | 주석·여백 (~2,700) | **SparrowCommentFix**(자작 Roslyn, 주석 trivia만) + `dotnet format whitespace` | ⬜ **미착수(브리프 §5)** |
+| **B 결정론(자작)** | 주석·여백 (~2,700) | **SparrowCommentFix**(자작 Roslyn, 주석 trivia만) + `dotnet format whitespace` | 🟨 **SparrowCommentFix: space·period 적용(실물검증). capitalize/blankline은 실물 대조 결과 부적합으로 도구에서 제거(capitalize=한글/기호 결정론불가, blankline=반대타깃), asterisk 보류. 여백은 미착수** |
 | **C 판단** | 보안·품질 (~370: 매우위험/높음/위험 + OVERLY_BROAD_CATCH) | **LLM/프론티어 triage**, 체커별 가이드 | ⬜ **미착수(브리프 §6)** |
 전체 28체커의 트랙 배정·건수·심각도 = `references/checkers/_BACKLOG.md`.
 
@@ -29,6 +29,15 @@
   + `index.csv`(BOM) + `checkers.md`(체커 워크리스트). **26체크 fixture**(validate `-IncludeSparrowE2E`). 실물 7,170행 검증.
 - **Track A**: `references/{Run-TrackA.ps1, bucket1-autofix.editorconfig, track-a-autofix.md}`. dotnet format으로 IDE0007/8(var)·
   IDE0048(괄호)·IDE0017(이니셜라이저) 규칙별 적용+커밋. 콘솔=요약/로그=전체진단(실행지점). net472 레거시 더미 실증.
+- **SparrowCommentFix** (Track B, 자작 Roslyn, 주석 trivia만): `tools/SparrowCommentFix/`. **활성 2종(`space`/`period`)**
+  결정론 픽스 — 프로젝트 로드 없음, 문자열 속 `//` 무손상 보장, BOM/개행 보존, 원자적 재기록, 규칙당 1회 실행=체커별 커밋.
+  **실물 대조(6827/6855.xls)로 스코프 축소**: `capitalize`·`blankline`은 부적합 판정 → **도구에서 제거**
+  (capitalize=한글/기호 시작이 다수라 대문자화 결정론 불가+주석처리 코드 오변형 위험; blankline=실물은 트레일링/인라인 주석
+  지적이라 반대 타깃·구조 재작성 위험 대비 실이익 ~10건), `asterisk`는 **보류**(Doxygen 별표블록 제거=스타일 판단). 이 3종은
+  `--rules`에 주면 exit 2(사유 안내). **실물 per-rule ≈ space 0 / period 221 / capitalize 130(한글·기호 다수) /
+  blankline 10(트레일링) / asterisk 45(Doxygen)**, 전체 주석 히트의 **~79%는 자동생성/백업 파일**(`obj\`·`*.g.cs`·
+  `*.Designer.cs`·`AssemblyInfo`·`복사본`)이라 **Sparrow 스캔 시점에 운영자가 제외**(도구 역할 아님). fixture
+  (validate `-IncludeCommentE2E`). 반입 = `dotnet-gcdump-offline` 번들(SparrowXlsExport와 동일 패턴).
 
 ## 4. 핵심 결정·제약·함정 (재도출 금지)
 - **Excel/COM 금지** → xls는 NPOI로 직접 파싱(SparrowXlsExport). xls→xlsx 변환기는 순손해(같은 파싱+변질지점 추가)라 안 함.
@@ -41,13 +50,18 @@
 - **PS 5.1**: 한글 .ps1은 **UTF-8 BOM 필수**. native(git/dotnet) stderr + `2>&1` + `EAP=Stop` = throw(autocrlf 경고) → 루프는 `EAP=Continue`.
 
 ## 5. 남은 작업 브리프 — Track B (SparrowCommentFix, 자작 Roslyn)
-**목적**: dotnet format이 **주석 *내용*을 안 건드림** → 주석 규칙(~1,950)을 결정론으로 소거. 대상 체커(_BACKLOG의 B):
-`FORMATTING.COMMENT.MISSING_PERIOD`(마침표)·`LOWERCASE_FIRST_LETTER`(첫글자 대문자)·`MISSING_SPACE_AFTER_DELIMITER`(`//x`→`// x`)·
-`BLOCK_OF_ASTERISK`·`MISSING_BLANK_LINE_BEFORE_COMMENT`. 여백(`CONTINUATION.BAD_INDENTATION` 등)은 `dotnet format whitespace`로.
+**목적**: dotnet format이 **주석 *내용*을 안 건드림** → 주석 규칙을 결정론으로 소거. 대상 체커(_BACKLOG의 B):
+`MISSING_SPACE_AFTER_DELIMITER`(`//x`→`// x`, **완료=space**)·`FORMATTING.COMMENT.MISSING_PERIOD`(마침표, **완료=period**)·
+`LOWERCASE_FIRST_LETTER`(첫글자 대문자, **제거=capitalize**)·`MISSING_BLANK_LINE_BEFORE_COMMENT`(**제거=blankline**)·
+`BLOCK_OF_ASTERISK`(**보류=asterisk**). 여백(`CONTINUATION.BAD_INDENTATION` 등)은 `dotnet format whitespace`로.
+> **구현 상태**: 실물 대조 후 **활성 2종(space/period)** 확정·fixture 게이트 통과. capitalize/blankline은 실물 부적합으로
+> **도구에서 제거**(capitalize=한글/기호 대문자화 결정론 불가+주석처리 코드 오변형, blankline=실물은 트레일링 주석이라
+> 반대 타깃), asterisk는 **보류**(Doxygen 블록=스타일 판단). 3종 모두 `--rules` 지정 시 exit 2. 클린 룰 레지스트리라
+> 올바른 계약이 정의되면 각각 작은 diff로 재추가 가능.
 **설계(dev-delegate로 구현)**:
 - `tools/SparrowCommentFix/` net8 콘솔. **`Microsoft.CodeAnalysis.CSharp`(Roslyn)** 로 `CSharpSyntaxTree.ParseText(파일)` →
   **주석 trivia만** 수정 → 원자적 재기록. **프로젝트 로드 없음 → 레거시 무관**. 정규식 아님(문자열 속 `//` 오탐 방지 = 코드 무손상 보장).
-- CLI: `SparrowCommentFix <files 또는 --files-from index.csv> --rules space,period,capitalize,asterisk,blankline [--dry-run]`.
+- CLI: `SparrowCommentFix <files 또는 --files-from index.csv> --rules <space,period|all> [--dry-run]` (활성 2종; all=space+period).
   스코프 = SparrowXlsExport `index.csv`의 체커별 파일목록(=검출된 파일만, churn 최소).
 - 안전: 주석은 런타임/안전 영향 0 → 자동 OK. 첫글자 대문자·마침표는 "글자/문장부호 없을 때만" 가드.
 - **fixture 게이트**(SparrowXlsExport 패턴): 합성 .cs로 각 규칙 before/after + 멱등성 + 문자열 속 `//` 무손상 검증. validate에 `-IncludeCommentE2E` opt-in.

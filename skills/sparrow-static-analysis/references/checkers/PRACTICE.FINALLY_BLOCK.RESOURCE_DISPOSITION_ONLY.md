@@ -1,15 +1,15 @@
-# PRACTICE.FINALLY_BLOCK.RESOURCE_DISPOSITION_ONLY — finally가 자원해제 전용 (prefer using)
+# PRACTICE.FINALLY_BLOCK.RESOURCE_DISPOSITION_ONLY — finally 블록의 자원 해제 전용(→using 대체)
 
 - **건수**: 2  |  **심각도**: 보통  |  **트랙**: C
-- **Sparrow 설명**: `try/finally` 의 `finally` 블록이 **오직 자원 해제(Dispose/Close)만** 수행한다. 이 패턴은 `using` 문으로 대체하는 것이 더 안전·간결하다(예외 안전성·가독성). 대체가 항상 기계적이지 않아(자원 소유·조건부 해제 판단) 트랙 C.
+- **Sparrow 설명**: try-finally 문장에서 finally 블록 안에 Dispose 메소드 호출만 있는 경우에 using문으로 대체해야 합니다.
 
 ## 지켜야 할 규칙 (무엇을 왜 검출)
 `finally { x.Dispose(); }` 패턴은 (1) `x`가 null 일 때 방어가 빠지기 쉽고, (2) 자원 획득이 `try` 안/밖 어디인지에 따라 예외 안전성이 달라진다. `using` 은 컴파일러가 null 안전·예외 안전 해제를 보장하므로 **결함 여지를 줄이는 표준형**이다. 자원 누수([[RESOURCE_LEAK]], CWE-772)와 같은 도메인의 예방적 개선.
 
 ## 표준 매핑 (교차참조)
 - CWE: 직접 결함 아님(권고성). 인접 **CWE-460**(Improper Cleanup on Thrown Exception)·**CWE-772** 예방
-- 무기체계 보안약점 점검 목록: 미매핑 (관례/유지보수 개선 — 187 매핑 대상 아닐 가능성 높음)
-- CERT-C/행안부/OWASP: .NET Framework Guidelines(IDisposable → using 권장)
+- 무기체계 보안약점 점검 목록: **187 항목 100% 적용(설정 확정)**; 개별 항목번호는 Sparrow 체커↔표준 매핑 추출 후 기입(대기) — 단 관례/유지보수 개선 계열이라 실매핑 대상이 아닐 수 있음
+- .NET Framework Design Guideline: IDisposable 자원은 `try/finally` 대신 `using` 권장
 
 ## 진성 판별 기준
 - `finally` 본문이 **자원 해제 호출로만** 구성(`Dispose()`/`Close()` 및 null 가드 정도).

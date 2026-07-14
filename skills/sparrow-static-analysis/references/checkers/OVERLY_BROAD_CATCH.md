@@ -1,15 +1,16 @@
-# OVERLY_BROAD_CATCH — 지나치게 넓은 예외 포착 (overly broad catch)
+# OVERLY_BROAD_CATCH — 지나치게 일반적인 예외 처리
 
 - **건수**: 139  |  **심각도**: 보통  |  **트랙**: C
-- **Sparrow 설명**: `catch (Exception)` / `catch (SystemException)` 처럼 **너무 넓은 예외형**을 포착한다. 특정 예외만 처리해야 할 자리에서 모든 예외를 잡아, 예상치 못한 결함(프로그래밍 오류·치명적 예외)까지 함께 삼켜 은폐할 수 있다. (트랙 C로 분류: 어느 예외형으로 좁힐지는 **맥락 판단** 필요.)
+- **Sparrow 설명**: 지나치게 일반적인 예외 처리 체커는 너무 다양한 예외를 포괄적으로 처리하는 코드를 검출합니다.
 
 ## 지켜야 할 규칙 (무엇을 왜 검출)
 넓은 `catch (Exception)`은 처리 의도가 없던 예외(널참조·인덱스초과·구성오류 등 **버그성 예외**)까지 잡아 정상 흐름처럼 넘어가게 만든다. 결함이 은폐되어 잘못된 상태로 실행이 계속되고, 사고 원인분석이 어려워진다. 방산 신뢰성시험의 예외처리 적정성 기준에서 "잡을 예외만 좁게 잡는다"가 원칙. [[EMPTY_CATCH_BLOCK]]과 결합되면 위험 가중.
 
 ## 표준 매핑 (교차참조)
 - CWE: **CWE-396** (Declaration of Catch for Generic Exception); 삼킴과 결합 시 **CWE-390**(Detection of Error Condition Without Action)
-- 무기체계 보안약점 점검 목록: 미매핑 (187 확보 시 "부적절한 예외처리" 계열)
-- CERT-C/행안부/OWASP: CERT ERR08-J(Do not catch NullPointerException or any superclass); 행안부 "부적절한 예외처리"
+- 무기체계 보안약점 점검 목록: **187 항목 100% 적용(설정 확정)**; 개별 항목번호는 Sparrow 체커↔표준 매핑 추출 후 기입(대기)
+- 행안부 SW보안약점(2021): "부적절한 예외처리"
+- .NET Framework Design Guideline: 포괄적 `catch (Exception)` 대신 구체적 예외형만 포착
 
 ## 진성 판별 기준
 - `catch (Exception)` / `catch` / `catch (SystemException)` 등 광범위 포착.

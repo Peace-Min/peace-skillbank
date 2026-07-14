@@ -117,6 +117,15 @@ try {
     $selText = [System.IO.File]::ReadAllText($selTarget)
     Check "--rules nullcast applies nullcast" { $selText.Contains("var clsComponentInfo = (CComponentInfo)null;") }
     Check "--rules nullcast leaves parens alone" { $selText.Contains("if (nIndex > 0 && nIndex <= nCount - 1)") }
+
+    # 5) one-call runner parses cleanly (Run-TrackA.ps1 대응 러너)
+    $runner = Join-Path $PSScriptRoot "..\skills\sparrow-static-analysis\tools\SparrowSyntaxFix\Run-SparrowSyntaxFix.ps1"
+    Check "Run-SparrowSyntaxFix.ps1 exists" { Test-Path -LiteralPath $runner }
+    Check "Run-SparrowSyntaxFix.ps1 parses (no syntax error)" {
+        $perr = $null
+        [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path -LiteralPath $runner).Path, [ref]$null, [ref]$perr) | Out-Null
+        (-not $perr) -or ($perr.Count -eq 0)
+    }
 }
 finally {
     Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue

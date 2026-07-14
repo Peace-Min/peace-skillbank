@@ -84,6 +84,26 @@ nullcast edits:   285
 parens edits:     741
 ```
 
+## One-call runner — `Run-SparrowSyntaxFix.ps1` (권장, Run-TrackA.ps1 대응)
+
+솔루션 경로만 주면 동작하는 PowerShell 러너(Track A 2단계). 내부에서 exe 확보 → 규칙별 실행 →
+규칙별 커밋(검수 가능한 단위). `references/Run-TrackA.ps1`(dotnet format 1단계)의 짝.
+
+```powershell
+# 적용(‑Commit/‑DryRun 없으면 커밋 여부를 물음). 솔루션(.sln) 또는 소스 폴더 경로.
+.\Run-SparrowSyntaxFix.ps1 -Solution C:\Work\OSTES\OSTES.sln
+
+.\Run-SparrowSyntaxFix.ps1 -Solution ...\OSTES.sln -DryRun                 # 미리보기(변경 안 함)
+.\Run-SparrowSyntaxFix.ps1 -Solution ...\OSTES.sln -Commit                 # 규칙별 자동 커밋
+.\Run-SparrowSyntaxFix.ps1 -Solution ...\OSTES.sln -Rules nullcast         # 일부 규칙만
+.\Run-SparrowSyntaxFix.ps1 -Solution ...\OSTES.sln -FilesFrom index.csv    # (정밀) 검출 파일만
+.\Run-SparrowSyntaxFix.ps1 -Solution ...\OSTES.sln -ExePath C:\tools\SparrowSyntaxFix.exe  # 폐쇄망 반입 exe
+```
+
+툴 확보 순서: `-ExePath` → 스크립트 옆 `publish\SparrowSyntaxFix.exe` → `bin\Release\net8.0\SparrowSyntaxFix.dll`
+→ 없으면 `dotnet build`(패키지 복원 가능할 때). **인터넷 없는 PC는 `-ExePath`/`publish\`로 반입 exe를 주세요.**
+`.sln`을 주면 그 폴더 아래 `*.cs`를 재귀 처리(생성/백업 제외); 흩어진 프로젝트는 `-FilesFrom index.csv`로 정밀 타깃.
+
 ## Safety / encoding
 
 - Preserves the file's UTF-8 **BOM** presence and its exact **newlines** (Roslyn keeps every existing newline

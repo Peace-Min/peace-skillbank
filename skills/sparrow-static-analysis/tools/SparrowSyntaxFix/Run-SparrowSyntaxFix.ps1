@@ -1,0 +1,147 @@
+﻿#requires -Version 5.1
+<#
+    Run-SparrowSyntaxFix.ps1 — Track A 2단계 원콜 러너.
+    dotnet format(Run-TrackA.ps1)이 못 하는 두 체커를 자작 Roslyn 툴 SparrowSyntaxFix로 결정론 처리:
+      - nullcast : `<타입> x = null;`  ->  `var x = (<타입>)null;`  (OBVIOUS_VARIABLE_TYPE)
+      - parens   : `a && b` 등의 비교/산술 피연산자 괄호                (MISSING_PARENTHESIS)
+    Run-TrackA.ps1과 동일 UX: 솔루션 경로만 주면 동작(내부에서 exe 확보 -> 규칙별 실행 -> 규칙별 커밋).
+
+    사용:
+      .\Run-SparrowSyntaxFix.ps1 -Solution C:\Work\OSTES\OSTES.sln              # 적용. -Commit/-DryRun 없으면 커밋 여부를 물음
+      .\Run-SparrowSyntaxFix.ps1 -Solution ...\OSTES.sln -Commit                # 규칙별 git 커밋(안 물어봄)
+      .\Run-SparrowSyntaxFix.ps1 -Solution ...\OSTES.sln -DryRun                # 변경 안 함, 무엇이 바뀔지만 보고
+      .\Run-SparrowSyntaxFix.ps1 -Solution ...\OSTES.sln -Rules nullcast        # 일부 규칙만
+      .\Run-SparrowSyntaxFix.ps1 -Solution ...\OSTES.sln -FilesFrom index.csv   # (정밀) 검출된 파일만 (SparrowXlsExport 산출)
+      .\Run-SparrowSyntaxFix.ps1 -Solution ...\OSTES.sln -ExePath C:\tools\SparrowSyntaxFix.exe  # 폐쇄망: 반입 exe 지정
+
+    폐쇄망 참고: 이 툴은 Roslyn을 품은 컴파일 exe라, 대상 PC에 exe가 있어야 합니다. 러너는
+    (1) -ExePath  (2) 스크립트 옆 publish\SparrowSyntaxFix.exe  (3) bin\Release\net8.0\SparrowSyntaxFix.dll
+    (4) 없으면 `dotnet build`(패키지 복원 가능할 때)  순으로 확보합니다. 인터넷 없는 PC는 (1)/(2)로 반입 exe를 주세요.
+#>
+param(
+    [Parameter(Mandatory = $true)][string]$Solution,
+    [ValidateSet('nullcast', 'parens')][string[]]$Rules = @('nullcast', 'parens'),
+    [switch]$Commit,
+    [switch]$DryRun,
+    [string]$FilesFrom,
+    [string]$ExePath,
+    [string]$LogDir
+)
+
+$ErrorActionPreference = 'Stop'
+
+# $PSScriptRoot가 일부 호출에서 비어 있을 수 있어 본문에서 스크립트 폴더 해석
+$scriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
+
+# 규칙 -> 커밋 라벨 (검수 가능한 단위로 규칙별 커밋)
+$labels = [ordered]@{
+    nullcast = 'null 캐스트 일괄 (Type x=null -> var x=(Type)null)'
+    parens   = '괄호 명확화 일괄 (&&/|| 피연산자)'
+}
+
+# 0) preflight
+if (-not (Test-Path -LiteralPath $Solution)) { throw "솔루션/경로 없음: $Solution" }
+$slnFull = (Resolve-Path -LiteralPath $Solution).Path
+# .sln 파일이면 그 폴더, 폴더면 그대로 = 소스 루트(툴이 .cs 재귀 + 생성/백업 제외)
+$root = if (Test-Path -LiteralPath $slnFull -PathType Leaf) { Split-Path -Parent $slnFull } else { $slnFull }
+
+# 실행 로그
+if (-not $LogDir) { $LogDir = (Get-Location).Path }
+$stamp = (Get-Date).ToString('yyyyMMdd-HHmmss')
+$logPath = Join-Path $LogDir ("Run-SparrowSyntaxFix.$stamp.log")
+"Run-SparrowSyntaxFix | root=$root | rules=$($Rules -join ',') | dryrun=$([bool]$DryRun) | commit=$([bool]$Commit) | time=$stamp" | Out-File -LiteralPath $logPath -Encoding utf8
+Write-Host "실행 로그(전체): $logPath"
+Write-Host "소스 루트      : $root"
+
+# 1) 툴 바이너리 확보: ExePath > publish exe > 빌드된 dll > dotnet build
+function Resolve-Tool {
+    if ($ExePath) {
+        if (-not (Test-Path -LiteralPath $ExePath)) { throw "-ExePath 없음: $ExePath" }
+        $p = (Resolve-Path -LiteralPath $ExePath).Path
+        return @{ kind = $(if ($p -match '\.dll$') { 'dll' } else { 'exe' }); path = $p }
+    }
+    $pubExe = Join-Path $scriptDir 'publish\SparrowSyntaxFix.exe'
+    if (Test-Path -LiteralPath $pubExe) { return @{ kind = 'exe'; path = $pubExe } }
+    $dll = Join-Path $scriptDir 'bin\Release\net8.0\SparrowSyntaxFix.dll'
+    if (Test-Path -LiteralPath $dll) { return @{ kind = 'dll'; path = $dll } }
+    $csproj = Join-Path $scriptDir 'SparrowSyntaxFix.csproj'
+    if (-not (Test-Path -LiteralPath $csproj)) { throw "SparrowSyntaxFix.csproj/exe 모두 없음: $scriptDir (폐쇄망은 -ExePath로 반입 exe 지정)" }
+    if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) { throw "dotnet SDK 없음 + 발행 exe 없음. -ExePath로 반입 exe 지정하세요." }
+    Write-Host "발행 exe/빌드 산출물이 없어 빌드합니다: dotnet build -c Release ..."
+    $b = & dotnet build $csproj -c Release --nologo 2>&1
+    $b | Out-File -LiteralPath $logPath -Append -Encoding utf8
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $dll)) {
+        throw "빌드 실패(폐쇄망에서 Roslyn 패키지 복원 불가일 수 있음). 인터넷 PC에서 미리 발행한 exe를 -ExePath로 지정하세요. 로그: $logPath"
+    }
+    return @{ kind = 'dll'; path = $dll }
+}
+$tool = Resolve-Tool
+Write-Host "툴            : $($tool.path)"
+
+# 작업트리 오염 경고(자동수정 diff 격리를 위해)
+if (-not $DryRun) {
+    $dirty = @(& git -C $root status --porcelain 2>$null)
+    if ($dirty.Count -gt 0) {
+        Write-Warning "작업트리에 미커밋 변경이 있습니다($($dirty.Count)개). 자동수정 diff와 섞일 수 있으니 깨끗한 상태에서 권장."
+    }
+}
+
+# 1b) -Commit/-DryRun 둘 다 없으면 물어봄(플래그 빼먹는 실수 방지). 비대화형은 안 물어보고 커밋 안 함.
+if (-not $Commit -and -not $DryRun) {
+    if ([Environment]::UserInteractive) {
+        $ans = Read-Host "규칙별로 커밋할까요? (Y=규칙별 자동 커밋 / N=파일만 수정, 커밋 안 함)"
+        if ($ans -match '^\s*(y|yes|예|ㅛ)\s*$') { $Commit = $true; Write-Host "-> 규칙별 커밋 진행" }
+        else { Write-Host "-> 파일만 수정(커밋 안 함). 나중에 -Commit으로 재실행 가능." }
+    }
+    else {
+        Write-Host "(비대화형: -Commit 미지정 -> 커밋 안 함)"
+    }
+}
+
+# 2) 규칙별 실행 — native(dotnet/git) stderr가 EAP=Stop에서 throw되는 것을 막기 위해 이 구간은 Continue.
+$ErrorActionPreference = 'Continue'
+$failed = $false
+$grand = 0
+foreach ($r in $Rules) {
+    $toolArgs = @($root, '--rules', $r, '--root', $root)
+    if ($FilesFrom) { $toolArgs += @('--files-from', $FilesFrom) }
+    if ($DryRun) { $toolArgs += '--dry-run' }
+
+    if ($tool.kind -eq 'dll') { $out = & dotnet $tool.path @toolArgs 2>&1 }
+    else { $out = & $tool.path @toolArgs 2>&1 }
+    $code = $LASTEXITCODE
+    $text = ($out | Out-String)
+
+    Add-Content -LiteralPath $logPath -Value ("`n========== $r | exit=$code ==========")
+    Add-Content -LiteralPath $logPath -Value $text
+
+    $nChanged = [regex]::Match($text, 'files changed:\s*(\d+)').Groups[1].Value
+    $nEdits = [regex]::Match($text, [regex]::Escape($r) + ' edits:\s*(\d+)').Groups[1].Value
+    if ($nEdits) { $grand += [int]$nEdits }
+
+    Write-Host ""
+    Write-Host "=== $r  | exit=$code ==="
+    Write-Host "  변경 파일 : $(if ($nChanged) { $nChanged } else { '? (로그 확인)' })"
+    Write-Host "  수정 건수 : $(if ($nEdits) { $nEdits } else { '? (로그 확인)' })"
+
+    if ($DryRun) { Write-Host "  결과      : [dry-run] 파일 변경 안 함"; continue }
+    if ($code -eq 2) { Write-Warning "  사용법 오류(exit 2) - 로그 확인."; $failed = $true; break }
+    if ($code -ne 0) { Write-Warning "  실패(exit $code) - 로그 확인."; $failed = $true; break }
+
+    if ($Commit) {
+        & git -C $root add -- '*.cs' 2>&1 | Out-Null
+        & git -C $root diff --cached --quiet
+        if ($LASTEXITCODE -ne 0) {
+            & git -C $root commit -q -m "sparrow: $($labels[$r]) (SparrowSyntaxFix)"
+            Write-Host "  커밋      : sparrow: $($labels[$r])"
+        }
+        else { Write-Host "  커밋      : 변경 없음 -> 건너뜀 (이 규칙에서 바뀐 .cs 없음)" }
+    }
+    else { Write-Host "  커밋      : -Commit 미지정 -> 커밋 안 함 (파일만 수정됨)" }
+}
+
+Write-Host ""
+if (-not $DryRun) { Write-Host "총 수정 건수(적용된 규칙 합): $grand" }
+if ($failed) { Write-Host "일부 규칙 미완 -> 로그 확인." }
+Write-Host "전체 로그: $logPath"
+Write-Host "다음(필수): (1) 빌드 통과 확인  (2) 스패로우 재분석으로 해당 체커 건수 감소 확인 (Roslyn 경계 != Sparrow 경계)."

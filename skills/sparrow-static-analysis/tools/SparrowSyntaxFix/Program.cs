@@ -9,12 +9,27 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Text;
 
 namespace SparrowSyntaxFix
 {
     internal static class Program
     {
+        private static readonly (string Key, SyntaxRule Rule)[] RuleOrder =
+        {
+            ("nullvar", SyntaxRule.NullVar),
+            ("parens", SyntaxRule.Parens),
+            ("objectinitializer", SyntaxRule.ObjectInitializer),
+            ("objectvar-safe", SyntaxRule.ObjectVarSafe),
+            ("foreachcast", SyntaxRule.ForeachCast),
+            ("obviousvar", SyntaxRule.ObviousVar),
+            ("objectvar-narrowing", SyntaxRule.ObjectVarNarrowing),
+            ("localconst", SyntaxRule.LocalConst),
+            ("arrayvar-safe", SyntaxRule.ArrayVarSafe),
+            ("arrayvar-narrowing", SyntaxRule.ArrayVarNarrowing),
+        };
+
         private static int Main(string[] args)
         {
             try { Console.OutputEncoding = new UTF8Encoding(false); } catch { /* stdout may be redirected */ }
@@ -22,7 +37,7 @@ namespace SparrowSyntaxFix
             var targets = new List<string>();
             string? filesFrom = null;
             string? root = null;
-            SyntaxRule rules = SyntaxRule.All;
+            SyntaxRule rules = SyntaxRule.Default;
             bool dryRun = false;
 
             for (int i = 0; i < args.Length; i++)
@@ -35,7 +50,8 @@ namespace SparrowSyntaxFix
                     case "--rules":
                         if (!Next(args, ref i, out string rulesArg)) return Usage("--rules requires a value");
                         if (!TryParseRules(rulesArg, out rules))
-                            return Usage("invalid --rules value: " + rulesArg + " (expected: all | nullcast | parens | nullcast,parens)");
+                            return Usage("invalid --rules value: " + rulesArg + " (expected: all | "
+                                         + string.Join(",", RuleOrder.Select(r => r.Key)) + ")");
                         break;
                     case "--dry-run": dryRun = true; break;
                     case "-h":
@@ -91,7 +107,7 @@ namespace SparrowSyntaxFix
 
             int found = files.Count;
             int generatedSkipped = 0, encodingSkipped = 0, changed = 0;
-            long totalNull = 0, totalParens = 0;
+            var totalCounts = NewCountMap();
 
             foreach (string file in files)
             {
@@ -109,11 +125,10 @@ namespace SparrowSyntaxFix
                 RewriteResult result = RewriteEngine.Rewrite(sf.Text, rules);
                 if (!result.Changed) continue;
 
-                totalNull += result.NullCastEdits;
-                totalParens += result.ParensEdits;
+                foreach (var kv in result.Counts) totalCounts[kv.Key] += kv.Value;
                 changed++;
 
-                string tail = "  nullcast=" + result.NullCastEdits + " parens=" + result.ParensEdits;
+                string tail = BuildTail(result.Counts, rules);
                 if (dryRun)
                 {
                     Console.WriteLine("would-change " + file + tail);
@@ -132,8 +147,11 @@ namespace SparrowSyntaxFix
             Console.WriteLine("generated skip:   " + N(generatedSkipped));
             Console.WriteLine("non-UTF8 skip:    " + N(encodingSkipped));
             Console.WriteLine((dryRun ? "files to change:  " : "files changed:    ") + N(changed));
-            Console.WriteLine("nullcast edits:   " + N(totalNull));
-            Console.WriteLine("parens edits:     " + N(totalParens));
+            foreach (var r in RuleOrder)
+            {
+                if ((rules & r.Rule) == 0) continue;
+                Console.WriteLine((r.Key + " edits:").PadRight(18) + N(totalCounts[r.Key]));
+            }
             return 0;
         }
 
@@ -147,8 +165,17 @@ namespace SparrowSyntaxFix
                 switch (t)
                 {
                     case "all": rules |= SyntaxRule.All; break;
-                    case "nullcast": rules |= SyntaxRule.NullCast; break;
+                    case "nullcast":   // legacy alias
+                    case "nullvar": rules |= SyntaxRule.NullVar; break;
                     case "parens": rules |= SyntaxRule.Parens; break;
+                    case "objectvar-safe": rules |= SyntaxRule.ObjectVarSafe; break;
+                    case "foreachcast": rules |= SyntaxRule.ForeachCast; break;
+                    case "obviousvar": rules |= SyntaxRule.ObviousVar; break;
+                    case "objectvar-narrowing": rules |= SyntaxRule.ObjectVarNarrowing; break;
+                    case "localconst": rules |= SyntaxRule.LocalConst; break;
+                    case "objectinitializer": rules |= SyntaxRule.ObjectInitializer; break;
+                    case "arrayvar-safe": rules |= SyntaxRule.ArrayVarSafe; break;
+                    case "arrayvar-narrowing": rules |= SyntaxRule.ArrayVarNarrowing; break;
                     default: return false;
                 }
             }
@@ -158,9 +185,29 @@ namespace SparrowSyntaxFix
         private static string RulesText(SyntaxRule r)
         {
             var parts = new List<string>();
-            if ((r & SyntaxRule.NullCast) != 0) parts.Add("nullcast");
-            if ((r & SyntaxRule.Parens) != 0) parts.Add("parens");
+            foreach (var rule in RuleOrder)
+            {
+                if ((r & rule.Rule) != 0) parts.Add(rule.Key);
+            }
             return string.Join(",", parts);
+        }
+
+        private static Dictionary<string, long> NewCountMap()
+        {
+            var map = new Dictionary<string, long>(StringComparer.Ordinal);
+            foreach (var r in RuleOrder) map[r.Key] = 0;
+            return map;
+        }
+
+        private static string BuildTail(Dictionary<string, int> counts, SyntaxRule rules)
+        {
+            var parts = new List<string>();
+            foreach (var r in RuleOrder)
+            {
+                if ((rules & r.Rule) == 0) continue;
+                parts.Add(r.Key + "=" + counts[r.Key]);
+            }
+            return "  " + string.Join(" ", parts);
         }
 
         private static bool Next(string[] args, ref int i, out string value)
@@ -178,7 +225,10 @@ namespace SparrowSyntaxFix
             w.WriteLine("options:");
             w.WriteLine("  --files-from <index.csv>  read target .cs paths from a CSV (파일명/경로 column) or newline list");
             w.WriteLine("  --root <dir>              base dir for resolving relative paths (default: current dir)");
-            w.WriteLine("  --rules <list>            comma list of {nullcast,parens} or 'all' (default: all)");
+            w.WriteLine("  --rules <list>            comma list of rules or 'all' (default: safe subset)");
+            w.WriteLine("                            rules: nullvar(nullcast alias),parens,objectvar-safe,foreachcast,");
+            w.WriteLine("                                   obviousvar,objectvar-narrowing,localconst,");
+            w.WriteLine("                                   objectinitializer,arrayvar-safe,arrayvar-narrowing");
             w.WriteLine("  --dry-run                 report per-file/per-rule counts without writing");
             w.WriteLine("exit codes: 0 = success (changed or not), 1 = error, 2 = usage");
             return message == null ? 0 : 2;

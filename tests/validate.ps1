@@ -202,12 +202,20 @@ $syntaxToolProj = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tool
 $syntaxToolProgram = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\SparrowSyntaxFix\Program.cs"
 $syntaxEngine = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\SparrowSyntaxFix\RewriteEngine.cs"
 $syntaxNullCast = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\SparrowSyntaxFix\NullCastRewriter.cs"
+$syntaxNullVar = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\SparrowSyntaxFix\NullVarRewriter.cs"
+$syntaxVarHelpers = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\SparrowSyntaxFix\VarRewriteHelpers.cs"
+$syntaxObjectVar = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\SparrowSyntaxFix\ObjectVarRewriter.cs"
+$syntaxObjectInitializer = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\SparrowSyntaxFix\ObjectInitializerRewriter.cs"
+$syntaxArrayVar = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\SparrowSyntaxFix\ArrayVarRewriter.cs"
+$syntaxForeachCast = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\SparrowSyntaxFix\ForeachCastRewriter.cs"
+$syntaxObviousVar = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\SparrowSyntaxFix\ObviousVarRewriter.cs"
+$syntaxLocalConst = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\SparrowSyntaxFix\LocalConstRewriter.cs"
 $syntaxParens = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\SparrowSyntaxFix\ParensRewriter.cs"
 $syntaxReadme = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\SparrowSyntaxFix\README.md"
 $syntaxFixtureProj = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\SparrowSyntaxFix\FixtureTests\FixtureTests.csproj"
 $syntaxFixtureProgram = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\SparrowSyntaxFix\FixtureTests\Program.cs"
 $syntaxE2E = Join-Path $RepositoryRoot "tests\sparrow-syntaxfix-fixtures.ps1"
-foreach ($syntaxFile in @($syntaxToolProj, $syntaxToolProgram, $syntaxEngine, $syntaxNullCast, $syntaxParens, $syntaxReadme, $syntaxFixtureProj, $syntaxFixtureProgram, $syntaxE2E)) {
+foreach ($syntaxFile in @($syntaxToolProj, $syntaxToolProgram, $syntaxEngine, $syntaxNullCast, $syntaxNullVar, $syntaxVarHelpers, $syntaxObjectVar, $syntaxObjectInitializer, $syntaxArrayVar, $syntaxForeachCast, $syntaxObviousVar, $syntaxLocalConst, $syntaxParens, $syntaxReadme, $syntaxFixtureProj, $syntaxFixtureProgram, $syntaxE2E)) {
     Assert-Condition (Test-Path -LiteralPath $syntaxFile) "Missing SparrowSyntaxFix file: $syntaxFile"
 }
 Test-PowerShellSyntax -Path $syntaxE2E

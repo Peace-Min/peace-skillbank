@@ -1,7 +1,5 @@
-// SparrowSyntaxFix: deterministic Roslyn source rewriter for two Sparrow (파수 정적분석) checkers that
-// `dotnet format` cannot autofix on the legacy OSTES (.NET Framework 4.7.2) project:
-//   1) PRACTICE.OBVIOUS_VARIABLE_TYPE.NOT_USED_IMPLICIT_TYPING  ->  var x = (<Type>)null;
-//   2) MISSING_PARENTHESIS_IN_EXPRESSION                        ->  parenthesize &&/|| operands
+// SparrowSyntaxFix: deterministic Roslyn source rewriter for Sparrow (파수 정적분석) Track A code-rule
+// residuals that `dotnet format` does not fully clear on the legacy OSTES (.NET Framework 4.7.2) project.
 //
 // RewriteEngine is the pure, IO-free core: parse source text with Roslyn syntax APIs, apply the enabled
 // CSharpSyntaxRewriter(s), and return the round-tripped text + per-rule edit counts. Roslyn guarantees
@@ -9,6 +7,7 @@
 // as unchanged and is never rewritten. This is a syntax-level transform: never string/regex replacement.
 
 using System;
+using System.Collections.Generic;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 
@@ -19,26 +18,47 @@ namespace SparrowSyntaxFix
     internal enum SyntaxRule
     {
         None = 0,
-        NullCast = 1 << 0,
+        NullVar = 1 << 0,
         Parens = 1 << 1,
-        All = NullCast | Parens,
+        ObjectVarSafe = 1 << 2,
+        ForeachCast = 1 << 3,
+        ObviousVar = 1 << 4,
+        ObjectVarNarrowing = 1 << 5,
+        LocalConst = 1 << 6,
+        ObjectInitializer = 1 << 7,
+        ArrayVarSafe = 1 << 8,
+        ArrayVarNarrowing = 1 << 9,
+        Default = Parens | ObjectVarSafe | ObviousVar | ArrayVarSafe,
+        All = NullVar | Parens | ObjectVarSafe | ForeachCast | ObviousVar | ObjectVarNarrowing | LocalConst
+              | ObjectInitializer | ArrayVarSafe | ArrayVarNarrowing,
     }
 
     // Result of a single-file rewrite: the new full text + per-rule edit counts + whether text changed.
     internal sealed class RewriteResult
     {
-        public RewriteResult(string newText, int nullCastEdits, int parensEdits, bool changed)
+        public RewriteResult(string newText, Dictionary<string, int> counts, bool changed)
         {
             NewText = newText;
-            NullCastEdits = nullCastEdits;
-            ParensEdits = parensEdits;
+            Counts = counts;
             Changed = changed;
         }
 
         public string NewText { get; }
-        public int NullCastEdits { get; }
-        public int ParensEdits { get; }
+        public Dictionary<string, int> Counts { get; }
+        public int NullVarEdits => Get("nullvar");
+        public int NullCastEdits => NullVarEdits;  // Back-compat for the old fixture wording.
+        public int ParensEdits => Get("parens");
+        public int ObjectVarSafeEdits => Get("objectvar-safe");
+        public int ForeachCastEdits => Get("foreachcast");
+        public int ObviousVarEdits => Get("obviousvar");
+        public int ObjectVarNarrowingEdits => Get("objectvar-narrowing");
+        public int LocalConstEdits => Get("localconst");
+        public int ObjectInitializerEdits => Get("objectinitializer");
+        public int ArrayVarSafeEdits => Get("arrayvar-safe");
+        public int ArrayVarNarrowingEdits => Get("arrayvar-narrowing");
         public bool Changed { get; }
+
+        private int Get(string key) => Counts.TryGetValue(key, out int value) ? value : 0;
     }
 
     internal static class RewriteEngine
@@ -51,26 +71,98 @@ namespace SparrowSyntaxFix
             SyntaxNode root = CSharpSyntaxTree.ParseText(source, ParseOpts).GetRoot();
             SyntaxNode current = root;
 
-            int nullCast = 0;
-            int parens = 0;
+            var counts = NewCounts();
 
-            if ((rules & SyntaxRule.NullCast) != 0)
+            if ((rules & SyntaxRule.NullVar) != 0)
             {
-                var rw = new NullCastRewriter();
+                var rw = new NullVarRewriter();
                 current = rw.Visit(current) ?? current;
-                nullCast = rw.Count;
+                counts["nullvar"] = rw.Count;
             }
 
             if ((rules & SyntaxRule.Parens) != 0)
             {
                 var rw = new ParensRewriter();
                 current = rw.Visit(current) ?? current;
-                parens = rw.Count;
+                counts["parens"] = rw.Count;
+            }
+
+            if ((rules & SyntaxRule.ObjectInitializer) != 0)
+            {
+                var rw = new ObjectInitializerRewriter();
+                current = rw.Visit(current) ?? current;
+                counts["objectinitializer"] = rw.Count;
+            }
+
+            if ((rules & SyntaxRule.ObjectVarSafe) != 0)
+            {
+                var rw = new ObjectVarRewriter(allowNarrowing: false);
+                current = rw.Visit(current) ?? current;
+                counts["objectvar-safe"] = rw.Count;
+            }
+
+            if ((rules & SyntaxRule.ForeachCast) != 0)
+            {
+                var rw = new ForeachCastRewriter();
+                current = rw.Visit(current) ?? current;
+                counts["foreachcast"] = rw.Count;
+            }
+
+            if ((rules & SyntaxRule.ObviousVar) != 0)
+            {
+                var rw = new ObviousVarRewriter();
+                current = rw.Visit(current) ?? current;
+                counts["obviousvar"] = rw.Count;
+            }
+
+            if ((rules & SyntaxRule.ObjectVarNarrowing) != 0)
+            {
+                var rw = new ObjectVarRewriter(allowNarrowing: true);
+                current = rw.Visit(current) ?? current;
+                counts["objectvar-narrowing"] = rw.Count;
+            }
+
+            if ((rules & SyntaxRule.LocalConst) != 0)
+            {
+                var rw = new LocalConstRewriter();
+                current = rw.Visit(current) ?? current;
+                counts["localconst"] = rw.Count;
+            }
+
+            if ((rules & SyntaxRule.ArrayVarSafe) != 0)
+            {
+                var rw = new ArrayVarRewriter(allowNarrowing: false);
+                current = rw.Visit(current) ?? current;
+                counts["arrayvar-safe"] = rw.Count;
+            }
+
+            if ((rules & SyntaxRule.ArrayVarNarrowing) != 0)
+            {
+                var rw = new ArrayVarRewriter(allowNarrowing: true);
+                current = rw.Visit(current) ?? current;
+                counts["arrayvar-narrowing"] = rw.Count;
             }
 
             string newText = current.ToFullString();
             bool changed = !string.Equals(newText, source, StringComparison.Ordinal);
-            return new RewriteResult(newText, nullCast, parens, changed);
+            return new RewriteResult(newText, counts, changed);
+        }
+
+        private static Dictionary<string, int> NewCounts()
+        {
+            return new Dictionary<string, int>(StringComparer.Ordinal)
+            {
+                ["nullvar"] = 0,
+                ["parens"] = 0,
+                ["objectvar-safe"] = 0,
+                ["foreachcast"] = 0,
+                ["obviousvar"] = 0,
+                ["objectvar-narrowing"] = 0,
+                ["localconst"] = 0,
+                ["objectinitializer"] = 0,
+                ["arrayvar-safe"] = 0,
+                ["arrayvar-narrowing"] = 0,
+            };
         }
     }
 }

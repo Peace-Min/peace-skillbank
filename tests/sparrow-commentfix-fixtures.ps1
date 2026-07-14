@@ -4,14 +4,12 @@
     .NET SDK + a Roslyn restore -- env/time heavy). Run it manually, or via `validate.ps1 -IncludeCommentE2E`.
 
     It builds the tool, writes synthetic .cs fixtures to a temp dir, runs the tool per rule, and asserts the
-    2 ACTIVE rules (space / period) before/after, the string-literal SAFETY guarantee (`//` inside a string is
+    ACTIVE rules (comment + layout) before/after, the string-literal SAFETY guarantee (`//` inside a string is
     never touched), idempotency, --dry-run (writes nothing), --files-from CSV parsing, and that the three
     NOT-active rules (capitalize / blankline / asterisk) and any unknown key all exit 2. Skips cleanly (not
     fails) when the .NET SDK is missing.
 
-    (capitalize/blankline were REMOVED from the tool per real-data analysis: capitalize=한글/기호 첫글자 대문자화
-    결정론 불가·주석처리 코드 오변형 위험, blankline=실물은 트레일링 주석 지적이라 반대 타깃; asterisk stays
-    deferred. So `--rules all` now means space+period.)
+    `--rules all` means all active comment + layout rules; runner defaults are narrower.
 
     PS 5.1 notes honored here: collections wrapped in @() before .Count; no &&/ternary/null-coalescing;
     fixtures/results read with -Encoding UTF8 (the TOOL writes UTF-8 via .NET, not via PowerShell);
@@ -73,6 +71,260 @@ try {
     Write-Host "  building SparrowCommentFix (Release)..."
     & $dotnet.Source build $toolProj -c Release -v q 2>&1 | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "SparrowCommentFix build failed" }
+
+    # --- rule: flatten (6+7+8: block/Doxygen comment -> line comments, capitalized, periodized) ---
+    $flattenSrc = @'
+class C {
+    void M() {
+        /**.
+         * @brief delta event marker 반환
+         *
+         * @param annot annotation 객체
+         * @returns delta event marker 객체
+         */
+        int a = 0;
+    }
+}
+'@
+    $flattenFile = New-Fixture "flatten.cs" $flattenSrc
+    Check "flatten: exit 0" { (Invoke-Tool @($flattenFile, "--rules", "flatten")) -eq 0 }
+    $fl = Read-Text $flattenFile
+    Check "flatten: @brief line normalized" { $fl.Contains("// Delta event marker 반환.") }
+    Check "flatten: @param line normalized" { $fl.Contains("// Param annot annotation 객체.") }
+    Check "flatten: @returns line normalized" { $fl.Contains("// Returns delta event marker 객체.") }
+    Check "flatten: block delimiters removed" { (-not $fl.Contains("/**")) -and (-not $fl.Contains("*/")) -and (-not $fl.Contains(" * @")) }
+    Check "flatten: no punctuation-only comment emitted" { (-not $fl.Contains("// .")) }
+
+    # --- rule: trailing (9: move inline comment above code and normalize comment style) ---
+    $trailingSrc = @'
+class C {
+    void M() {
+        int count = 0; //ABC
+        string url = "http://example.com"; //url
+    }
+}
+'@
+    $trailingFile = New-Fixture "trailing.cs" $trailingSrc
+    Check "trailing: exit 0" { (Invoke-Tool @($trailingFile, "--rules", "trailing")) -eq 0 }
+    $tr = Read-Text $trailingFile
+    Check "trailing: comment moved above first code line" { $tr.Contains("        // ABC.`r`n        int count = 0;") -or $tr.Contains("        // ABC.`n        int count = 0;") }
+    Check "trailing: string literal URL intact and comment moved" { $tr.Contains('"http://example.com"') -and ($tr.Contains("// Url.`r`n        string url") -or $tr.Contains("// Url.`n        string url")) }
+
+    # flatten negative: block comments embedded in code are not standalone comment lines and must not be changed.
+    $flatNegSrc = @'
+class C {
+    void M() {
+        int x = /* note */ 1;
+        Foo(/* note */ x);
+    }
+}
+'@
+    $flatNegFile = New-Fixture "flatten_negative.cs" $flatNegSrc
+    $flatNegBefore = [System.IO.File]::ReadAllBytes($flatNegFile)
+    Check "flatten negative: exit 0" { (Invoke-Tool @($flatNegFile, "--rules", "flatten")) -eq 0 }
+    $flatNegAfter = [System.IO.File]::ReadAllBytes($flatNegFile)
+    Check "flatten negative: embedded block comments byte-identical" { Test-BytesEqual $flatNegBefore $flatNegAfter }
+
+    # trailing negative: closing-brace comments and suppression comments stay in place.
+    $trailNegSrc = @'
+class C {
+    void M() {
+        if (true) { } // namespace-ish
+        int x = 0; // NOSONAR
+    }
+}
+'@
+    $trailNegFile = New-Fixture "trailing_negative.cs" $trailNegSrc
+    $trailNegBefore = [System.IO.File]::ReadAllBytes($trailNegFile)
+    Check "trailing negative: exit 0" { (Invoke-Tool @($trailNegFile, "--rules", "trailing")) -eq 0 }
+    $trailNegAfter = [System.IO.File]::ReadAllBytes($trailNegFile)
+    Check "trailing negative: unsafe comments byte-identical" { Test-BytesEqual $trailNegBefore $trailNegAfter }
+
+    $protectedSrc = @'
+class C {
+    void M() {
+        /**
+         * @code
+         * int x = 0;
+         * @endcode
+         */
+        int x = 0; //NOSONAR
+        /** See @ref Foo */
+        /** \code */
+    }
+}
+'@
+    $protectedFile = New-Fixture "protected_all.cs" $protectedSrc
+    $protectedBefore = [System.IO.File]::ReadAllBytes($protectedFile)
+    Check "protected comments: --rules all exit 0" { (Invoke-Tool @($protectedFile, "--rules", "all")) -eq 0 }
+    $protectedAfter = [System.IO.File]::ReadAllBytes($protectedFile)
+    Check "protected comments: --rules all byte-identical" { Test-BytesEqual $protectedBefore $protectedAfter }
+
+    $tagBoundarySrc = @'
+class C {
+    void M() {
+        /** @briefly not a real brief */
+        /** @parameter not a real param */
+    }
+}
+'@
+    $tagBoundaryFile = New-Fixture "tag_boundary.cs" $tagBoundarySrc
+    $tagBoundaryBefore = [System.IO.File]::ReadAllBytes($tagBoundaryFile)
+    Check "tag boundary: exit 0" { (Invoke-Tool @($tagBoundaryFile, "--rules", "all")) -eq 0 }
+    $tagBoundaryAfter = [System.IO.File]::ReadAllBytes($tagBoundaryFile)
+    Check "tag boundary: unsupported prefixes byte-identical" { Test-BytesEqual $tagBoundaryBefore $tagBoundaryAfter }
+
+    $lineDoxygenSrc = @'
+class C {
+    void M() {
+        /// @unknown custom command
+        /// See @unknown custom command
+        // \brief native doxygen command
+        int x = 0; // \brief trailing command
+    }
+}
+'@
+    $lineDoxygenFile = New-Fixture "line_doxygen.cs" $lineDoxygenSrc
+    $lineDoxygenBefore = [System.IO.File]::ReadAllBytes($lineDoxygenFile)
+    Check "line-form Doxygen protection: exit 0" { (Invoke-Tool @($lineDoxygenFile, "--rules", "all")) -eq 0 }
+    $lineDoxygenAfter = [System.IO.File]::ReadAllBytes($lineDoxygenFile)
+    Check "line-form Doxygen protection: byte-identical" { Test-BytesEqual $lineDoxygenBefore $lineDoxygenAfter }
+
+    $parseErrorSrc = @'
+class C {
+    void M( {
+        //bad
+    }
+}
+'@
+    $parseErrorFile = New-Fixture "parse_error.cs" $parseErrorSrc
+    $parseErrorBefore = [System.IO.File]::ReadAllBytes($parseErrorFile)
+    Check "parse error: --rules all exit 0" { (Invoke-Tool @($parseErrorFile, "--rules", "all")) -eq 0 }
+    $parseErrorAfter = [System.IO.File]::ReadAllBytes($parseErrorFile)
+    Check "parse error: byte-identical skip" { Test-BytesEqual $parseErrorBefore $parseErrorAfter }
+
+    # --- layout: memberblank ---
+    $memberSrc = @'
+interface IReport {
+    string PrepareData(string name);
+    bool SetWriteCSVFile(string path);
+}
+'@
+    $memberFile = New-Fixture "memberblank.cs" $memberSrc
+    Check "memberblank: exit 0" { (Invoke-Tool @($memberFile, "--rules", "memberblank")) -eq 0 }
+    $mb = Read-Text $memberFile
+    Check "memberblank: interface methods separated" { $mb.Contains("    string PrepareData(string name);`r`n`r`n    bool SetWriteCSVFile") -or $mb.Contains("    string PrepareData(string name);`n`n    bool SetWriteCSVFile") }
+    $memberOnce = [System.IO.File]::ReadAllBytes($memberFile)
+    Check "memberblank: second run exit 0" { (Invoke-Tool @($memberFile, "--rules", "memberblank")) -eq 0 }
+    $memberTwice = [System.IO.File]::ReadAllBytes($memberFile)
+    Check "memberblank: second run byte-identical" { Test-BytesEqual $memberOnce $memberTwice }
+
+    $compactMemberSrc = @'
+class C { void A() { } void B() { } }
+'@
+    $compactMemberFile = New-Fixture "memberblank_compact.cs" $compactMemberSrc
+    $compactMemberBefore = [System.IO.File]::ReadAllBytes($compactMemberFile)
+    Check "memberblank compact: first run exit 0" { (Invoke-Tool @($compactMemberFile, "--rules", "memberblank")) -eq 0 }
+    $compactMemberAfter1 = [System.IO.File]::ReadAllBytes($compactMemberFile)
+    Check "memberblank compact: first run byte-identical" { Test-BytesEqual $compactMemberBefore $compactMemberAfter1 }
+    Check "memberblank compact: second run exit 0" { (Invoke-Tool @($compactMemberFile, "--rules", "memberblank")) -eq 0 }
+    $compactMemberAfter2 = [System.IO.File]::ReadAllBytes($compactMemberFile)
+    Check "memberblank compact: second run byte-identical" { Test-BytesEqual $compactMemberAfter1 $compactMemberAfter2 }
+
+    # --- layout: onedeclaration ---
+    $declSrc = @'
+class C {
+    public double X, Y, Z;
+    void M() {
+        string objectName, subPath;
+        double initialX_Min = 0, initialX_Max = 0;
+    }
+}
+'@
+    $declFile = New-Fixture "onedeclaration.cs" $declSrc
+    Check "onedeclaration: exit 0" { (Invoke-Tool @($declFile, "--rules", "onedeclaration")) -eq 0 }
+    $dc = Read-Text $declFile
+    Check "onedeclaration: fields split" { $dc.Contains("    public double X;`r`n    public double Y;`r`n    public double Z;") -or $dc.Contains("    public double X;`n    public double Y;`n    public double Z;") }
+    Check "onedeclaration: locals split" { $dc.Contains("        string objectName;`r`n        string subPath;") -or $dc.Contains("        string objectName;`n        string subPath;") }
+    Check "onedeclaration: initialized locals split" { $dc.Contains("        double initialX_Min = 0;`r`n        double initialX_Max = 0;") -or $dc.Contains("        double initialX_Min = 0;`n        double initialX_Max = 0;") }
+
+    # --- layout: onestatement ---
+    $stmtSrc = @'
+class C {
+    void M() {
+        X = x; Y = y;
+        if (ok) { A = false; B = false; }
+    }
+}
+'@
+    $stmtFile = New-Fixture "onestatement.cs" $stmtSrc
+    Check "onestatement: exit 0" { (Invoke-Tool @($stmtFile, "--rules", "onestatement")) -eq 0 }
+    $st = Read-Text $stmtFile
+    Check "onestatement: adjacent assignments split" { $st.Contains("        X = x;`r`n        Y = y;") -or $st.Contains("        X = x;`n        Y = y;") }
+    Check "onestatement: single-line if block expanded" { $st.Contains("if (ok)`r`n        {") -or $st.Contains("if (ok)`n        {") -or $st.Contains("if (ok) {`r`n            A = false;") -or $st.Contains("if (ok) {`n            A = false;") }
+
+    $nestedStmtSrc = @'
+class C {
+    void M() {
+        if (a) { if (b) { A(); B(); } C(); }
+    }
+}
+'@
+    $nestedStmtFile = New-Fixture "onestatement_nested.cs" $nestedStmtSrc
+    Check "onestatement nested: exit 0 without overlapping edits" { (Invoke-Tool @($nestedStmtFile, "--rules", "onestatement")) -eq 0 }
+    $nestedStmtText = Read-Text $nestedStmtFile
+    Check "onestatement nested: file remains parseable text" { $nestedStmtText.Contains("if (a)") -and $nestedStmtText.Contains("if (b)") }
+
+    # --- layout: continuation ---
+    $contSrc = @'
+class C {
+    void M() {
+        PlayerInfoXML = new XElement("playerInfo",
+        new XAttribute("symbolICOPS", value),
+        new XAttribute("movepath_opt_1", value));
+        if ((A) &&
+           (B))
+        {
+        }
+    }
+}
+'@
+    $contFile = New-Fixture "continuation.cs" $contSrc
+    Check "continuation: exit 0" { (Invoke-Tool @($contFile, "--rules", "continuation")) -eq 0 }
+    $ct = Read-Text $contFile
+    Check "continuation: arguments indented one level" { $ct.Contains("        PlayerInfoXML = new XElement(`"playerInfo`",`r`n            new XAttribute") -or $ct.Contains("        PlayerInfoXML = new XElement(`"playerInfo`",`n            new XAttribute") }
+    Check "continuation: binary right operand indented one level" { $ct.Contains("        if ((A) &&`r`n            (B))") -or $ct.Contains("        if ((A) &&`n            (B))") }
+
+    $contOverSrc = @'
+class C {
+    void M() {
+        PlayerInfoXML = new XElement("playerInfo",
+                new XAttribute("symbolICOPS", value));
+    }
+}
+'@
+    $contOverFile = New-Fixture "continuation_overindented.cs" $contOverSrc
+    $contOverBefore = [System.IO.File]::ReadAllBytes($contOverFile)
+    Check "continuation overindented: exit 0" { (Invoke-Tool @($contOverFile, "--rules", "continuation")) -eq 0 }
+    $contOverAfter = [System.IO.File]::ReadAllBytes($contOverFile)
+    Check "continuation overindented: byte-identical no churn" { Test-BytesEqual $contOverBefore $contOverAfter }
+
+    # --- layout: linqalign ---
+    $linqSrc = @'
+using System.Linq;
+class C {
+    void M() {
+        var orderedEvents = (from entry in sourceEvents
+                                                where entry.Event != null
+                                                orderby entry.Event.Timestamp
+                                                select entry).ToList();
+    }
+}
+'@
+    $linqFile = New-Fixture "linqalign.cs" $linqSrc
+    Check "linqalign: exit 0" { (Invoke-Tool @($linqFile, "--rules", "linqalign")) -eq 0 }
+    $lq = Read-Text $linqFile
+    Check "linqalign: clauses aligned to from" { $lq.Contains("        var orderedEvents = (from entry in sourceEvents`r`n                             where entry.Event != null`r`n                             orderby entry.Event.Timestamp`r`n                             select entry)") -or $lq.Contains("        var orderedEvents = (from entry in sourceEvents`n                             where entry.Event != null`n                             orderby entry.Event.Timestamp`n                             select entry)") }
 
     # --- rule: space ---
     $spaceSrc = @'
@@ -151,6 +403,9 @@ class C
     {
         int x = 0;
         //hello
+        /** @brief delta event marker 반환 */
+        int y = 1; //abc
+        X = x; Y = y;
         var s = "http://x";
     }
 }

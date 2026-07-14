@@ -3,12 +3,13 @@
 // non-SDK .csproj / .NET Framework 4.7.2 targets are irrelevant. Purpose: take the deterministic comment
 // clean-ups out of a weak local LLM's hands in an air-gapped environment (Track B of the pipeline).
 //
-// SCOPE = 2 ACTIVE RULES (reduced after validating every rule against the REAL Sparrow output,
+// SCOPE = ACTIVE COMMENT + LAYOUT RULES (validated against the REAL Sparrow output,
 // issues_OSTES_6827.xls / 6855.xls, plus the checker descriptions):
-//   space  (FORMATTING.COMMENT.MISSING_SPACE_AFTER_DELIMITER, "//와 주석 사이 공백") -- CORRECT. Kept.
-//   period (FORMATTING.COMMENT.MISSING_PERIOD, "주석 문장 끝 종결부호")             -- CORRECT and the tool's
-//           main rule (~221 real-source hits). Its guard (append '.' only when the last content char is a
-//           letter/digit) auto-skips commented-out code ending in `;`/`]` and divider lines. Kept.
+//   flatten  (Doxygen/block comment -> line comments for simple @brief/@param/@returns blocks)
+//   trailing (inline `code; //comment` -> preceding normalized line comment)
+//   space    (FORMATTING.COMMENT.MISSING_SPACE_AFTER_DELIMITER, "//와 주석 사이 공백")
+//   period   (FORMATTING.COMMENT.MISSING_PERIOD, "주석 문장 끝 종결부호")
+//   memberblank / onedeclaration / onestatement / linqalign / continuation
 //
 // THREE RULES ARE INTENTIONALLY NOT ACTIVE (removed/deferred per that same real-data analysis). This is the
 // "code-fix-only" decision: deterministically-unfixable items are simply left unhandled rather than mis-edited.
@@ -32,10 +33,10 @@
 //  - Parse with DocumentationMode.None so `///` doc comments are lexed as ordinary SingleLineCommentTrivia
 //    (text `///...`) and `/**...*/` as ordinary MultiLineCommentTrivia. That keeps every rule a simple,
 //    total text transform on the comment's delimiter+content -- no structured-XML trivia to reason about.
-//  - CLEAN RULE REGISTRY (AllRuleKeys + per-comment rewrite dispatch): the 2 active rules (space, period)
-//    each slot in by key. capitalize / blankline / asterisk are intentionally not active (see SCOPE above);
+//  - CLEAN RULE REGISTRY (AllRuleKeys + per-comment/layout dispatch): active rules each slot in by key.
+//    capitalize / blankline / asterisk are intentionally not active (see SCOPE above);
 //    passing any of them -- or an unknown key -- exits 2 with a message naming the valid keys and the reason.
-//  - TEXT rules (space, period) are pure comment-text rewrites, applied per comment in canonical order.
+//  - TEXT rules are comment-trivia rewrites; layout rules are narrow span rewrites with parse/overlap guards.
 //  - Every rule is IDEMPOTENT: a second run is a no-op (verified by fixtures).
 //  - PER-CHECKER COMMITS: run ONE rule at a time (e.g. `--rules period`) so that run's diff == that one
 //    Sparrow checker's fixes, matching the "규칙/체커별 커밋" gate.
@@ -52,14 +53,18 @@ using System.Linq;
 using System.Text;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace SparrowCommentFix
 {
     internal static class Program
     {
-        // Canonical order the active text rules are applied in (selection order is irrelevant; application is
-        // fixed). Reduced to space+period per real-data analysis; capitalize/blankline/asterisk are NOT active.
-        private static readonly string[] AllRuleKeys = { "space", "period" };
+        // Canonical order the active text rules are applied in (selection order is irrelevant; application is fixed).
+        private static readonly string[] AllRuleKeys =
+        {
+            "flatten", "trailing", "space", "period",
+            "memberblank", "onestatement", "onedeclaration", "continuation", "linqalign"
+        };
 
         private static int Main(string[] args)
         {
@@ -70,6 +75,7 @@ namespace SparrowCommentFix
             string? root = null;
             string? rulesArg = null;
             bool dryRun = false;
+            bool includeGenerated = false;
 
             for (int i = 0; i < args.Length; i++)
             {
@@ -80,6 +86,7 @@ namespace SparrowCommentFix
                     case "--root": if (!TryNext(args, ref i, out root)) return Usage("--root requires a value"); break;
                     case "--rules": if (!TryNext(args, ref i, out rulesArg)) return Usage("--rules requires a value"); break;
                     case "--dry-run": dryRun = true; break;
+                    case "--include-generated": includeGenerated = true; break;
                     default:
                         if (a.StartsWith("--", StringComparison.Ordinal)) return Usage("unknown option: " + a);
                         positional.Add(a);
@@ -106,7 +113,7 @@ namespace SparrowCommentFix
 
             try
             {
-                return Run(positional, filesFrom, root, enabled, dryRun);
+                return Run(positional, filesFrom, root, enabled, dryRun, includeGenerated);
             }
             catch (Exception ex)
             {
@@ -116,7 +123,7 @@ namespace SparrowCommentFix
         }
 
         private static int Run(List<string> positional, string? filesFrom, string? root,
-                               HashSet<string> enabled, bool dryRun)
+                               HashSet<string> enabled, bool dryRun, bool includeGenerated)
         {
             string rootDir = Path.GetFullPath(root ?? Directory.GetCurrentDirectory());
 
@@ -152,7 +159,7 @@ namespace SparrowCommentFix
             foreach (string full in targets)
             {
                 scanned++;
-                FileResult r = ProcessFile(full, enabled, dryRun);
+                FileResult r = ProcessFile(full, enabled, dryRun, includeGenerated);
                 if (r.SkippedNonUtf8) { skippedNonUtf8++; Console.Error.WriteLine("WARN: not lossless UTF-8, skipping: " + full); continue; }
                 if (r.Changed) changed++;
                 foreach (var kv in r.RuleCounts) ruleCounts[kv.Key] += kv.Value;
@@ -186,10 +193,11 @@ namespace SparrowCommentFix
             public Dictionary<string, int> RuleCounts = new(StringComparer.Ordinal);
         }
 
-        private static FileResult ProcessFile(string fullPath, HashSet<string> enabled, bool dryRun)
+        private static FileResult ProcessFile(string fullPath, HashSet<string> enabled, bool dryRun, bool includeGenerated)
         {
             var result = new FileResult();
             foreach (string k in AllRuleKeys) result.RuleCounts[k] = 0;
+            if (!includeGenerated && IsGeneratedOrBackupPath(fullPath)) return result;
 
             byte[] raw = File.ReadAllBytes(fullPath);
             bool hasBom = raw.Length >= 3 && raw[0] == 0xEF && raw[1] == 0xBB && raw[2] == 0xBF;
@@ -198,6 +206,7 @@ namespace SparrowCommentFix
 
             var enc = new UTF8Encoding(false, false);   // no BOM, no throw on decode
             string text = enc.GetString(raw, contentOffset, contentLength);
+            if (!includeGenerated && HasAutoGeneratedHeader(text)) return result;
 
             // Round-trip guard: if the bytes are not valid/lossless UTF-8, refuse to rewrite (we could
             // corrupt bytes outside the comment regions on re-encode). Skip with a WARN.
@@ -226,41 +235,162 @@ namespace SparrowCommentFix
             var parseOptions = new CSharpParseOptions(languageVersion: LanguageVersion.Latest,
                                                       documentationMode: DocumentationMode.None);
             SyntaxTree tree = CSharpSyntaxTree.ParseText(text, parseOptions);
+            int oldErrorCount = tree.GetDiagnostics().Count(d => d.Severity == DiagnosticSeverity.Error);
+            if (oldErrorCount > 0) return text;
             SyntaxNode root = tree.GetRoot();
 
             var comments = root.DescendantTrivia().Where(t => IsComment(t.Kind())).ToList();
 
             var edits = new List<Edit>();
+            var stagedCounts = new Dictionary<string, int>(ruleCounts, StringComparer.Ordinal);
 
-            // The active rules (space, period) are all pure comment-text rewrites, applied per comment in
-            // canonical order. Each rule's guards make it a no-op when it does not apply (=> idempotent).
             foreach (SyntaxTrivia t in comments)
             {
                 string original = t.ToFullString();
                 string cur = original;
+                if (IsProtectedCommentTrivia(cur)) continue;
+
+                if (enabled.Contains("flatten") && IsBlock(cur) && TryFlattenBlockComment(text, t, cur, out string flat))
+                {
+                    stagedCounts["flatten"]++;
+                    edits.Add(new Edit(t.SpanStart, t.Span.Length, flat));
+                    continue;
+                }
+
+                if (enabled.Contains("trailing") && IsSingleLine(cur) && TryMoveTrailingComment(text, t, cur, out Edit trailingEdit))
+                {
+                    stagedCounts["trailing"]++;
+                    edits.Add(trailingEdit);
+                    continue;
+                }
 
                 if (enabled.Contains("space"))
                 {
                     string next = RewriteSpace(cur);
-                    if (!string.Equals(next, cur, StringComparison.Ordinal)) { ruleCounts["space"]++; cur = next; }
+                    if (!string.Equals(next, cur, StringComparison.Ordinal)) { stagedCounts["space"]++; cur = next; }
                 }
                 if (enabled.Contains("period"))
                 {
                     string next = RewritePeriod(cur);
-                    if (!string.Equals(next, cur, StringComparison.Ordinal)) { ruleCounts["period"]++; cur = next; }
+                    if (!string.Equals(next, cur, StringComparison.Ordinal)) { stagedCounts["period"]++; cur = next; }
                 }
 
                 if (!string.Equals(cur, original, StringComparison.Ordinal))
                     edits.Add(new Edit(t.SpanStart, t.Span.Length, cur));
             }
 
+            string current = text;
+            if (edits.Count > 0)
+            {
+                if (HasOverlappingEdits(edits)) return text;
+                string rewritten = ApplyEdits(text, edits);
+                SyntaxTree newTree = CSharpSyntaxTree.ParseText(rewritten, parseOptions);
+                if (newTree.GetDiagnostics().Count(d => d.Severity == DiagnosticSeverity.Error) <= oldErrorCount)
+                {
+                    foreach (var kv in stagedCounts) ruleCounts[kv.Key] = kv.Value;
+                    current = rewritten;
+                }
+            }
+
+            foreach (string rule in new[] { "onedeclaration", "onestatement", "memberblank", "linqalign", "continuation" })
+            {
+                if (enabled.Contains(rule))
+                    current = ApplyLayoutRule(current, parseOptions, rule, ruleCounts);
+            }
+            return current;
+        }
+
+        private static string ApplyLayoutRule(string text, CSharpParseOptions parseOptions, string rule, Dictionary<string, int> ruleCounts)
+        {
+            SyntaxTree tree = CSharpSyntaxTree.ParseText(text, parseOptions);
+            int oldErrorCount = tree.GetDiagnostics().Count(d => d.Severity == DiagnosticSeverity.Error);
+            if (oldErrorCount > 0) return text;
+            SyntaxNode root = tree.GetRoot();
+            var edits = new List<Edit>();
+            var stagedCounts = new Dictionary<string, int>(ruleCounts, StringComparer.Ordinal);
+
+            switch (rule)
+            {
+                case "memberblank": AddMemberBlankLineEdits(text, root, edits, stagedCounts); break;
+                case "onestatement": AddOneStatementPerLineEdits(text, root, edits, stagedCounts); break;
+                case "onedeclaration": AddOneDeclarationPerLineEdits(text, root, edits, stagedCounts); break;
+                case "continuation": AddContinuationIndentEdits(text, root, edits, stagedCounts); break;
+                case "linqalign": AddLinqAlignmentEdits(text, root, edits, stagedCounts); break;
+            }
             if (edits.Count == 0) return text;
-            return ApplyEdits(text, edits);
+
+            if (HasOverlappingEdits(edits)) return text;
+            string rewritten = ApplyEdits(text, edits);
+            SyntaxTree newTree = CSharpSyntaxTree.ParseText(rewritten, parseOptions);
+            if (newTree.GetDiagnostics().Count(d => d.Severity == DiagnosticSeverity.Error) > oldErrorCount)
+                return text;
+            foreach (var kv in stagedCounts) ruleCounts[kv.Key] = kv.Value;
+            return rewritten;
         }
 
         // ---------------------------------------------------------------------------------------------------
         // Text rules
         // ---------------------------------------------------------------------------------------------------
+
+        // FORMATTING.COMMENT.BLOCK_OF_ASTERISK + LOWERCASE_FIRST_LETTER + MISSING_PERIOD:
+        // Doxygen/block comments are flattened line-by-line into ordinary `// ...` comments.
+        private static bool TryFlattenBlockComment(string source, SyntaxTrivia trivia, string text, out string replacement)
+        {
+            replacement = "";
+            if (!IsBlock(text)) return false;
+            if (!IsStandaloneTriviaLine(source, trivia.SpanStart, trivia.Span.End)) return false;
+
+            string nl = DetectNewline(text);
+            string indent = IndentBefore(source, trivia.SpanStart);
+            string inner = text.Substring(2, text.Length - 4);
+            string normalized = inner.Replace("\r\n", "\n").Replace("\r", "\n");
+            var output = new List<string>();
+
+            foreach (string rawLine in normalized.Split('\n'))
+            {
+                string line = rawLine.Trim();
+                while (line.StartsWith("*", StringComparison.Ordinal)) line = line.Substring(1).TrimStart();
+                if (line.StartsWith("@", StringComparison.Ordinal) && !IsAllowedDoxygenLine(line)) return false;
+                if (line.StartsWith("\\", StringComparison.Ordinal)) return false;
+                if (line.IndexOf("@", StringComparison.Ordinal) > 0) return false;
+                line = NormalizeCommentContent(line);
+                if (line.Length == 0) continue;
+                output.Add("// " + line);
+            }
+
+            if (output.Count == 0) return false;
+            replacement = string.Join(nl + indent, output);
+            return !string.Equals(replacement, text, StringComparison.Ordinal);
+        }
+
+        // MISSING_BLANK_LINE_BEFORE_COMMENT real target: move trailing comments to their own line above code,
+        // while also normalizing delimiter spacing, first letter, and terminal punctuation.
+        private static bool TryMoveTrailingComment(string source, SyntaxTrivia trivia, string text, out Edit edit)
+        {
+            edit = default;
+            int lineStart = LineStart(source, trivia.SpanStart);
+            string before = source.Substring(lineStart, trivia.SpanStart - lineStart);
+            if (before.Trim().Length == 0) return false;
+            if (before.TrimStart().StartsWith("//", StringComparison.Ordinal)) return false;
+            if (!before.TrimEnd().EndsWith(";", StringComparison.Ordinal)) return false;
+            if (text.IndexOf("suppress", StringComparison.OrdinalIgnoreCase) >= 0
+                || text.IndexOf("NOSONAR", StringComparison.OrdinalIgnoreCase) >= 0
+                || text.IndexOf("ReSharper", StringComparison.OrdinalIgnoreCase) >= 0
+                || text.IndexOf("NOLINT", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return false;
+            }
+
+            string content = NormalizeCommentContent(text.Substring(SlashRun(text)));
+            if (content.Length == 0) return false;
+
+            string indent = LeadingWhitespace(before);
+            string code = before.TrimEnd();
+            string nl = NewlineAtOrDefault(source, trivia.Span.End);
+            string replacement = indent + "// " + content + nl + code;
+            edit = new Edit(lineStart, trivia.Span.End - lineStart, replacement);
+            return true;
+        }
 
         // FORMATTING.COMMENT.MISSING_SPACE_AFTER_DELIMITER: `//x`->`// x`, `///x`->`/// x`, `/*x*/`->`/* x*/`.
         private static string RewriteSpace(string text)
@@ -292,6 +422,325 @@ namespace SparrowCommentFix
             if (IsSingleLine(text)) return PeriodAt(text, SlashRun(text), text.Length);
             if (IsBlock(text)) return PeriodAt(text, 2, text.Length - 2);
             return text;
+        }
+
+        private static string NormalizeCommentContent(string content)
+        {
+            string s = content.Trim();
+            if (s.Length == 0) return "";
+
+            s = StripKnownTag(s, "@brief", "");
+            s = StripKnownTag(s, "@param", "Param");
+            s = StripKnownTag(s, "@returns", "Returns");
+            s = StripKnownTag(s, "@return", "Returns");
+            s = StripKnownTag(s, "@details", "");
+            s = s.Trim();
+            while (s.StartsWith("@", StringComparison.Ordinal)) s = s.Substring(1).TrimStart();
+            if (s.Length == 0) return "";
+            if (!ContainsPeriodChar(s)) return "";
+
+            s = CapitalizeFirstAsciiLetter(s);
+            if (NeedsPeriod(s)) s += ".";
+            return s;
+        }
+
+        private static bool IsProtectedCommentTrivia(string text)
+        {
+            if (text.IndexOf("NOSONAR", StringComparison.OrdinalIgnoreCase) >= 0
+                || text.IndexOf("ReSharper", StringComparison.OrdinalIgnoreCase) >= 0
+                || text.IndexOf("NOLINT", StringComparison.OrdinalIgnoreCase) >= 0
+                || text.IndexOf("suppress", StringComparison.OrdinalIgnoreCase) >= 0
+                || text.IndexOf("@code", StringComparison.OrdinalIgnoreCase) >= 0
+                || text.IndexOf("@endcode", StringComparison.OrdinalIgnoreCase) >= 0
+                || text.IndexOf("@ref", StringComparison.OrdinalIgnoreCase) >= 0
+                || text.IndexOf("\\code", StringComparison.OrdinalIgnoreCase) >= 0
+                || text.IndexOf("\\endcode", StringComparison.OrdinalIgnoreCase) >= 0
+                || text.IndexOf("\\param", StringComparison.OrdinalIgnoreCase) >= 0
+                || text.IndexOf("\\ref", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return true;
+            }
+            if (IsSingleLine(text))
+            {
+                string line = text.Substring(SlashRun(text)).Trim();
+                if (line.StartsWith("@", StringComparison.Ordinal) && !IsAllowedDoxygenLine(line)) return true;
+                if (!line.StartsWith("@", StringComparison.Ordinal) && line.IndexOf("@", StringComparison.Ordinal) >= 0) return true;
+                if (line.StartsWith("\\", StringComparison.Ordinal)) return true;
+                if (line.IndexOf("\\", StringComparison.Ordinal) >= 0) return true;
+            }
+            if (IsBlock(text))
+            {
+                string inner = text.Substring(2, text.Length - 4).Replace("\r\n", "\n").Replace("\r", "\n");
+                foreach (string raw in inner.Split('\n'))
+                {
+                    string line = raw.Trim();
+                    while (line.StartsWith("*", StringComparison.Ordinal)) line = line.Substring(1).TrimStart();
+                    if (line.Length == 0) continue;
+                    if (line.StartsWith("@", StringComparison.Ordinal) && !IsAllowedDoxygenLine(line)) return true;
+                    if (line.StartsWith("\\", StringComparison.Ordinal)) return true;
+                    if (line.IndexOf("@", StringComparison.Ordinal) > 0) return true;
+                    if (line.IndexOf("\\", StringComparison.Ordinal) > 0) return true;
+                }
+            }
+            return false;
+        }
+
+        private static bool ContainsPeriodChar(string text)
+        {
+            foreach (char c in text)
+                if (IsPeriodChar(c)) return true;
+            return false;
+        }
+
+        private static bool IsAllowedDoxygenLine(string line)
+        {
+            return IsExactTagOrTagWithSpace(line, "@brief")
+                   || IsExactTagOrTagWithSpace(line, "@param")
+                   || IsExactTagOrTagWithSpace(line, "@returns")
+                   || IsExactTagOrTagWithSpace(line, "@return")
+                   || IsExactTagOrTagWithSpace(line, "@details");
+        }
+
+        private static bool IsExactTagOrTagWithSpace(string text, string tag)
+        {
+            if (!text.StartsWith(tag, StringComparison.OrdinalIgnoreCase)) return false;
+            return text.Length == tag.Length || char.IsWhiteSpace(text[tag.Length]);
+        }
+
+        private static string StripKnownTag(string text, string tag, string replacement)
+        {
+            if (!IsExactTagOrTagWithSpace(text, tag)) return text;
+            string rest = text.Substring(tag.Length).TrimStart();
+            if (replacement.Length == 0) return rest;
+            return replacement + (rest.Length == 0 ? "" : " " + rest);
+        }
+
+        private static string CapitalizeFirstAsciiLetter(string text)
+        {
+            for (int i = 0; i < text.Length; i++)
+            {
+                char c = text[i];
+                if (c >= 'a' && c <= 'z')
+                    return text.Substring(0, i) + char.ToUpperInvariant(c) + text.Substring(i + 1);
+                if (char.IsLetterOrDigit(c)) return text;
+            }
+            return text;
+        }
+
+        private static bool NeedsPeriod(string text)
+        {
+            int last = text.Length - 1;
+            while (last >= 0 && char.IsWhiteSpace(text[last])) last--;
+            if (last < 0) return false;
+            char c = text[last];
+            return IsPeriodChar(c);
+        }
+
+        private static void AddMemberBlankLineEdits(string text, SyntaxNode root, List<Edit> edits, Dictionary<string, int> ruleCounts)
+        {
+            foreach (TypeDeclarationSyntax type in root.DescendantNodes().OfType<TypeDeclarationSyntax>())
+            {
+                SyntaxList<MemberDeclarationSyntax> members = type.Members;
+                for (int i = 1; i < members.Count; i++)
+                {
+                    MemberDeclarationSyntax prev = members[i - 1];
+                    MemberDeclarationSyntax next = members[i];
+                    if (!IsBlankLineTarget(prev) || !IsBlankLineTarget(next)) continue;
+                    if (HasRiskyTrivia(prev) || HasRiskyTrivia(next)) continue;
+                    if (next.AttributeLists.Count > 0) continue;
+                    if (LineStart(text, prev.SpanStart) == LineStart(text, next.SpanStart)) continue;
+                    int betweenStart = prev.Span.End;
+                    int betweenEnd = next.SpanStart;
+                    if (betweenStart >= betweenEnd) continue;
+                    string between = text.Substring(betweenStart, betweenEnd - betweenStart);
+                    if (between.Trim().Length != 0) continue;
+                    if (HasCommentOrDirectiveBetween(text, betweenStart, betweenEnd)) continue;
+                    if (NewlineCount(text, betweenStart, betweenEnd) >= 2) continue;
+                    int insertAt = LineStart(text, next.SpanStart);
+                    edits.Add(new Edit(insertAt, 0, DetectNewline(text)));
+                    ruleCounts["memberblank"]++;
+                }
+            }
+        }
+
+        private static bool IsBlankLineTarget(MemberDeclarationSyntax member)
+        {
+            return member is MethodDeclarationSyntax
+                   || member is PropertyDeclarationSyntax
+                   || member is IndexerDeclarationSyntax
+                   || member is EventDeclarationSyntax
+                   || member is ConstructorDeclarationSyntax
+                   || member is DestructorDeclarationSyntax
+                   || member is OperatorDeclarationSyntax
+                   || member is ConversionOperatorDeclarationSyntax;
+        }
+
+        private static void AddOneStatementPerLineEdits(string text, SyntaxNode root, List<Edit> edits, Dictionary<string, int> ruleCounts)
+        {
+            foreach (IfStatementSyntax ifStatement in root.DescendantNodes().OfType<IfStatementSyntax>())
+            {
+                if (ifStatement.Statement is not BlockSyntax ifBlock) continue;
+                if (ifBlock.Statements.Count < 2) continue;
+                if (HasRiskyTrivia(ifBlock)) continue;
+                if (ifBlock.DescendantNodes().OfType<IfStatementSyntax>().Any()) continue;
+                if (LineStart(text, ifBlock.OpenBraceToken.SpanStart) != LineStart(text, ifBlock.CloseBraceToken.SpanStart)) continue;
+
+                string indent = IndentBefore(text, ifStatement.SpanStart);
+                string childIndent = indent + "    ";
+                string nl = DetectNewline(text);
+                var lines = new List<string> { "{" };
+                foreach (StatementSyntax statement in ifBlock.Statements)
+                    lines.Add(childIndent + statement.WithoutTrivia().ToFullString());
+                lines.Add(indent + "}");
+                edits.Add(new Edit(ifBlock.SpanStart, ifBlock.Span.Length, string.Join(nl, lines)));
+                ruleCounts["onestatement"]++;
+            }
+
+            foreach (BlockSyntax block in root.DescendantNodes().OfType<BlockSyntax>())
+            {
+                if (block.Parent is IfStatementSyntax ifs && ifs.Statement == block) continue;
+                SyntaxList<StatementSyntax> statements = block.Statements;
+                for (int i = 1; i < statements.Count; i++)
+                {
+                    StatementSyntax prev = statements[i - 1];
+                    StatementSyntax next = statements[i];
+                    if (prev is LocalDeclarationStatementSyntax local && local.Declaration.Variables.Count > 1) continue;
+                    if (LineStart(text, prev.Span.End) != LineStart(text, next.SpanStart)) continue;
+                    if (HasCommentOrDirectiveBetween(text, prev.Span.End, next.SpanStart)) continue;
+                    string indent = IndentBefore(text, block.OpenBraceToken.SpanStart) + "    ";
+                    edits.Add(new Edit(prev.Span.End, next.SpanStart - prev.Span.End, DetectNewline(text) + indent));
+                    ruleCounts["onestatement"]++;
+                }
+            }
+        }
+
+        private static void AddOneDeclarationPerLineEdits(string text, SyntaxNode root, List<Edit> edits, Dictionary<string, int> ruleCounts)
+        {
+            foreach (LocalDeclarationStatementSyntax local in root.DescendantNodes().OfType<LocalDeclarationStatementSyntax>())
+            {
+                SeparatedSyntaxList<VariableDeclaratorSyntax> vars = local.Declaration.Variables;
+                if (vars.Count <= 1) continue;
+                if (HasRiskyTrivia(local)) continue;
+                if (local.UsingKeyword.IsKind(SyntaxKind.UsingKeyword)) continue;
+
+                int start = LineStart(text, local.SpanStart);
+                if (text.Substring(start, local.SpanStart - start).Trim().Length != 0) continue;
+                string indent = LeadingWhitespace(text.Substring(start, local.SpanStart - start));
+                string nl = DetectNewline(text);
+                string mods = ModifiersText(local.Modifiers);
+                string type = local.Declaration.Type.WithoutTrivia().ToFullString();
+                var lines = new List<string>();
+                foreach (VariableDeclaratorSyntax variable in vars)
+                {
+                    lines.Add(indent + mods + type + " " + variable.WithoutTrivia().ToFullString() + ";");
+                }
+                edits.Add(new Edit(start, local.Span.End - start, string.Join(nl, lines)));
+                ruleCounts["onedeclaration"]++;
+            }
+
+            foreach (FieldDeclarationSyntax field in root.DescendantNodes().OfType<FieldDeclarationSyntax>())
+            {
+                SeparatedSyntaxList<VariableDeclaratorSyntax> vars = field.Declaration.Variables;
+                if (vars.Count <= 1) continue;
+                if (HasRiskyTrivia(field)) continue;
+                if (field.AttributeLists.Count > 0) continue;
+                int start = LineStart(text, field.SpanStart);
+                if (text.Substring(start, field.SpanStart - start).Trim().Length != 0) continue;
+                string indent = LeadingWhitespace(text.Substring(start, field.SpanStart - start));
+                string nl = DetectNewline(text);
+                string mods = ModifiersText(field.Modifiers);
+                string type = field.Declaration.Type.WithoutTrivia().ToFullString();
+                var lines = new List<string>();
+                foreach (VariableDeclaratorSyntax variable in vars)
+                    lines.Add(indent + mods + type + " " + variable.WithoutTrivia().ToFullString() + ";");
+                edits.Add(new Edit(start, field.Span.End - start, string.Join(nl, lines)));
+                ruleCounts["onedeclaration"]++;
+            }
+        }
+
+        private static void AddContinuationIndentEdits(string text, SyntaxNode root, List<Edit> edits, Dictionary<string, int> ruleCounts)
+        {
+            var touchedLines = new HashSet<int>();
+
+            foreach (ArgumentListSyntax list in root.DescendantNodes().OfType<ArgumentListSyntax>())
+            {
+                int baseLine = LineStart(text, list.SpanStart);
+                string desired = IndentBefore(text, list.SpanStart) + "    ";
+                foreach (ArgumentSyntax arg in list.Arguments)
+                {
+                    int argLine = LineStart(text, arg.SpanStart);
+                    if (argLine == baseLine || !touchedLines.Add(argLine)) continue;
+                    if (TrySetLineIndent(text, arg.SpanStart, desired, out Edit edit))
+                    {
+                        edits.Add(edit);
+                        ruleCounts["continuation"]++;
+                    }
+                }
+            }
+
+            foreach (BinaryExpressionSyntax binary in root.DescendantNodes().OfType<BinaryExpressionSyntax>())
+            {
+                if (!binary.IsKind(SyntaxKind.LogicalAndExpression) && !binary.IsKind(SyntaxKind.LogicalOrExpression)) continue;
+                int baseLine = LineStart(text, binary.Left.SpanStart);
+                int rightLine = LineStart(text, binary.Right.SpanStart);
+                if (rightLine == baseLine || !touchedLines.Add(rightLine)) continue;
+                string desired = IndentBefore(text, binary.Left.SpanStart) + "    ";
+                if (TrySetLineIndent(text, binary.Right.SpanStart, desired, out Edit edit))
+                {
+                    edits.Add(edit);
+                    ruleCounts["continuation"]++;
+                }
+            }
+        }
+
+        private static void AddLinqAlignmentEdits(string text, SyntaxNode root, List<Edit> edits, Dictionary<string, int> ruleCounts)
+        {
+            foreach (QueryExpressionSyntax query in root.DescendantNodes().OfType<QueryExpressionSyntax>())
+            {
+                string desired = ColumnWhitespace(text, query.FromClause.SpanStart);
+                foreach (QueryClauseSyntax clause in query.Body.Clauses)
+                {
+                    if (LineStart(text, clause.SpanStart) == LineStart(text, query.FromClause.SpanStart)) continue;
+                    if (TrySetLineIndent(text, clause.SpanStart, desired, out Edit edit, onlyIfInsufficient: false))
+                    {
+                        edits.Add(edit);
+                        ruleCounts["linqalign"]++;
+                    }
+                }
+                SelectOrGroupClauseSyntax selectOrGroup = query.Body.SelectOrGroup;
+                if (LineStart(text, selectOrGroup.SpanStart) != LineStart(text, query.FromClause.SpanStart)
+                    && TrySetLineIndent(text, selectOrGroup.SpanStart, desired, out Edit finalEdit, onlyIfInsufficient: false))
+                {
+                    edits.Add(finalEdit);
+                    ruleCounts["linqalign"]++;
+                }
+            }
+        }
+
+        private static bool TrySetLineIndent(string text, int tokenStart, string desiredIndent, out Edit edit, bool onlyIfInsufficient = true)
+        {
+            edit = default;
+            int start = LineStart(text, tokenStart);
+            string before = text.Substring(start, tokenStart - start);
+            if (before.Trim().Length != 0) return false;
+            if (before == desiredIndent) return false;
+            if (before.IndexOf('\t') >= 0) return false;
+            if (onlyIfInsufficient && before.Length >= desiredIndent.Length) return false;
+            edit = new Edit(start, before.Length, desiredIndent);
+            return true;
+        }
+
+        private static string ModifiersText(SyntaxTokenList modifiers)
+        {
+            if (modifiers.Count == 0) return "";
+            return string.Join(" ", modifiers.Select(m => m.WithoutTrivia().ToFullString())) + " ";
+        }
+
+        private static string ColumnWhitespace(string text, int tokenStart)
+        {
+            int start = LineStart(text, tokenStart);
+            int columns = tokenStart - start;
+            return new string(' ', columns);
         }
 
         private static string PeriodAt(string text, int start, int end)
@@ -340,6 +789,18 @@ namespace SparrowCommentFix
             }
             sb.Append(text, pos, text.Length - pos);
             return sb.ToString();
+        }
+
+        private static bool HasOverlappingEdits(List<Edit> edits)
+        {
+            edits.Sort((x, y) => x.Start != y.Start ? x.Start.CompareTo(y.Start) : x.Length.CompareTo(y.Length));
+            int pos = 0;
+            foreach (Edit e in edits)
+            {
+                if (e.Start < pos) return true;
+                pos = e.Start + e.Length;
+            }
+            return false;
         }
 
         // ---------------------------------------------------------------------------------------------------
@@ -445,11 +906,140 @@ namespace SparrowCommentFix
         private static bool IsBlock(string text) =>
             text.StartsWith("/*", StringComparison.Ordinal) && text.EndsWith("*/", StringComparison.Ordinal) && text.Length >= 4;
 
+        private static bool IsGeneratedOrBackupPath(string path)
+        {
+            string lowerPath = path.ToLowerInvariant();
+            if (lowerPath.Contains("\\obj\\") || lowerPath.Contains("\\bin\\")) return true;
+            string lowerName = Path.GetFileName(path).ToLowerInvariant();
+            return lowerName.EndsWith(".g.cs", StringComparison.Ordinal)
+                   || lowerName.EndsWith(".g.i.cs", StringComparison.Ordinal)
+                   || lowerName.EndsWith(".designer.cs", StringComparison.Ordinal)
+                   || lowerName == "assemblyinfo.cs"
+                   || lowerName.Contains("temporarygeneratedfile")
+                   || lowerName.Contains("generatedinternaltypehelper")
+                   || lowerName.Contains("복사본");
+        }
+
+        private static bool HasAutoGeneratedHeader(string text)
+        {
+            int scan = 0;
+            for (int line = 0; line < 5 && scan < text.Length; line++)
+            {
+                int end = text.IndexOf('\n', scan);
+                if (end < 0) end = text.Length;
+                string slice = text.Substring(scan, end - scan);
+                if (slice.IndexOf("<auto-generated", StringComparison.OrdinalIgnoreCase) >= 0) return true;
+                scan = end + 1;
+            }
+            return false;
+        }
+
         private static int SlashRun(string text)
         {
             int s = 0;
             while (s < text.Length && text[s] == '/') s++;
             return s;
+        }
+
+        private static int LineStart(string text, int index)
+        {
+            int i = index - 1;
+            while (i >= 0 && text[i] != '\r' && text[i] != '\n') i--;
+            return i + 1;
+        }
+
+        private static int LineEnd(string text, int index)
+        {
+            int i = index;
+            while (i < text.Length && text[i] != '\r' && text[i] != '\n') i++;
+            return i;
+        }
+
+        private static bool IsStandaloneTriviaLine(string text, int start, int end)
+        {
+            string before = text.Substring(LineStart(text, start), start - LineStart(text, start));
+            string after = text.Substring(end, LineEnd(text, end) - end);
+            return before.Trim().Length == 0 && after.Trim().Length == 0;
+        }
+
+        private static string LeadingWhitespace(string text)
+        {
+            int i = 0;
+            while (i < text.Length && (text[i] == ' ' || text[i] == '\t')) i++;
+            return text.Substring(0, i);
+        }
+
+        private static string IndentBefore(string text, int index)
+        {
+            int start = LineStart(text, index);
+            return LeadingWhitespace(text.Substring(start, index - start));
+        }
+
+        private static string DetectNewline(string text)
+        {
+            int crlf = text.IndexOf("\r\n", StringComparison.Ordinal);
+            if (crlf >= 0) return "\r\n";
+            int lf = text.IndexOf('\n');
+            if (lf >= 0) return "\n";
+            int cr = text.IndexOf('\r');
+            if (cr >= 0) return "\r";
+            return Environment.NewLine;
+        }
+
+        private static string NewlineAtOrDefault(string text, int index)
+        {
+            if (index < text.Length)
+            {
+                if (text[index] == '\r')
+                {
+                    if (index + 1 < text.Length && text[index + 1] == '\n') return "\r\n";
+                    return "\r";
+                }
+                if (text[index] == '\n') return "\n";
+            }
+            return DetectNewline(text);
+        }
+
+        private static int NewlineCount(string text, int start, int end)
+        {
+            int count = 0;
+            for (int i = start; i < end; i++)
+            {
+                if (text[i] == '\r')
+                {
+                    count++;
+                    if (i + 1 < end && text[i + 1] == '\n') i++;
+                }
+                else if (text[i] == '\n') count++;
+            }
+            return count;
+        }
+
+        private static bool HasCommentOrDirectiveBetween(string text, int start, int end)
+        {
+            if (start >= end) return false;
+            string slice = text.Substring(start, end - start);
+            return slice.Contains("//", StringComparison.Ordinal)
+                   || slice.Contains("/*", StringComparison.Ordinal)
+                   || slice.Contains("#", StringComparison.Ordinal);
+        }
+
+        private static bool HasRiskyTrivia(SyntaxNode node)
+        {
+            foreach (SyntaxTrivia trivia in node.DescendantTrivia(descendIntoTrivia: true))
+            {
+                if (trivia.IsDirective) return true;
+                if (trivia.IsKind(SyntaxKind.SingleLineCommentTrivia)
+                    || trivia.IsKind(SyntaxKind.MultiLineCommentTrivia)
+                    || trivia.IsKind(SyntaxKind.SingleLineDocumentationCommentTrivia)
+                    || trivia.IsKind(SyntaxKind.MultiLineDocumentationCommentTrivia)
+                    || trivia.IsKind(SyntaxKind.DisabledTextTrivia)
+                    || trivia.IsKind(SyntaxKind.SkippedTokensTrivia))
+                {
+                    return true;
+                }
+            }
+            return false;
         }
 
         // Letter (ASCII / Hangul syllable / CJK) or ASCII digit -> qualifies for the period rule.
@@ -494,18 +1084,17 @@ namespace SparrowCommentFix
         // left guessing why a checker key they saw in Sparrow is rejected.
         private static string InvalidRuleMessage(string token)
         {
-            return "unknown or inactive rule '" + token + "'. valid rules: space, period, all.\n"
+            return "unknown or inactive rule '" + token + "'. valid rules: flatten, trailing, space, period, memberblank, onestatement, onedeclaration, continuation, linqalign, all.\n"
                  + "  not active (removed/deferred per real-data analysis; re-addable as a small diff):\n"
-                 + "  - capitalize: 한글/기호로 시작하는 주석이 많아 대문자화 결정론 불가 + 주석처리 코드 오변형 위험 -> 제거\n"
-                 + "  - blankline:  실물은 트레일링(인라인) 주석 지적이라 반대 타깃 + 구조 재작성 위험 -> 제거\n"
-                 + "  - asterisk:   Doxygen 별표(*) 블록 제거는 스타일 판단 -> 보류";
+                 + "  - capitalize/asterisk: replaced by flatten for block comments\n"
+                 + "  - blankline: replaced by trailing for inline comments";
         }
 
         private static int Usage(string message)
         {
             Console.Error.WriteLine("error: " + message);
             Console.Error.WriteLine("usage: SparrowCommentFix <file.cs> [<file2.cs> ...] [--files-from index.csv] "
-                                    + "[--root DIR] --rules <space,period|all> [--dry-run]");
+                                    + "[--root DIR] --rules <flatten,trailing,space,period,memberblank,onestatement,onedeclaration,continuation,linqalign|all> [--dry-run] [--include-generated]");
             return 2;   // usage / validation error
         }
     }

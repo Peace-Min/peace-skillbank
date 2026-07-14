@@ -1,95 +1,105 @@
-# Sparrow 정적분석 처리 파이프라인 — HANDOFF (세션 인계 마스터)
+﻿# Sparrow ?뺤쟻遺꾩꽍 泥섎━ ?뚯씠?꾨씪????HANDOFF (?몄뀡 ?멸퀎 留덉뒪??
 
-> **다른 세션은 이 파일부터 읽으면 바로 착수 가능.** 목표·현재상태·결정·게이트를 담고, 남은 작업(Track B / Track C)은
-> 각각 자기완결 브리프로 아래에 있음. 대화 히스토리 없이도 시작할 수 있게 작성.
+## 0.1. 필수 운영 원칙: 원샷 CLI 우선
 
-## 0. 한 줄 요약
-파수 **Sparrow(스패로우) 정적분석(신뢰성시험)** 결과 xls를 **사내 LLM + 결정론 도구**로 처리하는 파이프라인.
-대상 코드 = **OSTES**(방산, .NET **Framework 4.7.2**, **레거시(non-SDK) .csproj**, 다중 프로젝트 솔루션).
-환경 = **폐쇄망**(약한 로컬 모델 + 별도 머신의 프론티어). **Excel/COM 금지**(문서중앙화=클라우디움 개입) → **전부 CLI 기반**.
+추후 `sparrow-static-analysis` 작업은 사용자가 `-Rules foreachcast`처럼 세부 규칙 인자를 외워서 직접 호출하는 방식으로 설계하지 않는다. 일반 운영 UX는 항상 PowerShell runner를 실행한 뒤, runner가 경로와 선택 규칙 포함 여부를 Y/N으로 물어보는 원샷 CLI 흐름이다.
 
-## 1. 사용자 확정 시퀀스 & 게이트
-1) xls → **항목별 md** 분리(결정론) → 2) **체커별** 룰셋/해결방안 md → 3) **triage**(진성수정 / 위양성 사유서 / 보류;
-룰셋 매칭은 **체커 키 사전조회**로 결정론화) → 4) **항목/체커별 개별 커밋**(사람 검수 단위).
-**검증 게이트 4단**: G0 diff 스코프 → G1 빌드 통과 → G2 **Sparrow 재분석**(그 체커 검출 소멸 + 신규 0) → G3 사람 승인.
-> **핵심 원칙**: 판단 없는 기계적 작업 = **결정론 툴**, 판단 필요 = **LLM/사람**. 약한 로컬 모델 노출 최소화.
-> **검증의 진짜 기준은 도구 출력이 아니라 "Sparrow 재분석 후 건수 전/후"** (Roslyn 경계 ≠ Sparrow 경계).
+- Track A 1차는 `references/Run-TrackA.ps1` 실행 후 솔루션/폴더 경로와 커밋 여부만 입력하는 흐름을 유지한다.
+- Track A 2차는 `tools/SparrowSyntaxFix/Run-SparrowSyntaxFix.ps1` 실행 후 솔루션/폴더 경로, `foreachcast`/`objectinitializer`/`nullvar`/`objectvar-narrowing`/`localconst`/`arrayvar-narrowing` 포함 여부 Y/N, 커밋 여부 Y/N 순서로 진행한다.
+- Track B는 `tools/SparrowCommentFix/Run-SparrowCommentFix.ps1` 실행 후 솔루션/폴더 경로, `flatten` 포함 여부 Y/N, layout 계열 포함 여부 Y/N, 커밋 여부 Y/N 순서로 진행한다.
+- `-Rules`는 테스트, 자동화, 특정 규칙 재실행을 위한 예외 경로다. 사용자 안내와 운영 문서는 원샷 CLI 기준으로 작성한다.
+- 커밋은 규칙별로 분리하고, 위험 규칙은 커밋 메시지에 `검토필요`가 드러나야 한다.
+> **?ㅻⅨ ?몄뀡? ???뚯씪遺???쎌쑝硫?諛붾줈 李⑹닔 媛??** 紐⑺몴쨌?꾩옱?곹깭쨌寃곗젙쨌寃뚯씠?몃? ?닿퀬, ?⑥? ?묒뾽(Track B / Track C)?
+> 媛곴컖 ?먭린?꾧껐 釉뚮━?꾨줈 ?꾨옒???덉쓬. ????덉뒪?좊━ ?놁씠???쒖옉?????덇쾶 ?묒꽦.
 
-## 2. 3-트랙 분할 (부담 7,170 → LLM은 ~370)
-| 트랙 | 대상(체커) | 방법 | 상태 |
+## 0. ??以??붿빟
+?뚯닔 **Sparrow(?ㅽ뙣濡쒖슦) ?뺤쟻遺꾩꽍(?좊ː?깆떆??** 寃곌낵 xls瑜?**?щ궡 LLM + 寃곗젙濡??꾧뎄**濡?泥섎━?섎뒗 ?뚯씠?꾨씪??
+???肄붾뱶 = **OSTES**(諛⑹궛, .NET **Framework 4.7.2**, **?덇굅??non-SDK) .csproj**, ?ㅼ쨷 ?꾨줈?앺듃 ?붾（??.
+?섍꼍 = **?먯뇙留?*(?쏀븳 濡쒖뺄 紐⑤뜽 + 蹂꾨룄 癒몄떊???꾨줎?곗뼱). **Excel/COM 湲덉?**(臾몄꽌以묒븰???대씪?곕뵒? 媛쒖엯) ??**?꾨? CLI 湲곕컲**.
+
+## 1. ?ъ슜???뺤젙 ?쒗??& 寃뚯씠??1) xls ??**??ぉ蹂?md** 遺꾨━(寃곗젙濡? ??2) **泥댁빱蹂?* 猷곗뀑/?닿껐諛⑹븞 md ??3) **triage**(吏꾩꽦?섏젙 / ?꾩뼇???ъ쑀??/ 蹂대쪟;
+猷곗뀑 留ㅼ묶? **泥댁빱 ???ъ쟾議고쉶**濡?寃곗젙濡좏솕) ??4) **??ぉ/泥댁빱蹂?媛쒕퀎 而ㅻ컠**(?щ엺 寃???⑥쐞).
+**寃利?寃뚯씠??4??*: G0 diff ?ㅼ퐫????G1 鍮뚮뱶 ?듦낵 ??G2 **Sparrow ?щ텇??*(洹?泥댁빱 寃異??뚮㈇ + ?좉퇋 0) ??G3 ?щ엺 ?뱀씤.
+> **?듭떖 ?먯튃**: ?먮떒 ?녿뒗 湲곌퀎???묒뾽 = **寃곗젙濡???*, ?먮떒 ?꾩슂 = **LLM/?щ엺**. ?쏀븳 濡쒖뺄 紐⑤뜽 ?몄텧 理쒖냼??
+> **寃利앹쓽 吏꾩쭨 湲곗?? ?꾧뎄 異쒕젰???꾨땲??"Sparrow ?щ텇????嫄댁닔 ????** (Roslyn 寃쎄퀎 ??Sparrow 寃쎄퀎).
+
+## 2. 3-?몃옓 遺꾪븷 (遺??7,170 ??LLM? ~370)
+| ?몃옓 | ???泥댁빱) | 諛⑸쾿 | ?곹깭 |
 |---|---|---|---|
-| **A 자동** | var·괄호·이니셜라이저 (~4,100) | **dotnet format + .editorconfig** (SDK 내장, 자작 아님) | ✅ **완료** |
-| **B 결정론(자작)** | 주석·여백 (~2,700) | **SparrowCommentFix**(자작 Roslyn, 주석 trivia만) + `dotnet format whitespace` | 🟨 **SparrowCommentFix: space·period 적용(실물검증). capitalize/blankline은 실물 대조 결과 부적합으로 도구에서 제거(capitalize=한글/기호 결정론불가, blankline=반대타깃), asterisk 보류. 여백은 미착수** |
-| **C 판단** | 보안·품질 (~370: 매우위험/높음/위험 + OVERLY_BROAD_CATCH) | **LLM/프론티어 triage**, 체커별 가이드 | ⬜ **미착수(브리프 §6)** |
-전체 28체커의 트랙 배정·건수·심각도 = `references/checkers/_BACKLOG.md`.
+| **A ?먮룞** | var쨌愿꾪샇쨌?대땲?쒕씪?댁? (~4,100) | **dotnet format + SparrowSyntaxFix(Roslyn)** | ?윩 **遺遺꾩셿猷? 愿꾪샇/nullcast???숈옉. 6869 ?щ텇??湲곗? ?붿떆?????680嫄??붿뿬 ??`references/track-a-roslyn-policy.md` ?ㅺ퀎?濡?CLI 蹂닿컯 ?꾩슂** |
+| **B 寃곗젙濡??먯옉)** | 二쇱꽍쨌?щ갚 (~2,700) | **SparrowCommentFix**(?먯옉 Roslyn, 二쇱꽍 trivia留? + `dotnet format whitespace` | ?윩 **SparrowCommentFix: space쨌period ?곸슜(?ㅻЪ寃利?. capitalize/blankline? ?ㅻЪ ?議?寃곌낵 遺?곹빀?쇰줈 ?꾧뎄?먯꽌 ?쒓굅(capitalize=?쒓?/湲고샇 寃곗젙濡좊텋媛, blankline=諛섎??源?, asterisk 蹂대쪟. ?щ갚? 誘몄갑??* |
+| **C ?먮떒** | 蹂댁븞쨌?덉쭏 (~370: 留ㅼ슦?꾪뿕/?믪쓬/?꾪뿕 + OVERLY_BROAD_CATCH) | **LLM/?꾨줎?곗뼱 triage**, 泥댁빱蹂?媛?대뱶 | 燧?**誘몄갑??釉뚮━??짠6)** |
+?꾩껜 28泥댁빱???몃옓 諛곗젙쨌嫄댁닔쨌?ш컖??= `references/checkers/_BACKLOG.md`.
 
-## 3. 지금까지 완료 (커밋됨)
-- **SparrowXlsExport** (xls→항목md, NPOI, Excel/COM 불사용): `tools/SparrowXlsExport/`. 반입 = `dotnet-gcdump-offline` 번들
-  (`Install-SparrowXls.ps1`→`C:\tools\SparrowXlsExport`, `Create-SparrowItems.ps1`). 출력: `items/{ID}_{체커키}_{파일}_{라인}.md`
-  + `index.csv`(BOM) + `checkers.md`(체커 워크리스트). **26체크 fixture**(validate `-IncludeSparrowE2E`). 실물 7,170행 검증.
-- **Track A**: `references/{Run-TrackA.ps1, bucket1-autofix.editorconfig, track-a-autofix.md}`. dotnet format으로 IDE0007/8(var)·
-  IDE0048(괄호)·IDE0017(이니셜라이저) 규칙별 적용+커밋. 콘솔=요약/로그=전체진단(실행지점). net472 레거시 더미 실증.
-- **SparrowCommentFix** (Track B, 자작 Roslyn, 주석 trivia만): `tools/SparrowCommentFix/`. **활성 2종(`space`/`period`)**
-  결정론 픽스 — 프로젝트 로드 없음, 문자열 속 `//` 무손상 보장, BOM/개행 보존, 원자적 재기록, 규칙당 1회 실행=체커별 커밋.
-  **실물 대조(6827/6855.xls)로 스코프 축소**: `capitalize`·`blankline`은 부적합 판정 → **도구에서 제거**
-  (capitalize=한글/기호 시작이 다수라 대문자화 결정론 불가+주석처리 코드 오변형 위험; blankline=실물은 트레일링/인라인 주석
-  지적이라 반대 타깃·구조 재작성 위험 대비 실이익 ~10건), `asterisk`는 **보류**(Doxygen 별표블록 제거=스타일 판단). 이 3종은
-  `--rules`에 주면 exit 2(사유 안내). **실물 per-rule ≈ space 0 / period 221 / capitalize 130(한글·기호 다수) /
-  blankline 10(트레일링) / asterisk 45(Doxygen)**, 전체 주석 히트의 **~79%는 자동생성/백업 파일**(`obj\`·`*.g.cs`·
-  `*.Designer.cs`·`AssemblyInfo`·`복사본`)이라 **Sparrow 스캔 시점에 운영자가 제외**(도구 역할 아님). fixture
-  (validate `-IncludeCommentE2E`). 반입 = `dotnet-gcdump-offline` 번들(SparrowXlsExport와 동일 패턴).
+## 3. 吏湲덇퉴吏 ?꾨즺 (而ㅻ컠??
+- **SparrowXlsExport** (xls?믫빆紐쯯d, NPOI, Excel/COM 遺덉궗??: `tools/SparrowXlsExport/`. 諛섏엯 = `dotnet-gcdump-offline` 踰덈뱾
+  (`Install-SparrowXls.ps1`??C:\tools\SparrowXlsExport`, `Create-SparrowItems.ps1`). 異쒕젰: `items/{ID}_{泥댁빱??_{?뚯씪}_{?쇱씤}.md`
+  + `index.csv`(BOM) + `checkers.md`(泥댁빱 ?뚰겕由ъ뒪??. **26泥댄겕 fixture**(validate `-IncludeSparrowE2E`). ?ㅻЪ 7,170??寃利?
+- **Track A 1李?*: `references/{Run-TrackA.ps1, bucket1-autofix.editorconfig, track-a-autofix.md}`. dotnet format?쇰줈 IDE0007/8(var)쨌
+  IDE0048(愿꾪샇)쨌IDE0017(?대땲?쒕씪?댁?) 洹쒖튃蹂??곸슜+而ㅻ컠. 肄섏넄=?붿빟/濡쒓렇=?꾩껜吏꾨떒(?ㅽ뻾吏??. net472 ?덇굅???붾? ?ㅼ쬆.
+- **Track A 2李?SparrowSyntaxFix)**: `tools/SparrowSyntaxFix/` ?꾩옱 援ы쁽? `nullcast` + `parens`. 6869 ?щ텇?앹뿉??  ?붿떆?????680嫄?`OBJECT_INSTANTIATION` 515, `LOOP_VARIABLE` 117, `OBVIOUS_VARIABLE_TYPE` 48)???⑥븘,
+  `references/track-a-roslyn-policy.md` 湲곗??쇰줈 `objectvar-safe`/`foreachcast`/`obviousvar`/寃?좏븘??洹쒖튃??異붽??댁빞 ?쒕떎.
+- **SparrowCommentFix** (Track B, ?먯옉 Roslyn, 二쇱꽍 trivia留?: `tools/SparrowCommentFix/`. **?쒖꽦 2醫?`space`/`period`)**
+  寃곗젙濡??쎌뒪 ???꾨줈?앺듃 濡쒕뱶 ?놁쓬, 臾몄옄????`//` 臾댁넀??蹂댁옣, BOM/媛쒗뻾 蹂댁〈, ?먯옄???ш린濡? 洹쒖튃??1???ㅽ뻾=泥댁빱蹂?而ㅻ컠.
+  **?ㅻЪ ?議?6827/6855.xls)濡??ㅼ퐫??異뺤냼**: `capitalize`쨌`blankline`? 遺?곹빀 ?먯젙 ??**?꾧뎄?먯꽌 ?쒓굅**
+  (capitalize=?쒓?/湲고샇 ?쒖옉???ㅼ닔???臾몄옄??寃곗젙濡?遺덇?+二쇱꽍泥섎━ 肄붾뱶 ?ㅻ????꾪뿕; blankline=?ㅻЪ? ?몃젅?쇰쭅/?몃씪??二쇱꽍
+  吏?곸씠??諛섎? ?源꺜룰뎄議??ъ옉???꾪뿕 ?鍮??ㅼ씠??~10嫄?, `asterisk`??**蹂대쪟**(Doxygen 蹂꾪몴釉붾줉 ?쒓굅=?ㅽ????먮떒). ??3醫낆?
+  `--rules`??二쇰㈃ exit 2(?ъ쑀 ?덈궡). **?ㅻЪ per-rule ??space 0 / period 221 / capitalize 130(?쒓?쨌湲고샇 ?ㅼ닔) /
+  blankline 10(?몃젅?쇰쭅) / asterisk 45(Doxygen)**, ?꾩껜 二쇱꽍 ?덊듃??**~79%???먮룞?앹꽦/諛깆뾽 ?뚯씪**(`obj\`쨌`*.g.cs`쨌
+  `*.Designer.cs`쨌`AssemblyInfo`쨌`蹂듭궗蹂?)?대씪 **Sparrow ?ㅼ틪 ?쒖젏???댁쁺?먭? ?쒖쇅**(?꾧뎄 ??븷 ?꾨떂). fixture
+  (validate `-IncludeCommentE2E`). 諛섏엯 = `dotnet-gcdump-offline` 踰덈뱾(SparrowXlsExport? ?숈씪 ?⑦꽩).
 
-## 4. 핵심 결정·제약·함정 (재도출 금지)
-- **Excel/COM 금지** → xls는 NPOI로 직접 파싱(SparrowXlsExport). xls→xlsx 변환기는 순손해(같은 파싱+변질지점 추가)라 안 함.
-- **레거시 실행 요령**: (1) `.csproj` 아니라 **`.sln`을 대상**으로(안 그러면 참조 프로젝트 전부 skip). (2) **먼저 솔루션 빌드**
-  (참조 DLL 생성 → "메타데이터 참조 없음" 반쪽로드 해소). (3) 안 되면 **VS "코드 정리 / Fix All in Solution"**(같은 Roslyn 픽스).
-- **dotnet format은 semantic** → `Foo c=null;`·`IFoo c=new Foo();`처럼 **타입 추론 불가/타입 변경 위험은 자동수정 안 함**(안전).
-  그래서 **Sparrow가 잡아도 Roslyn이 안 고치는 잔여 존재** → 재분석 후 남는 var류는 대개 이런 케이스 = **수동/LLM(Track C)**.
-- **자작 Roslyn은 Track B(주석)만**. Track A(var 등)는 semantic이라 **재구현 금지**(기성 dotnet format 사용 = ".gcdump 파서 자작 금지"와 같은 원칙).
-- **커밋 단위 = 규칙/체커별**(7,000 커밋 아님). fix는 **OSTES의 fix 브랜치**에서 → 검토 → main 병합.
-- **PS 5.1**: 한글 .ps1은 **UTF-8 BOM 필수**. native(git/dotnet) stderr + `2>&1` + `EAP=Stop` = throw(autocrlf 경고) → 루프는 `EAP=Continue`.
+## 4. ?듭떖 寃곗젙쨌?쒖빟쨌?⑥젙 (?щ룄異?湲덉?)
+- **Excel/COM 湲덉?** ??xls??NPOI濡?吏곸젒 ?뚯떛(SparrowXlsExport). xls?뭯lsx 蹂?섍린???쒖넀??媛숈? ?뚯떛+蹂吏덉???異붽?)??????
+- **?덇굅???ㅽ뻾 ?붾졊**: (1) `.csproj` ?꾨땲??**`.sln`?????*?쇰줈(??洹몃윭硫?李몄“ ?꾨줈?앺듃 ?꾨? skip). (2) **癒쇱? ?붾（??鍮뚮뱶**
+  (李몄“ DLL ?앹꽦 ??"硫뷀??곗씠??李몄“ ?놁쓬" 諛섏そ濡쒕뱶 ?댁냼). (3) ???섎㈃ **VS "肄붾뱶 ?뺣━ / Fix All in Solution"**(媛숈? Roslyn ?쎌뒪).
+- **dotnet format留뚯쑝濡쒕뒗 Track A媛 ?앸굹吏 ?딆쓬** ???덇굅???꾨줈?앺듃 遺遺?濡쒕뱶? Sparrow/Roslyn 洹쒖튃 寃쎄퀎 李⑥씠 ?뚮Ц??var 怨꾩뿴 ?붿뿬媛 ?щ떎.
+  Track A???ㅼ쓬 ?곗꽑?쒖쐞???ㅼ틪 ?쒖쇅媛 ?꾨땲??**SparrowSyntaxFix??Roslyn 洹쒖튃 蹂닿컯**?대떎.
+- **Track A Roslyn 蹂닿컯 ?뺤콉**: `references/track-a-roslyn-policy.md`媛 理쒖떊 ?⑹쓽?? 湲곕낯 ?덉쟾 洹쒖튃(`objectvar-safe`,
+  `foreachcast`, `obviousvar`)怨?寃?좏븘??洹쒖튃(`objectvar-narrowing`, `localconst`, `nullvar`)??洹쒖튃蹂?而ㅻ컠?쇰줈 遺꾨━?쒕떎.
+- **而ㅻ컠 ?⑥쐞 = 洹쒖튃/泥댁빱蹂?*(7,000 而ㅻ컠 ?꾨떂). fix??**OSTES??fix 釉뚮옖移?*?먯꽌 ??寃????main 蹂묓빀.
+- **PS 5.1**: ?쒓? .ps1? **UTF-8 BOM ?꾩닔**. native(git/dotnet) stderr + `2>&1` + `EAP=Stop` = throw(autocrlf 寃쎄퀬) ??猷⑦봽??`EAP=Continue`.
 
-## 5. 남은 작업 브리프 — Track B (SparrowCommentFix, 자작 Roslyn)
-**목적**: dotnet format이 **주석 *내용*을 안 건드림** → 주석 규칙을 결정론으로 소거. 대상 체커(_BACKLOG의 B):
-`MISSING_SPACE_AFTER_DELIMITER`(`//x`→`// x`, **완료=space**)·`FORMATTING.COMMENT.MISSING_PERIOD`(마침표, **완료=period**)·
-`LOWERCASE_FIRST_LETTER`(첫글자 대문자, **제거=capitalize**)·`MISSING_BLANK_LINE_BEFORE_COMMENT`(**제거=blankline**)·
-`BLOCK_OF_ASTERISK`(**보류=asterisk**). 여백(`CONTINUATION.BAD_INDENTATION` 등)은 `dotnet format whitespace`로.
-> **구현 상태**: 실물 대조 후 **활성 2종(space/period)** 확정·fixture 게이트 통과. capitalize/blankline은 실물 부적합으로
-> **도구에서 제거**(capitalize=한글/기호 대문자화 결정론 불가+주석처리 코드 오변형, blankline=실물은 트레일링 주석이라
-> 반대 타깃), asterisk는 **보류**(Doxygen 블록=스타일 판단). 3종 모두 `--rules` 지정 시 exit 2. 클린 룰 레지스트리라
-> 올바른 계약이 정의되면 각각 작은 diff로 재추가 가능.
-**설계(dev-delegate로 구현)**:
-- `tools/SparrowCommentFix/` net8 콘솔. **`Microsoft.CodeAnalysis.CSharp`(Roslyn)** 로 `CSharpSyntaxTree.ParseText(파일)` →
-  **주석 trivia만** 수정 → 원자적 재기록. **프로젝트 로드 없음 → 레거시 무관**. 정규식 아님(문자열 속 `//` 오탐 방지 = 코드 무손상 보장).
-- CLI: `SparrowCommentFix <files 또는 --files-from index.csv> --rules <space,period|all> [--dry-run]` (활성 2종; all=space+period).
-  스코프 = SparrowXlsExport `index.csv`의 체커별 파일목록(=검출된 파일만, churn 최소).
-- 안전: 주석은 런타임/안전 영향 0 → 자동 OK. 첫글자 대문자·마침표는 "글자/문장부호 없을 때만" 가드.
-- **fixture 게이트**(SparrowXlsExport 패턴): 합성 .cs로 각 규칙 before/after + 멱등성 + 문자열 속 `//` 무손상 검증. validate에 `-IncludeCommentE2E` opt-in.
-- 반입: `dotnet-gcdump-offline` 번들에 exe 동봉(SparrowXlsExport와 동일 패턴).
-- **원콜 러너**: `tools/SparrowCommentFix/Run-SparrowCommentFix.ps1`(Run-TrackA/Run-SparrowSyntaxFix와 동일 CLI: -Solution만 주면 동작, -Commit/-DryRun 없으면 커밋 여부 Y/N 프롬프트, 규칙별 커밋). 툴이 디렉터리 미지원이라 러너가 .cs 재귀+생성/백업 제외 후 임시 --files-from CSV로 전달.
-  폴더/.sln/.csproj를 주면 러너가 `.cs` 재귀 수집 + **생성/백업 제외**(`\obj\`·`\bin\`·`*.g.cs`·`*.Designer.cs`·
-  `AssemblyInfo.cs`·`복사본` 등) 후 임시 `--files-from` CSV로 툴에 넘겨 space+period 1회 실행(`-DryRun`/`-FilesFrom`/`-ExePath`).
-- **커밋은 peace-skillbank에** (OSTES 아님). SparrowXlsExport 커밋 메시지 참고.
+## 5. ?⑥? ?묒뾽 釉뚮━????Track B (SparrowCommentFix, ?먯옉 Roslyn)
+**紐⑹쟻**: dotnet format??**二쇱꽍 *?댁슜*????嫄대뱶由?* ??二쇱꽍 洹쒖튃??寃곗젙濡좎쑝濡??뚭굅. ???泥댁빱(_BACKLOG??B):
+`MISSING_SPACE_AFTER_DELIMITER`(`//x`??// x`, **?꾨즺=space**)쨌`FORMATTING.COMMENT.MISSING_PERIOD`(留덉묠?? **?꾨즺=period**)쨌
+`LOWERCASE_FIRST_LETTER`(泥リ????臾몄옄, **?쒓굅=capitalize**)쨌`MISSING_BLANK_LINE_BEFORE_COMMENT`(**?쒓굅=blankline**)쨌
+`BLOCK_OF_ASTERISK`(**蹂대쪟=asterisk**). ?щ갚(`CONTINUATION.BAD_INDENTATION` ??? `dotnet format whitespace`濡?
+> **援ы쁽 ?곹깭**: ?ㅻЪ ?議???**?쒖꽦 2醫?space/period)** ?뺤젙쨌fixture 寃뚯씠???듦낵. capitalize/blankline? ?ㅻЪ 遺?곹빀?쇰줈
+> **?꾧뎄?먯꽌 ?쒓굅**(capitalize=?쒓?/湲고샇 ?臾몄옄??寃곗젙濡?遺덇?+二쇱꽍泥섎━ 肄붾뱶 ?ㅻ??? blankline=?ㅻЪ? ?몃젅?쇰쭅 二쇱꽍?대씪
+> 諛섎? ?源?, asterisk??**蹂대쪟**(Doxygen 釉붾줉=?ㅽ????먮떒). 3醫?紐⑤몢 `--rules` 吏????exit 2. ?대┛ 猷??덉??ㅽ듃由щ씪
+> ?щ컮瑜?怨꾩빟???뺤쓽?섎㈃ 媛곴컖 ?묒? diff濡??ъ텛媛 媛??
+**?ㅺ퀎(dev-delegate濡?援ы쁽)**:
+- `tools/SparrowCommentFix/` net8 肄섏넄. **`Microsoft.CodeAnalysis.CSharp`(Roslyn)** 濡?`CSharpSyntaxTree.ParseText(?뚯씪)` ??  **二쇱꽍 trivia留?* ?섏젙 ???먯옄???ш린濡? **?꾨줈?앺듃 濡쒕뱶 ?놁쓬 ???덇굅??臾닿?**. ?뺢퇋???꾨떂(臾몄옄????`//` ?ㅽ깘 諛⑹? = 肄붾뱶 臾댁넀??蹂댁옣).
+- CLI: `SparrowCommentFix <files ?먮뒗 --files-from index.csv> --rules <space,period|all> [--dry-run]` (?쒖꽦 2醫? all=space+period).
+  ?ㅼ퐫??= SparrowXlsExport `index.csv`??泥댁빱蹂??뚯씪紐⑸줉(=寃異쒕맂 ?뚯씪留? churn 理쒖냼).
+- ?덉쟾: 二쇱꽍? ?고????덉쟾 ?곹뼢 0 ???먮룞 OK. 泥リ????臾몄옄쨌留덉묠?쒕뒗 "湲??臾몄옣遺???놁쓣 ?뚮쭔" 媛??
+- **fixture 寃뚯씠??*(SparrowXlsExport ?⑦꽩): ?⑹꽦 .cs濡?媛?洹쒖튃 before/after + 硫깅벑??+ 臾몄옄????`//` 臾댁넀??寃利? validate??`-IncludeCommentE2E` opt-in.
+- 諛섏엯: `dotnet-gcdump-offline` 踰덈뱾??exe ?숇큺(SparrowXlsExport? ?숈씪 ?⑦꽩).
+- **?먯퐳 ?щ꼫**: `tools/SparrowCommentFix/Run-SparrowCommentFix.ps1`(Run-TrackA/Run-SparrowSyntaxFix? ?숈씪 CLI: -Solution留?二쇰㈃ ?숈옉, -Commit/-DryRun ?놁쑝硫?而ㅻ컠 ?щ? Y/N ?꾨＼?꾪듃, 洹쒖튃蹂?而ㅻ컠). ?댁씠 ?붾젆?곕━ 誘몄??먯씠???щ꼫媛 .cs ?ш?+?앹꽦/諛깆뾽 ?쒖쇅 ???꾩떆 --files-from CSV濡??꾨떖.
+  ?대뜑/.sln/.csproj瑜?二쇰㈃ ?щ꼫媛 `.cs` ?ш? ?섏쭛 + **?앹꽦/諛깆뾽 ?쒖쇅**(`\obj\`쨌`\bin\`쨌`*.g.cs`쨌`*.Designer.cs`쨌
+  `AssemblyInfo.cs`쨌`蹂듭궗蹂? ?? ???꾩떆 `--files-from` CSV濡??댁뿉 ?섍꺼 space+period 1???ㅽ뻾(`-DryRun`/`-FilesFrom`/`-ExePath`).
+- **而ㅻ컠? peace-skillbank??* (OSTES ?꾨떂). SparrowXlsExport 而ㅻ컠 硫붿떆吏 李멸퀬.
 
-## 6. 남은 작업 브리프 — Track C (체커별 가이드 + LLM triage)
-**목적**: 보안·품질 체커(~370, _BACKLOG의 C)를 LLM/프론티어가 **판단**해 처리. **체커별 가이드 md**가 그 근거.
-**구축 순서**:
-1. `references/checkers/<체커키>.md` 생성 — `_TEMPLATE.md` 형식. **크리티컬(매우위험/높음/위험) 먼저**, **검출된 체커만**(lazy).
-   결정론 부분(체커키·건수·심각도·Sparrow 설명)은 `checkers.md`/`index.csv`에서 채우고, 판단 부분(CWE매핑·진성판별·위양성·수정패턴)은 작성.
-2. **표준 매핑**: 판정 기준 룰셋 = **"무기체계 소프트웨어 보안약점 점검 목록"(187, 100% 적용)**. 이 문서가 있으면 무기체계 항목번호까지,
-   없으면 **CWE 기준**(FORWARD_NULL→CWE-476, RESOURCE_LEAK→CWE-772, TOCTOU→CWE-367, EMPTY_CATCH→CWE-390 등). → **사용자에게 187 문서 유무 확인**.
-3. **triage 계약(스킬 본체 or 워크플로)**: 항목 md + 체커 가이드(사전조회) → LLM 판단 → {진성수정+근거 / 위양성 사유서 / 보류}. 수정은 **G0~G3 게이트** 후 체커별 커밋.
-4. 약한 로컬 모델이면 항목 md를 **frontier-handoff**로 상위 모델에 이관.
+## 6. ?⑥? ?묒뾽 釉뚮━????Track C (泥댁빱蹂?媛?대뱶 + LLM triage)
+**紐⑹쟻**: 蹂댁븞쨌?덉쭏 泥댁빱(~370, _BACKLOG??C)瑜?LLM/?꾨줎?곗뼱媛 **?먮떒**??泥섎━. **泥댁빱蹂?媛?대뱶 md**媛 洹?洹쇨굅.
+**援ъ텞 ?쒖꽌**:
+1. `references/checkers/<泥댁빱??.md` ?앹꽦 ??`_TEMPLATE.md` ?뺤떇. **?щ━?곗뺄(留ㅼ슦?꾪뿕/?믪쓬/?꾪뿕) 癒쇱?**, **寃異쒕맂 泥댁빱留?*(lazy).
+   寃곗젙濡?遺遺?泥댁빱?ㅒ룰굔?샕룹떖媛곷룄쨌Sparrow ?ㅻ챸)? `checkers.md`/`index.csv`?먯꽌 梨꾩슦怨? ?먮떒 遺遺?CWE留ㅽ븨쨌吏꾩꽦?먮퀎쨌?꾩뼇?굿룹닔?뺥뙣??? ?묒꽦.
+2. **?쒖? 留ㅽ븨**: ?먯젙 湲곗? 猷곗뀑 = **"臾닿린泥닿퀎 ?뚰봽?몄썾??蹂댁븞?쎌젏 ?먭? 紐⑸줉"(187, 100% ?곸슜)**. ??臾몄꽌媛 ?덉쑝硫?臾닿린泥닿퀎 ??ぉ踰덊샇源뚯?,
+   ?놁쑝硫?**CWE 湲곗?**(FORWARD_NULL?묬WE-476, RESOURCE_LEAK?묬WE-772, TOCTOU?묬WE-367, EMPTY_CATCH?묬WE-390 ??. ??**?ъ슜?먯뿉寃?187 臾몄꽌 ?좊Т ?뺤씤**.
+3. **triage 怨꾩빟(?ㅽ궗 蹂몄껜 or ?뚰겕?뚮줈)**: ??ぉ md + 泥댁빱 媛?대뱶(?ъ쟾議고쉶) ??LLM ?먮떒 ??{吏꾩꽦?섏젙+洹쇨굅 / ?꾩뼇???ъ쑀??/ 蹂대쪟}. ?섏젙? **G0~G3 寃뚯씠??* ??泥댁빱蹂?而ㅻ컠.
+4. ?쏀븳 濡쒖뺄 紐⑤뜽?대㈃ ??ぉ md瑜?**frontier-handoff**濡??곸쐞 紐⑤뜽???닿?.
 
-## 7. 파일 위치
-- 스킬 루트: `skills/sparrow-static-analysis/`  (SKILL.md 없음 = 자동 트리거 스킬 아님, 참조 자산)
-- 도구: `tools/SparrowXlsExport/`(완료), `tools/SparrowCommentFix/`(신설 예정)
-- Track A: `references/{Run-TrackA.ps1, bucket1-autofix.editorconfig, track-a-autofix.md}`
-- Track C: `references/checkers/{_BACKLOG.md, _TEMPLATE.md, <체커키>.md(생성 예정)}`
-- 반입 번들: 별도 레포 `github.com/Peace-Min/dotnet-gcdump-offline`
-- 메모리: `[[project-sparrow-static-analysis]]`, `[[reference-diagsession-netfx-capture]]`(같은 폐쇄망 반입 패턴)
+## 7. ?뚯씪 ?꾩튂
+- ?ㅽ궗 猷⑦듃: `skills/sparrow-static-analysis/`  (SKILL.md ?놁쓬 = ?먮룞 ?몃━嫄??ㅽ궗 ?꾨떂, 李몄“ ?먯궛)
+- ?꾧뎄: `tools/SparrowXlsExport/`(?꾨즺), `tools/SparrowCommentFix/`(?좎꽕 ?덉젙)
+- Track A: `references/{Run-TrackA.ps1, bucket1-autofix.editorconfig, track-a-autofix.md, track-a-roslyn-policy.md}`
+- Track C: `references/checkers/{_BACKLOG.md, _TEMPLATE.md, <泥댁빱??.md(?앹꽦 ?덉젙)}`
+- 諛섏엯 踰덈뱾: 蹂꾨룄 ?덊룷 `github.com/Peace-Min/dotnet-gcdump-offline`
+- 硫붾え由? `[[project-sparrow-static-analysis]]`, `[[reference-diagsession-netfx-capture]]`(媛숈? ?먯뇙留?諛섏엯 ?⑦꽩)
 
-## 8. 미결 질문 (착수 전 사용자 확인)
-- **무기체계 187 항목 문서** 있나? (표준매핑 정밀도 결정 — 없으면 CWE로 진행)
-- **Track B "처리" 정의**: 반드시 *코드 수정*인가, *위양성/예외 상태(사유서)* 도 인정되나? (스타일은 진성이라 대개 수정)
-- **G2용 Sparrow CLI 재분석** 가능한가? (되면 항목당 즉시 게이트, GUI만이면 배치 라운드)
+## 8. 誘멸껐 吏덈Ц (李⑹닔 ???ъ슜???뺤씤)
+- **臾닿린泥닿퀎 187 ??ぉ 臾몄꽌** ?덈굹? (?쒖?留ㅽ븨 ?뺣???寃곗젙 ???놁쑝硫?CWE濡?吏꾪뻾)
+- **Track B "泥섎━" ?뺤쓽**: 諛섎뱶??*肄붾뱶 ?섏젙*?멸?, *?꾩뼇???덉쇅 ?곹깭(?ъ쑀??* ???몄젙?섎굹? (?ㅽ??쇱? 吏꾩꽦?대씪 ?媛??섏젙)
+- **G2??Sparrow CLI ?щ텇??* 媛?ν븳媛? (?섎㈃ ??ぉ??利됱떆 寃뚯씠?? GUI留뚯씠硫?諛곗튂 ?쇱슫??

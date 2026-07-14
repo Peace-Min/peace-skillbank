@@ -1,16 +1,23 @@
 ﻿#requires -Version 5.1
 <#
     Run-SparrowCommentFix.ps1 — Track B 주석 픽스 원콜 러너.
-    자작 Roslyn 툴 SparrowCommentFix로 주석 trivia 두 규칙을 결정론 처리:
+    자작 Roslyn 툴 SparrowCommentFix로 주석 trivia 규칙을 결정론 처리:
+      - flatten : `/** @brief x */` -> `// X.` 라인별 평탄화
+      - trailing: `code; //ABC` -> `// ABC.` + `code;`
       - space  : `//x` -> `// x`  (FORMATTING.COMMENT.MISSING_SPACE_AFTER_DELIMITER)
       - period : 주석 문장 끝 마침표 보정                     (FORMATTING.COMMENT.MISSING_PERIOD)
+      - memberblank    : 메소드/프로퍼티 선언 사이 빈 줄 보정
+      - onestatement   : 한 줄 여러 구문 분리
+      - onedeclaration : 한 줄 여러 선언 분리
+      - continuation   : 여러 줄 문장 continuation 들여쓰기 보정
+      - linqalign      : LINQ query clause 정렬
     Run-TrackA.ps1 / Run-SparrowSyntaxFix.ps1과 동일 UX: 솔루션/폴더 경로만 주면 동작(내부에서 exe 확보
     -> 규칙별 실행 -> 규칙별 커밋). -Commit/-DryRun 둘 다 없으면 커밋 여부를 물음. 단, SparrowCommentFix는
     디렉터리를 받지 않으므로(개별 .cs 경로 또는 --files-from CSV만) 러너가 PowerShell에서 .cs 재귀
     수집 + 생성/백업 파일 제외를 직접 수행한 뒤, 대상 전체경로를 임시 --files-from CSV로 툴에 넘긴다.
 
     사용:
-      .\Run-SparrowCommentFix.ps1 -Solution C:\Work\OSTES\OSTES.sln          # 적용. -Commit/-DryRun 없으면 커밋 여부를 물음
+      .\Run-SparrowCommentFix.ps1 -Solution C:\Work\OSTES\OSTES.sln          # 적용. flatten/layout 포함 여부와 커밋 여부를 물음
       .\Run-SparrowCommentFix.ps1 -Solution ...\OSTES.sln -Commit            # 규칙별 git 커밋(안 물어봄)
       .\Run-SparrowCommentFix.ps1 -Solution C:\Work\OSTES -DryRun            # 변경 안 함, 무엇이 바뀔지만 보고
       .\Run-SparrowCommentFix.ps1 -Solution ...\OSTES.sln -Rules period      # 일부 규칙만
@@ -23,8 +30,9 @@
     (4) 없으면 `dotnet build`(패키지 복원 가능할 때)  순으로 확보합니다. 인터넷 없는 PC는 (1)/(2)로 반입 exe를 주세요.
 #>
 param(
-    [Parameter(Mandatory = $true)][string]$Solution,      # .sln / .csproj / 폴더 경로 (소스 루트)
-    [ValidateSet('space', 'period')][string[]]$Rules = @('space', 'period'),
+    [string]$Solution,      # .sln / .csproj / 폴더 경로 (소스 루트)
+    [ValidateSet('flatten', 'trailing', 'space', 'period', 'memberblank', 'onestatement', 'onedeclaration', 'continuation', 'linqalign')]
+    [string[]]$Rules = @('trailing', 'space', 'period'),
     [switch]$Commit,
     [switch]$DryRun,
     [string]$FilesFrom,          # (정밀) 이미 있는 index.csv를 주면 자동 글롭 대신 그걸 사용
@@ -34,15 +42,53 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+$rulesExplicit = $PSBoundParameters.ContainsKey('Rules')
 
 # $PSScriptRoot가 일부 호출에서 비어 있을 수 있어 본문에서 스크립트 폴더 해석
 $scriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
 
+if (-not $Solution) {
+    $Solution = Read-Host "정리할 솔루션(.sln) 파일 또는 소스 폴더 경로를 입력하세요"
+}
+if ($Solution) { $Solution = $Solution.Trim().Trim('"').Trim("'").Trim() }
+if (-not $Solution) { throw "경로가 비었습니다. 솔루션(.sln) 또는 소스 폴더 경로가 필요합니다." }
+
 # 규칙 -> 커밋 라벨 (검수 가능한 단위로 규칙별 커밋; Run-TrackA / Run-SparrowSyntaxFix와 동일 방식)
 $labels = [ordered]@{
+    flatten = '블록 주석 라인별 평탄화'
+    trailing = '트레일링 주석 독립 줄 이동 및 보정'
     space  = '주석 구분자 뒤 공백 일괄 (//x -> // x)'
     period = '주석 끝 마침표 일괄'
+    memberblank = '멤버 선언 사이 빈 줄 일괄'
+    onestatement = '한 줄 여러 구문 분리'
+    onedeclaration = '한 줄 여러 선언 분리'
+    continuation = '여러 줄 문장 들여쓰기 보정'
+    linqalign = 'LINQ 쿼리 절 정렬'
 }
+
+if (-not $rulesExplicit -and [Environment]::UserInteractive) {
+    $ansFlatten = Read-Host "Doxygen/XML 문서 주석 평탄화(flatten)를 포함할까요? (Y=포함 / N=기본 주석 규칙만)"
+    if ($ansFlatten -match '^\s*(y|yes|예|ㅛ)\s*$') {
+        $Rules = @('flatten') + @($Rules)
+        Write-Host "-> flatten 포함"
+    }
+    else {
+        Write-Host "-> flatten 제외"
+    }
+
+    $ansLayout = Read-Host "layout 계열(memberblank/onedeclaration/onestatement/linqalign/continuation)을 포함할까요? (Y=포함 / N=기본 주석 규칙만)"
+    if ($ansLayout -match '^\s*(y|yes|예|ㅛ)\s*$') {
+        $Rules += @('onedeclaration', 'onestatement', 'memberblank', 'linqalign', 'continuation')
+        Write-Host "-> layout 계열 포함"
+    }
+    else {
+        Write-Host "-> layout 계열 제외"
+    }
+}
+
+$canonicalRules = @('flatten', 'trailing', 'space', 'period', 'onedeclaration', 'onestatement', 'memberblank', 'linqalign', 'continuation')
+$selectedRules = @($Rules)
+$Rules = @($canonicalRules | Where-Object { $selectedRules -contains $_ })
 
 # 0) preflight
 if (-not (Test-Path -LiteralPath $Solution)) { throw "솔루션/경로 없음: $Solution" }
@@ -187,6 +233,7 @@ try {
     foreach ($r in $Rules) {
         $toolArgs = @('--files-from', $csvForTool, '--rules', $r, '--root', $root)
         if ($DryRun) { $toolArgs += '--dry-run' }
+        if ($IncludeGenerated) { $toolArgs += '--include-generated' }
 
         if ($tool.kind -eq 'dll') { $out = & dotnet $tool.path @toolArgs 2>&1 }
         else { $out = & $tool.path @toolArgs 2>&1 }
@@ -205,16 +252,16 @@ try {
         Write-Host "  변경 파일 : $(if ($nChanged) { $nChanged } else { '? (로그 확인)' })"
         Write-Host "  수정 건수 : $(if ($nEdits) { $nEdits } else { '0' })"
 
-        if ($DryRun) { Write-Host "  결과      : [dry-run] 파일 변경 안 함"; continue }
         if ($code -eq 2) { Write-Warning "  사용법 오류(exit 2) - 로그 확인."; $failed = $true; break }
         if ($code -ne 0) { Write-Warning "  실패(exit $code) - 로그 확인."; $failed = $true; break }
+        if ($DryRun) { Write-Host "  결과      : [dry-run] 파일 변경 안 함"; continue }
 
         if ($Commit) {
             & git -C $root add -- '*.cs' 2>&1 | Out-Null
             & git -C $root diff --cached --quiet
             if ($LASTEXITCODE -ne 0) {
-                & git -C $root commit -q -m "sparrow: $($labels[$r]) (SparrowCommentFix)"
-                Write-Host "  커밋      : sparrow: $($labels[$r])"
+                & git -C $root commit -q -m "sparrow(B): $($labels[$r]) (SparrowCommentFix)"
+                Write-Host "  커밋      : sparrow(B): $($labels[$r])"
             }
             else { Write-Host "  커밋      : 변경 없음 -> 건너뜀 (이 규칙에서 바뀐 .cs 없음)" }
         }
@@ -235,3 +282,4 @@ finally {
 Write-Host ""
 Write-Host "전체 로그: $logPath"
 Write-Host "다음(필수): (1) 빌드 통과 확인  (2) 스패로우 재분석으로 해당 체커 건수 감소 확인 (Roslyn 경계 != Sparrow 경계)."
+if ($failed) { exit 1 }

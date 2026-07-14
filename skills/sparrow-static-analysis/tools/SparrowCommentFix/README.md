@@ -1,6 +1,6 @@
 # SparrowCommentFix
 
-Deterministic net8 console tool that fixes **comment-trivia-only** style issues flagged by the Sparrow
+Deterministic net8 console tool that fixes narrow **comment and layout** style issues flagged by the Sparrow
 (파수) static analyzer. It is the **Track B** deterministic fixer of the Sparrow pipeline: the mechanical,
 judgement-free comment clean-ups that a weak local/air-gapped LLM should never touch.
 
@@ -18,40 +18,47 @@ and `"a//b"` are left byte-identical. This guarantee is covered by the SAFETY fi
 ## CLI
 
 ```
-SparrowCommentFix <file.cs> [<file2.cs> ...] [--files-from <index.csv>] [--root <dir>] --rules <space,period|all> [--dry-run]
+SparrowCommentFix <file.cs> [<file2.cs> ...] [--files-from <index.csv>] [--root <dir>] --rules <flatten,trailing,space,period,memberblank,onestatement,onedeclaration,continuation,linqalign|all> [--dry-run]
 ```
 
 - Positional args are `.cs` file paths.
 - `--files-from <csv>` reads a SparrowXlsExport `index.csv` and takes the **distinct `파일명`** values (CSV
   quoting handled). Paths are resolved against `--root` (default: current directory).
 - Positional files + `--files-from` files are **unioned, de-duplicated** by full path, order-stable.
-- `--rules` is **required**. Comma-separated keys, or `all` for **both** active rules (space + period).
+- `--rules` is **required**. Comma-separated keys, or `all` for all active Track B rules.
 - `--dry-run` computes and reports would-change counts but **writes nothing**.
 - A missing input file is a `WARN:` to stderr and is skipped; if **no** valid files remain, exit code `2`.
 
 Exit codes: `0` success, `1` runtime error, `2` usage/validation error.
 
-## Rules (active: 2)
+## Rules
 
-The active rule set was **reduced to `space` + `period`** after validating every candidate rule against the
-**real Sparrow output** (`issues_OSTES_6827.xls` / `6855.xls`) and the checker descriptions. Per the
-**code-fix-only** decision, a rule with no safe deterministic contract is simply **left unhandled** rather than
-shipped as a wrong edit.
+The active rule set covers deterministic Track B comment/layout fixes. Per the **code-fix-only** decision,
+a rule with no safe deterministic contract is left unhandled rather than shipped as a wrong edit.
 
 | key | Sparrow checker | what it does | key guards |
 |---|---|---|---|
+| `flatten` | `FORMATTING.COMMENT.BLOCK_OF_ASTERISK`, `FORMATTING.COMMENT.LOWERCASE_FIRST_LETTER`, `FORMATTING.COMMENT.MISSING_PERIOD` | `/** @brief x */` -> `// X.` line comments | skips empty blocks and comments containing preprocessor-like `#` text |
+| `trailing` | inline/trailing comment rule | `code; //ABC` -> `// ABC.` above `code;` | only real line-comment trivia after code on the same line |
 | `space` | `FORMATTING.COMMENT.MISSING_SPACE_AFTER_DELIMITER` | `//x`→`// x`, `///x`→`/// x`, `/*x*/`→`/* x*/` | untouched if next char is whitespace, another `/`, or (block) `*`; `//`/`////` untouched |
 | `period` | `FORMATTING.COMMENT.MISSING_PERIOD` | append `.` to comment content | only when the last content char is a **letter** (ASCII / Hangul / CJK) or **digit**; skips dividers (`// ----`, `/****/`), commented-out code ending in `;`/`]`, and content already ending in punctuation |
+| `memberblank` | `FORMATTING.BETWEEN_MEMBER_DEFINITION.MISSING_BLANK_LINE` | inserts one blank line between adjacent method/property declarations | only pure whitespace between members; skips comments/directives/attributes |
+| `onestatement` | `USE_ONE_STATEMENT_PER_LINE` | splits adjacent statements and single-line if blocks | same statement list only; skips comments/directives |
+| `onedeclaration` | `USE_ONE_DECLARATION_PER_LINE` | splits local/field multi-declarator declarations | plain declarations only; skips comments/directives/attributes/using locals |
+| `continuation` | `FORMATTING.CONTINUATION_LINE.BAD_INDENTATION` | fixes leading whitespace on continuation argument/logical lines | leading whitespace only |
+| `linqalign` | `FORMATTING.LINQ.QUERY_CLAUSE_ALIGNMENT` | aligns query clauses to the first `from` column | leading whitespace only |
 
-`period` is the tool's main rule (~221 real-source hits). Every rule is **idempotent** — running it twice
+Every rule is **idempotent** — running it twice
 changes nothing.
 
 ## Rules that are NOT active (3)
 
-Passing any of these keys — `--rules capitalize`, `--rules blankline`, `--rules asterisk` — (or any unknown
+Passing legacy keys — `--rules capitalize`, `--rules blankline`, `--rules asterisk` — (or any unknown
 key) exits `2` with a message naming the valid keys and the reason. The clean rule registry means each can be
 **re-added later as a small diff** (one rule key + one rewrite method) once a correct, real-data-backed
 contract is defined.
+
+Legacy alias keys remain inactive; use the active rule names in the table above.
 
 | key | Sparrow checker | status | reason |
 |---|---|---|---|
@@ -59,14 +66,25 @@ contract is defined.
 | `blankline` | `MISSING_BLANK_LINE_BEFORE_COMMENT` | **removed** | the real rule targets **trailing/inline** comments (`code; //c`) and wants them on their own line — the opposite target of the old "insert a blank line before a line-leading comment" logic; re-targeting is a risky structural rewrite for only ~10 real hits |
 | `asterisk` | `FORMATTING.COMMENT.BLOCK_OF_ASTERISK` | **deferred** | removing Doxygen `/** * */` blocks is a style judgment, not a safe mechanical edit |
 
-## Generated-file noise is excluded at scan time (not the tool's job)
+## Generated-file noise is excluded by default
 
 Real-data analysis found **~79%** of all comment hits are in **auto-generated / backup** files
 (`obj\...\*.g.cs`, `*.g.i.cs`, `*.Designer.cs`, `AssemblyInfo.cs`, `*복사본*`). The operator **excludes these
-at Sparrow-scan time**; SparrowCommentFix simply fixes whatever `.cs` paths it is handed and does not itself
-filter generated files.
+at Sparrow-scan time** where possible. SparrowCommentFix also skips generated/backup paths and
+`<auto-generated>` headers by default; use `--include-generated` directly, or `-IncludeGenerated` through
+the runner, only when those files must be rewritten.
 
 ## One-call runner (`Run-SparrowCommentFix.ps1`)
+
+### One-shot runner policy
+
+Normal operation must use `Run-SparrowCommentFix.ps1`, not direct `SparrowCommentFix --rules ...` calls.
+When `-Rules` is omitted, the runner asks for the solution/folder path, then asks Y/N for `flatten`, then
+asks Y/N for the layout group (`memberblank`, `onedeclaration`, `onestatement`, `linqalign`,
+`continuation`), then asks whether to commit. Direct `-Rules` usage is reserved for tests, automation, and
+precise re-runs.
+
+Default rules are `trailing`, `space`, and `period`. `flatten` and layout rules are opt-in.
 
 For an operator who just wants to point at a solution/folder and go, `Run-SparrowCommentFix.ps1`
 (mirrors `Run-SparrowSyntaxFix.ps1`) wraps the tool:
@@ -75,7 +93,7 @@ For an operator who just wants to point at a solution/folder and go, `Run-Sparro
 .\Run-SparrowCommentFix.ps1 -Solution C:\Work\OSTES\OSTES.sln          # apply; asks about commit if neither -Commit/-DryRun
 .\Run-SparrowCommentFix.ps1 -Solution ...\OSTES.sln -Commit            # per-rule git commit (no prompt)
 .\Run-SparrowCommentFix.ps1 -Solution C:\Work\OSTES -DryRun            # report only, writes nothing
-.\Run-SparrowCommentFix.ps1 -Solution ...\OSTES.sln -Rules period      # subset of rules
+.\Run-SparrowCommentFix.ps1 -Solution ...\OSTES.sln -Rules period      # tests/automation/precise re-run only
 .\Run-SparrowCommentFix.ps1 -Solution ...\OSTES.sln -FilesFrom index.csv   # (precise) skip auto-glob, use this CSV
 .\Run-SparrowCommentFix.ps1 -Solution ...\OSTES -IncludeGenerated      # keep generated/backup files (default: excluded)
 .\Run-SparrowCommentFix.ps1 -Solution ...\OSTES.sln -ExePath C:\tools\SparrowCommentFix.exe  # air-gap: bundled exe
@@ -89,7 +107,10 @@ in PowerShell, then hands the resulting full paths to the tool via a temp `--fil
   segment, or a filename matching `*.g.cs` / `*.g.i.cs` / `*.Designer.cs` / `AssemblyInfo.cs`, or a name
   containing `복사본` / `TemporaryGeneratedFile` / `GeneratedInternalTypeHelper` (case-insensitive). Counts
   are reported transparently (found / excluded / targeted) — no silent drops.
-- Runs each rule (**space**, then **period**) in turn (`-Rules` narrows it), honoring `-DryRun`.
+- Runner defaults to `trailing`, `space`, and `period`. `flatten` and layout rules are opt-in because they
+  can change documentation output or are best-effort structural rewrites.
+- Runs each selected rule in a fixed order (`flatten`, `trailing`, `space`, `period`, `onedeclaration`,
+  `onestatement`, `memberblank`, `linqalign`, `continuation`), honoring `-DryRun`.
 - **Commit UX mirrors `Run-TrackA.ps1` / `Run-SparrowSyntaxFix.ps1`**: with `-Commit` it makes a per-rule
   git commit (`sparrow: <label> (SparrowCommentFix)`, staging `*.cs`); with `-DryRun` it commits nothing;
   with neither, an interactive run **prompts** `규칙별로 커밋할까요? (Y/N)` (non-interactive → no commit).
@@ -102,8 +123,7 @@ checker's fixes — matching the pipeline's "규칙/체커별 커밋" gate.
 
 ## Encoding / newline preservation
 
-Each edited file keeps its original **UTF-8 BOM presence** and its existing **newlines** (edits are confined
-to comment-text spans, so no newline is inserted or removed). Files whose bytes do not round-trip as UTF-8 are
+Each edited file keeps its original **UTF-8 BOM presence** and newline style. Files whose bytes do not round-trip as UTF-8 are
 skipped with a `WARN` (never risk corrupting non-UTF-8 bytes). Writes are atomic (temp file in the same
 directory, then replace) and happen **only when the bytes actually change** (no mtime churn).
 

@@ -20,6 +20,14 @@
   <ItemGroup>
     <Compile Include="..\RewriteEngine.cs" Link="engine\RewriteEngine.cs" />
     <Compile Include="..\NullCastRewriter.cs" Link="engine\NullCastRewriter.cs" />
+    <Compile Include="..\NullVarRewriter.cs" Link="engine\NullVarRewriter.cs" />
+    <Compile Include="..\VarRewriteHelpers.cs" Link="engine\VarRewriteHelpers.cs" />
+    <Compile Include="..\ObjectVarRewriter.cs" Link="engine\ObjectVarRewriter.cs" />
+    <Compile Include="..\ObjectInitializerRewriter.cs" Link="engine\ObjectInitializerRewriter.cs" />
+    <Compile Include="..\ArrayVarRewriter.cs" Link="engine\ArrayVarRewriter.cs" />
+    <Compile Include="..\ForeachCastRewriter.cs" Link="engine\ForeachCastRewriter.cs" />
+    <Compile Include="..\ObviousVarRewriter.cs" Link="engine\ObviousVarRewriter.cs" />
+    <Compile Include="..\LocalConstRewriter.cs" Link="engine\LocalConstRewriter.cs" />
     <Compile Include="..\ParensRewriter.cs" Link="engine\ParensRewriter.cs" />
   </ItemGroup>
 

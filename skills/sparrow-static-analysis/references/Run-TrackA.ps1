@@ -5,13 +5,14 @@
     반입물 = 이 스크립트 + .editorconfig (둘 다 순수 텍스트). 대상 레포의 fix 브랜치에서 실행.
 
     사용:
-      .\Run-TrackA.ps1 -Solution C:\Work\OSTES\OSTES.sln              # 적용. -Commit/-DryRun 없으면 커밋 여부를 물음
+      .\Run-TrackA.ps1                                                # 경로 입력 후 적용. -Commit/-DryRun 없으면 커밋 여부를 물음
+      .\Run-TrackA.ps1 -Solution C:\Work\OSTES\OSTES.sln              # 경로를 미리 줘도 됨
       .\Run-TrackA.ps1 -Solution ...\OSTES.sln -Commit               # 규칙군마다 git 커밋(안 물어봄)
       .\Run-TrackA.ps1 -Solution ...\OSTES.sln -DryRun               # 변경 안 함, 무엇이 바뀔지만 보고
       .\Run-TrackA.ps1 -Solution ...\OSTES.sln -Rules var,parens     # 일부 규칙군만
 #>
 param(
-    [Parameter(Mandatory = $true)][string]$Solution,
+    [string]$Solution,
     [string]$EditorConfig,
     [ValidateSet('var', 'parens', 'initializer')][string[]]$Rules = @('var', 'parens', 'initializer'),
     [switch]$Commit,
@@ -23,6 +24,12 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+
+if (-not $Solution) {
+    $Solution = Read-Host "정리할 솔루션(.sln) 파일 또는 프로젝트/소스 폴더 경로를 입력하세요"
+}
+if ($Solution) { $Solution = $Solution.Trim().Trim('"').Trim("'").Trim() }
+if (-not $Solution) { throw "경로가 비었습니다. 솔루션(.sln) 또는 프로젝트/소스 폴더 경로가 필요합니다." }
 
 # $PSScriptRoot is empty inside a param default under some invocations -> resolve script dir in the body.
 if (-not $EditorConfig) {

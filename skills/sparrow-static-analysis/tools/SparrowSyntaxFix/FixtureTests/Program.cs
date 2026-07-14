@@ -5,6 +5,7 @@
 // text (which also proves nothing else in the file moved). Exit code: 0 = all pass, 1 = any failure.
 
 using System;
+using System.Linq;
 using SparrowSyntaxFix;
 
 namespace SparrowSyntaxFix.FixtureTests
@@ -19,8 +20,18 @@ namespace SparrowSyntaxFix.FixtureTests
             Console.WriteLine("SparrowSyntaxFix fixture harness");
             Console.WriteLine("================================");
 
-            NullCastPositives();
-            NullCastNegatives();
+            NullVarPositives();
+            NullVarNegatives();
+            ObjectVarPositives();
+            ObjectInitializerPositives();
+            ObjectInitializerNegatives();
+            ArrayVarPositives();
+            ArrayVarNegatives();
+            ForeachCastPositives();
+            ForeachCastNegatives();
+            ObviousVarPositives();
+            ObviousVarNegatives();
+            LocalConstPositives();
             ParensPositives();
             ParensNegatives();
             StringLiteralSafety();
@@ -43,57 +54,262 @@ namespace SparrowSyntaxFix.FixtureTests
 
         // ============================ Rule 1: nullcast ============================
 
-        private static void NullCastPositives()
+        private static void NullVarPositives()
         {
-            Console.WriteLine("[nullcast positive]");
+            Console.WriteLine("[nullvar positive]");
             ExpectTransform("class type",
                 Local("CComponentInfo clsComponentInfo = null;"),
                 Local("var clsComponentInfo = (CComponentInfo)null;"),
-                SyntaxRule.NullCast, expectNull: true, expectParens: false);
+                SyntaxRule.NullVar, expectNull: true, expectParens: false);
 
             ExpectTransform("sub-component type",
                 Local("CSubComponentInfo clsSubComponentInfo = null;"),
                 Local("var clsSubComponentInfo = (CSubComponentInfo)null;"),
-                SyntaxRule.NullCast, true, false);
+                SyntaxRule.NullVar, true, false);
 
             ExpectTransform("generic List<PropData>",
                 Local("List<PropData> lst = null;"),
                 Local("var lst = (List<PropData>)null;"),
-                SyntaxRule.NullCast, true, false);
+                SyntaxRule.NullVar, true, false);
 
             ExpectTransform("qualified name A.B.CThing",
                 Local("A.B.CThing x = null;"),
                 Local("var x = (A.B.CThing)null;"),
-                SyntaxRule.NullCast, true, false);
+                SyntaxRule.NullVar, true, false);
 
             ExpectTransform("interface type (cast preserves it)",
                 Local("IFoo c = null;"),
                 Local("var c = (IFoo)null;"),
-                SyntaxRule.NullCast, true, false);
+                SyntaxRule.NullVar, true, false);
 
             // Extra conservative cases (not in the brief's list but implied by "generics/qualified/arrays/nullable").
             ExpectTransform("nullable Foo?",
                 Local("Foo? x = null;"),
                 Local("var x = (Foo?)null;"),
-                SyntaxRule.NullCast, true, false);
+                SyntaxRule.NullVar, true, false);
 
             ExpectTransform("array int[]",
                 Local("int[] a = null;"),
                 Local("var a = (int[])null;"),
-                SyntaxRule.NullCast, true, false);
+                SyntaxRule.NullVar, true, false);
+
+            ExpectTransform("no initializer reference-like type",
+                Local("CComponentInfo clsComponentInfo;"),
+                Local("var clsComponentInfo = (CComponentInfo)null;"),
+                SyntaxRule.NullVar, true, false);
         }
 
-        private static void NullCastNegatives()
+        private static void NullVarNegatives()
         {
-            Console.WriteLine("[nullcast negative — must stay byte-identical]");
-            ExpectUnchanged("= new List<PropData>() (object creation)", Local("List<PropData> lst = new List<PropData>();"), SyntaxRule.All);
-            ExpectUnchanged("= new Foo() (HARD rule: never touch)", Local("IFoo c = new Foo();"), SyntaxRule.All);
-            ExpectUnchanged("= default", Local("CComponentInfo x = default;"), SyntaxRule.All);
-            ExpectUnchanged("= default(T)", Local("CComponentInfo x = default(CComponentInfo);"), SyntaxRule.All);
-            ExpectUnchanged("already var (invalid C#, must not crash/alter)", Local("var y = null;"), SyntaxRule.All);
-            ExpectUnchanged("multi-declarator", Local("CComponentInfo a = null, b = null;"), SyntaxRule.All);
-            ExpectUnchanged("non-null initializer", Local("int n = GetCount();"), SyntaxRule.All);
-            ExpectUnchanged("const declaration", Local("const string s = null;"), SyntaxRule.All);
+            Console.WriteLine("[nullvar negative — must stay byte-identical]");
+            ExpectUnchanged("= new List<PropData>() under nullvar", Local("List<PropData> lst = new List<PropData>();"), SyntaxRule.NullVar);
+            ExpectUnchanged("= default", Local("CComponentInfo x = default;"), SyntaxRule.NullVar);
+            ExpectUnchanged("= default(T)", Local("CComponentInfo x = default(CComponentInfo);"), SyntaxRule.NullVar);
+            ExpectUnchanged("already var (invalid C#, must not crash/alter)", Local("var y = null;"), SyntaxRule.NullVar);
+            ExpectUnchanged("multi-declarator", Local("CComponentInfo a = null, b = null;"), SyntaxRule.NullVar);
+            ExpectUnchanged("non-null initializer", Local("int n = GetCount();"), SyntaxRule.NullVar);
+            ExpectUnchanged("predefined value type no initializer", Local("int n;"), SyntaxRule.NullVar);
+            ExpectUnchanged("const declaration under nullvar", Local("const string s = null;"), SyntaxRule.NullVar);
+        }
+
+        private static void ObjectVarPositives()
+        {
+            Console.WriteLine("[objectvar positive]");
+            ExpectTransform("safe same type",
+                Local("Foo x = new Foo();"),
+                Local("var x = new Foo();"),
+                SyntaxRule.ObjectVarSafe, false, false, objectSafe: true);
+
+            ExpectUnchanged("safe skips interface/base narrowing",
+                Local("IFoo x = new Foo();"), SyntaxRule.ObjectVarSafe);
+
+            ExpectTransform("review-needed narrowing",
+                Local("IFoo x = new Foo();"),
+                Local("var x = new Foo();"),
+                SyntaxRule.ObjectVarNarrowing, false, false, objectNarrowing: true);
+        }
+
+        private static void ObjectInitializerPositives()
+        {
+            Console.WriteLine("[objectinitializer positive]");
+            ExpectTransform("consecutive property assignments become initializer + var",
+                Local("Foo x = new Foo();\n        x.A = 1;\n        x.B = 2;"),
+                Local("var x = new Foo { A = 1, B = 2 };"),
+                SyntaxRule.ObjectInitializer, false, false, objectInitializer: true);
+
+            ExpectTransform("constructor arguments preserved",
+                Local("Foo x = new Foo(seed);\n        x.A = 1;"),
+                Local("var x = new Foo(seed) { A = 1 };"),
+                SyntaxRule.ObjectInitializer, false, false, objectInitializer: true);
+        }
+
+        private static void ObjectInitializerNegatives()
+        {
+            Console.WriteLine("[objectinitializer negative]");
+            ExpectUnchanged("middle use breaks consecutive region",
+                Local("Foo x = new Foo();\n        Use(x);\n        x.A = 1;"),
+                SyntaxRule.ObjectInitializer);
+            ExpectUnchanged("RHS references the created variable",
+                Local("Foo x = new Foo();\n        x.A = x.GetA();"),
+                SyntaxRule.ObjectInitializer);
+            ExpectUnchanged("indexer assignment skipped",
+                Local("Foo x = new Foo();\n        x[0] = 1;"),
+                SyntaxRule.ObjectInitializer);
+            ExpectUnchanged("existing object initializer skipped",
+                Local("Foo x = new Foo { A = 1 };\n        x.B = 2;"),
+                SyntaxRule.ObjectInitializer);
+            ExpectUnchanged("interface/base narrowing skipped by normal objectinitializer",
+                Local("IFoo x = new Foo();\n        x.A = 1;"),
+                SyntaxRule.ObjectInitializer);
+            ExpectUnchanged("duplicate member assignment skipped",
+                Local("Foo x = new Foo();\n        x.A = 1;\n        x.A = 2;"),
+                SyntaxRule.ObjectInitializer);
+            ExpectUnchanged("comments inside candidate skipped",
+                Local("Foo x = new Foo();\n        // keep this comment\n        x.A = 1;"),
+                SyntaxRule.ObjectInitializer);
+            ExpectUnchanged("invocation RHS skipped because it may indirectly reference the local",
+                Local("Foo x = new Foo();\n        x.A = GetX();"),
+                SyntaxRule.ObjectInitializer);
+        }
+
+        private static void ArrayVarPositives()
+        {
+            Console.WriteLine("[arrayvar positive]");
+            ExpectTransform("same array type",
+                Local("int[] values = new int[] { 1, 2, 3 };"),
+                Local("int[] values = { 1, 2, 3 };"),
+                SyntaxRule.ArrayVarSafe, false, false, arraySafe: true);
+
+            ExpectTransform("same object array type preserves runtime object[]",
+                Local("object[] values = new object[] { \"A\" };"),
+                Local("object[] values = { \"A\" };"),
+                SyntaxRule.ArrayVarSafe, false, false, arraySafe: true);
+
+            ExpectTransform("review-needed array narrowing",
+                Local("object[] values = new string[] { \"A\", \"B\" };"),
+                Local("var values = new[] { \"A\", \"B\" };"),
+                SyntaxRule.ArrayVarNarrowing, false, false, arrayNarrowing: true);
+        }
+
+        private static void ArrayVarNegatives()
+        {
+            Console.WriteLine("[arrayvar negative]");
+            ExpectUnchanged("safe skips different static/runtime array type",
+                Local("object[] values = new string[] { \"A\", \"B\" };"),
+                SyntaxRule.ArrayVarSafe);
+            ExpectUnchanged("assignment statement skipped",
+                Local("int[] values;\n        values = new int[] { 1, 2, 3 };"),
+                SyntaxRule.ArrayVarSafe);
+            ExpectUnchanged("already implicit array creation",
+                Local("var values = new[] { 1, 2, 3 };"),
+                SyntaxRule.ArrayVarSafe);
+            ExpectUnchanged("empty array skipped because new[] cannot infer and safe rewrite may be checker-specific",
+                Local("int[] values = new int[] { };"),
+                SyntaxRule.ArrayVarSafe);
+            ExpectUnchanged("explicit size skipped",
+                Local("int[] values = new int[3] { 1, 2, 3 };"),
+                SyntaxRule.ArrayVarSafe);
+            ExpectUnchanged("jagged array skipped",
+                Local("int[][] values = new int[][] { new int[] { 1 } };"),
+                SyntaxRule.ArrayVarSafe);
+            ExpectUnchanged("narrowing skips null because new[] cannot infer",
+                Local("object[] values = new string[] { null };"),
+                SyntaxRule.ArrayVarNarrowing);
+            ExpectUnchanged("narrowing skips default because new[] cannot infer",
+                Local("object[] values = new string[] { default(string) };"),
+                SyntaxRule.ArrayVarNarrowing);
+            ExpectUnchanged("narrowing skips method group target typing",
+                Local("Delegate[] handlers = new Action[] { Target };"),
+                SyntaxRule.ArrayVarNarrowing);
+            ExpectUnchanged("narrowing skips parenthesized method group target typing",
+                Local("Delegate[] handlers = new Action[] { (Target) };"),
+                SyntaxRule.ArrayVarNarrowing);
+        }
+
+        private static void ForeachCastPositives()
+        {
+            Console.WriteLine("[foreachcast positive]");
+            ExpectTransform("XmlNode foreach gets Cast<T>",
+                "class C\n{\n    void M()\n    {\n        XmlNodeList clsNodes = GetNodes();\n        foreach (XmlNode node in clsNodes)\n        {\n            _ = node.Name;\n        }\n    }\n}\n",
+                "class C\n{\n    void M()\n    {\n        XmlNodeList clsNodes = GetNodes();\n        foreach (var node in System.Linq.Enumerable.Cast<XmlNode>(clsNodes))\n        {\n            _ = node.Name;\n        }\n    }\n}\n",
+                SyntaxRule.ForeachCast, false, false, foreachCast: true);
+        }
+
+        private static void ForeachCastNegatives()
+        {
+            Console.WriteLine("[foreachcast negative]");
+            ExpectUnchanged("unknown collection expression skipped",
+                "class C\n{\n    void M()\n    {\n        foreach (XmlNode node in clsNodes)\n        {\n            _ = node.Name;\n        }\n    }\n}\n",
+                SyntaxRule.ForeachCast);
+            ExpectUnchanged("pattern enumerator skipped",
+                "class C\n{\n    void M()\n    {\n        PatternOnly xs = GetPatternOnly();\n        foreach (Foo node in xs)\n        {\n            _ = node;\n        }\n    }\n}\n",
+                SyntaxRule.ForeachCast);
+            ExpectUnchanged("user-defined XmlNode names skipped",
+                "class XmlNode { }\nclass XmlNodeList { }\nclass C\n{\n    void M()\n    {\n        XmlNodeList clsNodes = GetNodes();\n        foreach (XmlNode node in clsNodes)\n        {\n            _ = node;\n        }\n    }\n}\n",
+                SyntaxRule.ForeachCast);
+        }
+
+        private static void ObviousVarPositives()
+        {
+            Console.WriteLine("[obviousvar positive]");
+            ExpectTransform("string literal",
+                Local("string s = \"A\";"),
+                Local("var s = \"A\";"),
+                SyntaxRule.ObviousVar, false, false, obvious: true);
+
+            ExpectTransform("double numeric literal keeps type with cast",
+                Local("double markerH = 20;"),
+                Local("var markerH = (double)20;"),
+                SyntaxRule.ObviousVar, false, false, obvious: true);
+
+            ExpectTransform("nullable numeric literal keeps type with cast",
+                Local("int? pageSize = 0;"),
+                Local("var pageSize = (int?)0;"),
+                SyntaxRule.ObviousVar, false, false, obvious: true);
+
+        }
+
+        private static void ObviousVarNegatives()
+        {
+            Console.WriteLine("[obviousvar negative]");
+            ExpectUnchanged("object string literal narrowing skipped",
+                Local("object value = \"x\";"),
+                SyntaxRule.ObviousVar);
+            ExpectUnchanged("object char literal narrowing skipped",
+                Local("object value = 'x';"),
+                SyntaxRule.ObviousVar);
+            ExpectUnchanged("object bool literal narrowing skipped",
+                Local("object value = true;"),
+                SyntaxRule.ObviousVar);
+            ExpectUnchanged("object cast narrowing skipped",
+                Local("object value = (string)text;"),
+                SyntaxRule.ObviousVar);
+            ExpectUnchanged("long Convert.ToInt32 narrowing skipped",
+                Local("long value = Convert.ToInt32(text);"),
+                SyntaxRule.ObviousVar);
+            ExpectUnchanged("unqualified Convert skipped because it may be shadowed",
+                Local("int value = Convert.ToInt32(text);"),
+                SyntaxRule.ObviousVar);
+            ExpectUnchanged("System.Convert skipped because it may be shadowed",
+                Local("int value = System.Convert.ToInt32(text);"),
+                SyntaxRule.ObviousVar);
+            ExpectUnchanged("global System.Convert skipped because syntax-only cannot prove symbol identity",
+                Local("int value = global::System.Convert.ToInt32(text);"),
+                SyntaxRule.ObviousVar);
+        }
+
+        private static void LocalConstPositives()
+        {
+            Console.WriteLine("[localconst positive]");
+            ExpectTransform("const string demoted",
+                Local("const string s = \"A\";"),
+                Local("var s = \"A\";"),
+                SyntaxRule.LocalConst, false, false, localConst: true);
+
+            ExpectTransform("const double demoted with cast",
+                Local("const double d = 20;"),
+                Local("var d = (double)20;"),
+                SyntaxRule.LocalConst, false, false, localConst: true);
         }
 
         // ============================ Rule 2: parens ============================
@@ -153,7 +369,7 @@ namespace SparrowSyntaxFix.FixtureTests
             Console.WriteLine("[string/char literal safety]");
             // A string literal containing && / = null must be untouched (whole file byte-identical).
             ExpectUnchanged("string literal with && and = null inside",
-                Local("string s = \"a && b = null\";"), SyntaxRule.All);
+                Local("string s = \"a && b = null\";"), SyntaxRule.Parens);
 
             // Real code around a string with && gets wrapped; the string's inner && is left alone.
             ExpectTransform("wrap real operands, not the && inside the string",
@@ -181,8 +397,7 @@ namespace SparrowSyntaxFix.FixtureTests
                 bool ok = first.Changed
                           && !second.Changed
                           && second.NewText == first.NewText
-                          && second.NullCastEdits == 0
-                          && second.ParensEdits == 0;
+                          && AllZero(second);
                 Report("idempotent: " + OneLine(input), ok, ok ? "" : "second run changed the text or reported edits");
             }
         }
@@ -215,20 +430,46 @@ namespace SparrowSyntaxFix.FixtureTests
         // ============================ assertion helpers ============================
 
         private static void ExpectTransform(string label, string input, string expected, SyntaxRule rules,
-                                            bool expectNull, bool expectParens)
+                                            bool expectNull, bool expectParens,
+                                            bool objectSafe = false, bool foreachCast = false,
+                                            bool obvious = false, bool objectNarrowing = false,
+                                            bool localConst = false,
+                                            bool objectInitializer = false,
+                                            bool arraySafe = false,
+                                            bool arrayNarrowing = false)
         {
             RewriteResult r = RewriteEngine.Rewrite(input, rules);
             bool textOk = r.NewText == expected;
-            bool countOk = (r.NullCastEdits > 0) == expectNull && (r.ParensEdits > 0) == expectParens && r.Changed;
-            Report(label, textOk && countOk, textOk ? "counts: nullcast=" + r.NullCastEdits + " parens=" + r.ParensEdits : Diff(expected, r.NewText));
+            bool countOk = (r.NullVarEdits > 0) == expectNull
+                           && (r.ParensEdits > 0) == expectParens
+                           && (r.ObjectVarSafeEdits > 0) == objectSafe
+                           && (r.ForeachCastEdits > 0) == foreachCast
+                           && (r.ObviousVarEdits > 0) == obvious
+                           && (r.ObjectVarNarrowingEdits > 0) == objectNarrowing
+                           && (r.LocalConstEdits > 0) == localConst
+                           && (r.ObjectInitializerEdits > 0) == objectInitializer
+                           && (r.ArrayVarSafeEdits > 0) == arraySafe
+                           && (r.ArrayVarNarrowingEdits > 0) == arrayNarrowing
+                           && r.Changed;
+            Report(label, textOk && countOk, textOk ? CountsText(r) : Diff(expected, r.NewText));
         }
 
         private static void ExpectUnchanged(string label, string input, SyntaxRule rules)
         {
             RewriteResult r = RewriteEngine.Rewrite(input, rules);
-            bool ok = !r.Changed && r.NewText == input && r.NullCastEdits == 0 && r.ParensEdits == 0;
+            bool ok = !r.Changed && r.NewText == input && AllZero(r);
             Report(label, ok, ok ? "" : "expected byte-identical; got: " + Escape(r.NewText));
         }
+
+        private static bool AllZero(RewriteResult r)
+        {
+            foreach (var kv in r.Counts)
+                if (kv.Value != 0) return false;
+            return true;
+        }
+
+        private static string CountsText(RewriteResult r) =>
+            "counts: " + string.Join(" ", r.Counts.Select(kv => kv.Key + "=" + kv.Value));
 
         private static void Report(string label, bool ok, string detail)
         {

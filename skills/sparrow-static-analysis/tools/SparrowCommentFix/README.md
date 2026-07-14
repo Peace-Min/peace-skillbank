@@ -66,6 +66,31 @@ Real-data analysis found **~79%** of all comment hits are in **auto-generated / 
 at Sparrow-scan time**; SparrowCommentFix simply fixes whatever `.cs` paths it is handed and does not itself
 filter generated files.
 
+## One-call runner (`Run-SparrowCommentFix.ps1`)
+
+For an operator who just wants to point at a solution/folder and go, `Run-SparrowCommentFix.ps1`
+(mirrors `Run-SparrowSyntaxFix.ps1`) wraps the tool:
+
+```
+.\Run-SparrowCommentFix.ps1 -Solution C:\Work\OSTES\OSTES.sln          # or a .csproj / folder
+.\Run-SparrowCommentFix.ps1 -Solution C:\Work\OSTES -DryRun            # report only, writes nothing
+.\Run-SparrowCommentFix.ps1 -Solution ...\OSTES.sln -Rules period      # subset of rules
+.\Run-SparrowCommentFix.ps1 -Solution ...\OSTES.sln -FilesFrom index.csv   # (precise) skip auto-glob, use this CSV
+.\Run-SparrowCommentFix.ps1 -Solution ...\OSTES -IncludeGenerated      # keep generated/backup files (default: excluded)
+.\Run-SparrowCommentFix.ps1 -Solution ...\OSTES.sln -ExePath C:\tools\SparrowCommentFix.exe  # air-gap: bundled exe
+```
+
+Because the tool itself does **not** accept a directory, the runner does the `.cs` recursion + exclusion
+in PowerShell, then hands the resulting full paths to the tool via a temp `--files-from` CSV:
+
+- **Auto-globs** `*.cs` recursively under the source root (a `.sln`/`.csproj` resolves to its folder).
+- **Excludes generated/backup** files unless `-IncludeGenerated`: any path under a `\obj\` or `\bin\`
+  segment, or a filename matching `*.g.cs` / `*.g.i.cs` / `*.Designer.cs` / `AssemblyInfo.cs`, or a name
+  containing `복사본` / `TemporaryGeneratedFile` / `GeneratedInternalTypeHelper` (case-insensitive). Counts
+  are reported transparently (found / excluded / targeted) — no silent drops.
+- Runs **space + period** in one pass (`-Rules` narrows it), honoring `-DryRun`.
+- **No git / no commit** anywhere (runner only). Writes a timestamped `.log` next to the working dir.
+
 ## Per-checker commits
 
 Run **one rule at a time** (e.g. `--rules period`) so that run's diff equals exactly that one Sparrow

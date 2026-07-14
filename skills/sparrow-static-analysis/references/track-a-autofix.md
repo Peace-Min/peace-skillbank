@@ -31,6 +31,9 @@ Sparrow 검출 중 **스타일/포맷 계열(버킷1)** 은 약한 LLM에게 시
 .\Run-TrackA.ps1 -Solution ...\OSTES.sln -Rules var,parens
 ```
 
+> **`-Commit`/`-DryRun` 둘 다 없이 실행하면** 러너가 `규칙별로 커밋할까요? (Y/N)` 물어봅니다(플래그 빼먹는 실수
+> 방지). Y=규칙별 커밋, N=파일만 수정. 비대화형(CI/파이프)이면 안 물어보고 커밋 안 함.
+
 러너가 하는 일: `.editorconfig` 자동 배치(기존 것은 안 덮음) → 규칙군별 `dotnet format style --diagnostics`
 → `-Commit`이면 규칙군마다 `*.cs`만 커밋(`.editorconfig`는 워킹파일로 남김) → `dotnet format`이 레거시
 프로젝트를 못 열면 경고 후 VS 경로 안내. **검증됨: net472 레거시 더미에서 5종 자동수정 + 규칙별 커밋 3개.**

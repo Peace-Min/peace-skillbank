@@ -5,8 +5,8 @@
     반입물 = 이 스크립트 + .editorconfig (둘 다 순수 텍스트). 대상 레포의 fix 브랜치에서 실행.
 
     사용:
-      .\Run-TrackA.ps1 -Solution C:\Work\OSTES\OSTES.sln              # 전체(var,괄호,이니셜라이저) 적용
-      .\Run-TrackA.ps1 -Solution ...\OSTES.sln -Commit               # 규칙군마다 git 커밋
+      .\Run-TrackA.ps1 -Solution C:\Work\OSTES\OSTES.sln              # 적용. -Commit/-DryRun 없으면 커밋 여부를 물음
+      .\Run-TrackA.ps1 -Solution ...\OSTES.sln -Commit               # 규칙군마다 git 커밋(안 물어봄)
       .\Run-TrackA.ps1 -Solution ...\OSTES.sln -DryRun               # 변경 안 함, 무엇이 바뀔지만 보고
       .\Run-TrackA.ps1 -Solution ...\OSTES.sln -Rules var,parens     # 일부 규칙군만
 #>
@@ -67,6 +67,18 @@ if (Test-Path -LiteralPath $targetCfg) {
 else {
     Copy-Item -LiteralPath $EditorConfig -Destination $targetCfg -Force
     Write-Host "배치: $targetCfg"
+}
+
+# 1b) -Commit/-DryRun 둘 다 없으면 물어봄(플래그 빼먹는 실수 방지). 비대화형(CI/파이프)은 안 물어보고 커밋 안 함.
+if (-not $Commit -and -not $DryRun) {
+    if ([Environment]::UserInteractive) {
+        $ans = Read-Host "규칙별로 커밋할까요? (Y=규칙별 자동 커밋 / N=파일만 수정, 커밋 안 함)"
+        if ($ans -match '^\s*(y|yes|예|ㅛ)\s*$') { $Commit = $true; Write-Host "-> 규칙별 커밋 진행" }
+        else { Write-Host "-> 파일만 수정(커밋 안 함). 나중에 직접 커밋하거나 -Commit으로 재실행." }
+    }
+    else {
+        Write-Host "(비대화형: -Commit 미지정 -> 커밋 안 함)"
+    }
 }
 
 # 2) 규칙군별 dotnet format — 전체 출력은 로그로, 콘솔엔 요약만

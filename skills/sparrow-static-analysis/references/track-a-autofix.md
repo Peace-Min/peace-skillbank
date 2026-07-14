@@ -15,7 +15,32 @@ Sparrow 검출 중 **스타일/포맷 계열(버킷1)** 은 약한 LLM에게 시
 **버킷1 밖**: 주석/여백(~2,000, `dotnet format` 미지원 → 후순위/커스텀), 보안·품질(~230 + OVERLY_CATCH
 139 → LLM/사람). 이 문서는 버킷1 전용.
 
-## 절차
+## 실행 (권장) — 한 번의 CLI 호출: `Run-TrackA.ps1`
+
+반입물은 **텍스트 2개**뿐(`Run-TrackA.ps1` + `bucket1-autofix.editorconfig`). 툴(`dotnet format`)은 SDK
+내장이라 반입 불필요. 대상 레포의 **fix 브랜치**에서:
+
+```powershell
+# 전체(var,괄호,이니셜라이저) + 규칙군별 자동 커밋
+.\Run-TrackA.ps1 -Solution C:\Work\OSTES\OSTES.sln -Commit
+
+# 먼저 무엇이 바뀔지만 보기(변경 안 함)
+.\Run-TrackA.ps1 -Solution ...\OSTES.sln -DryRun
+
+# 일부 규칙군만
+.\Run-TrackA.ps1 -Solution ...\OSTES.sln -Rules var,parens
+```
+
+러너가 하는 일: `.editorconfig` 자동 배치(기존 것은 안 덮음) → 규칙군별 `dotnet format style --diagnostics`
+→ `-Commit`이면 규칙군마다 `*.cs`만 커밋(`.editorconfig`는 워킹파일로 남김) → `dotnet format`이 레거시
+프로젝트를 못 열면 경고 후 VS 경로 안내. **검증됨: net472 레거시 더미에서 5종 자동수정 + 규칙별 커밋 3개.**
+
+> ⚠ 실행 후에도 **아래 3) 검증(빌드 + 스패로우 재분석)은 필수**. 러너는 수정만 하고 "스패로우가 지웠다"를
+> 보장하지 않음(Roslyn 경계 != Sparrow 경계).
+
+수동으로 하려면(러너 없이) 아래 절차를 그대로:
+
+## 절차 (수동)
 
 ### 0) 설정 배치
 `bucket1-autofix.editorconfig` 를 정리할 프로젝트/솔루션 루트에 **`.editorconfig`** 라는 이름으로 복사.

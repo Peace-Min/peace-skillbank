@@ -194,6 +194,14 @@ foreach ($sparrowFile in @($sparrowToolProj, $sparrowToolProgram, $sparrowFixtur
 Test-PowerShellSyntax -Path $sparrowE2E
 if ($IncludeSparrowE2E) { & $sparrowE2E -RepositoryRoot $RepositoryRoot }
 
+# Track A auto-fix kit (LLM-free): assert the .editorconfig + runner exist and the runner parses.
+# (Run-TrackA.ps1 carries Korean text -> must stay UTF-8-with-BOM or PS 5.1 mis-parses it.)
+$trackAEditorConfig = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\references\bucket1-autofix.editorconfig"
+$trackARunner = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\references\Run-TrackA.ps1"
+Assert-Condition (Test-Path -LiteralPath $trackAEditorConfig) "Missing Track A .editorconfig template"
+Assert-Condition (Test-Path -LiteralPath $trackARunner) "Missing Track A runner Run-TrackA.ps1"
+Test-PowerShellSyntax -Path $trackARunner
+
 $claude = Get-Command claude -ErrorAction SilentlyContinue
 if ($claude) {
     Push-Location $RepositoryRoot

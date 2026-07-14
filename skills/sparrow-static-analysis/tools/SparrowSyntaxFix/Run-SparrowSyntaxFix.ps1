@@ -61,7 +61,9 @@ $logPath = Join-Path $LogDir ("Run-SparrowSyntaxFix.$stamp.log")
 Write-Host "실행 로그(전체): $logPath"
 Write-Host "소스 루트      : $root"
 
-# 1) 툴 바이너리 확보: ExePath > publish exe > 빌드된 dll > dotnet build
+# 1) 툴 바이너리 확보: ExePath > publish exe > (소스 있으면) 항상 증분 빌드 > 기존 dll(폐쇄망 fallback)
+#    ★ 중요: 소스(csproj)가 있으면 항상 재빌드한다. 오래된 bin\Release\dll을 그대로 쓰면 pull 후에도 옛 규칙이
+#    돌아 "안 고쳐졌다"처럼 보이기 때문(과거 실제 발생). 증분 빌드는 최신이면 ~수초로 no-op에 가깝다.
 function Resolve-Tool {
     if ($ExePath) {
         if (-not (Test-Path -LiteralPath $ExePath)) { throw "-ExePath 없음: $ExePath" }
@@ -70,31 +72,43 @@ function Resolve-Tool {
     }
     $pubExe = Join-Path $scriptDir 'publish\SparrowSyntaxFix.exe'
     if (Test-Path -LiteralPath $pubExe) { return @{ kind = 'exe'; path = $pubExe } }
+
     $dll = Join-Path $scriptDir 'bin\Release\net8.0\SparrowSyntaxFix.dll'
-    if (Test-Path -LiteralPath $dll) { return @{ kind = 'dll'; path = $dll } }
     $csproj = Join-Path $scriptDir 'SparrowSyntaxFix.csproj'
-    if (-not (Test-Path -LiteralPath $csproj)) { throw "SparrowSyntaxFix.csproj/exe 모두 없음: $scriptDir (폐쇄망은 -ExePath로 반입 exe 지정)" }
-    if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) { throw "dotnet SDK 없음 + 발행 exe 없음. -ExePath로 반입 exe 지정하세요." }
-    Write-Host "발행 exe/빌드 산출물이 없어 빌드합니다: dotnet build -c Release"
-    Write-Host "  (첫 빌드는 NuGet 복원 포함 — 아래 진행이 흐릅니다. 인터넷 없는 PC면 복원에서 멈출 수 있으니, 그 경우"
-    Write-Host "   Ctrl+C 후 인터넷 PC에서 발행한 exe를 -ExePath 로 지정하세요.)"
-    # 빌드는 네이티브(dotnet) 호출 — stderr가 EAP=Stop+2>&1에서 종료오류로 throw되는 것을 막기 위해 Continue로 격리.
-    # 출력은 삼키지 않고 한 줄씩 콘솔+로그로 흘려 "멈춘 것처럼 보임"을 방지.
-    $prevEap = $ErrorActionPreference
-    $ErrorActionPreference = 'Continue'
-    try {
-        & dotnet build $csproj -c Release --nologo -v minimal 2>&1 | ForEach-Object {
-            Write-Host "  | $_"
-            Add-Content -LiteralPath $logPath -Value $_
+
+    # 소스 + SDK가 있으면 항상 증분 빌드로 dll을 최신 소스와 일치시킨다.
+    if ((Test-Path -LiteralPath $csproj) -and (Get-Command dotnet -ErrorAction SilentlyContinue)) {
+        Write-Host "소스에서 빌드(증분, 최신 규칙 보장): dotnet build -c Release"
+        Write-Host "  (첫 빌드는 NuGet 복원 포함 — 아래 진행이 흐릅니다. 인터넷 없는 PC면 Ctrl+C 후 -ExePath 로 반입 exe 지정.)"
+        # 빌드는 네이티브(dotnet) 호출 — stderr가 EAP=Stop+2>&1에서 종료오류로 throw되는 것을 막기 위해 Continue로 격리.
+        # 출력은 삼키지 않고 한 줄씩 콘솔+로그로 흘려 "멈춘 것처럼 보임"을 방지.
+        $prevEap = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        try {
+            & dotnet build $csproj -c Release --nologo -v minimal 2>&1 | ForEach-Object {
+                Write-Host "  | $_"
+                Add-Content -LiteralPath $logPath -Value $_
+            }
+            $buildExit = $LASTEXITCODE
         }
-        $buildExit = $LASTEXITCODE
+        finally { $ErrorActionPreference = $prevEap }
+        if ($buildExit -eq 0 -and (Test-Path -LiteralPath $dll)) {
+            Write-Host "빌드 완료(최신): $dll"
+            return @{ kind = 'dll'; path = $dll }
+        }
+        if (Test-Path -LiteralPath $dll) {
+            Write-Warning "빌드 실패(exit=$buildExit) — 기존 dll을 사용합니다(최신 소스와 다를 수 있음!). 로그: $logPath"
+            return @{ kind = 'dll'; path = $dll }
+        }
+        throw "빌드 실패/미완(exit=$buildExit) + 기존 dll 없음. 인터넷 PC에서 발행한 exe를 -ExePath 로 지정하세요. 로그: $logPath"
     }
-    finally { $ErrorActionPreference = $prevEap }
-    if ($buildExit -ne 0 -or -not (Test-Path -LiteralPath $dll)) {
-        throw "빌드 실패/미완(exit=$buildExit). 폐쇄망에서 Roslyn 패키지 복원 불가일 수 있습니다. 인터넷 PC에서 발행한 exe를 -ExePath 로 지정하세요. 로그: $logPath"
+
+    # SDK/소스 없음(폐쇄망 등): 기존 빌드 dll이라도 사용
+    if (Test-Path -LiteralPath $dll) {
+        Write-Warning "SDK/소스가 없어 기존 빌드 dll을 사용합니다(최신 여부 미검증): $dll"
+        return @{ kind = 'dll'; path = $dll }
     }
-    Write-Host "빌드 완료: $dll"
-    return @{ kind = 'dll'; path = $dll }
+    throw "실행할 exe/dll이 없고 빌드도 불가합니다(csproj/SDK 없음). 인터넷 PC에서 발행한 exe를 -ExePath 로 지정하세요."
 }
 $tool = Resolve-Tool
 Write-Host "툴            : $($tool.path)"

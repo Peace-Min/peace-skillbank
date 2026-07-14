@@ -34,22 +34,25 @@ literal. Hard skips (left byte-identical):
 ### Rule 2 — `parens`  (checker `MISSING_PARENTHESIS_IN_EXPRESSION`)
 
 Roslyn's IDE0048 treats "relational binds tighter than logical" as commonly understood and skips it; Sparrow
-does not. This wraps the operands of `&&` / `||` when the operand is a comparison, an arithmetic/shift/bitwise
-expression, or a logical expression of the **other** operator.
+does not. Sparrow requires **every** operand of `&&` / `||` to be parenthesized — not just the ambiguous ones.
+(Confirmed by re-analysis: `(a) || b` is still flagged; only `(a) || (b)` clears it.)
 
 ```
 if (nIndex > 0 && nIndex <= nCount - 1)          ->  if ((nIndex > 0) && (nIndex <= nCount - 1))
 if (clsComponentInfo != null && clsDataTypeInfo != null)
                                                  ->  if ((clsComponentInfo != null) && (clsDataTypeInfo != null))
-if (eNodeTag == ENodeTag.BSM || eNodeTag == ENodeTag.BSMPlayer)
-                                                 ->  if ((eNodeTag == ENodeTag.BSM) || (eNodeTag == ENodeTag.BSMPlayer))
-if (a || b && c)                                 ->  if (a || (b && c))
+var z = a || b;                                  ->  var z = (a) || (b);              // atoms wrapped too
+if (x > 0 || flag)                               ->  if ((x > 0) || (flag))           // comparison + atom
+finfile.Name.Equals("x") || finfile.Name.Equals("y")
+                                                 ->  (finfile.Name.Equals("x")) || (finfile.Name.Equals("y"))
+if (a || b && c)                                 ->  if ((a) || ((b) && (c)))
 ```
 
-Operands that are **atomic** w.r.t. precedence are left alone (wrapping them is not what this checker
-targets): identifiers, literals, member access `a.b.c`, invocations `f()` / `x.Equals(y)`, element access,
-`this`, unary `!x` / `-x`, casts, and anything already parenthesized. Same-operator chains (`a && b && c`)
-are associative and get no redundant parens. `??`, `is`, `as` operands are out of scope.
+**Every** operand is wrapped — atoms (identifiers, literals, member access `a.b.c`, invocations `f()` /
+`x.Equals(y)`, element access, `this`, unary `!x` / `-x`, casts), comparisons, arithmetic/bitwise, and the
+**other** logical operator — **except** (1) anything already parenthesized, and (2) a **same-operator** chain
+(`a && b && c`), which is left flat so its leaves become `(a) && (b) && (c)` (not `((a) && (b)) && (c)`). A
+partially-parenthesized expression from an earlier pass (`(a) || b`) is completed to `(a) || (b)`.
 
 Both rules are **idempotent**: running twice makes no further change.
 

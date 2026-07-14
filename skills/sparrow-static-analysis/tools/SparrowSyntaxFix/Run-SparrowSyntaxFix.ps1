@@ -67,12 +67,25 @@ function Resolve-Tool {
     $csproj = Join-Path $scriptDir 'SparrowSyntaxFix.csproj'
     if (-not (Test-Path -LiteralPath $csproj)) { throw "SparrowSyntaxFix.csproj/exe 모두 없음: $scriptDir (폐쇄망은 -ExePath로 반입 exe 지정)" }
     if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) { throw "dotnet SDK 없음 + 발행 exe 없음. -ExePath로 반입 exe 지정하세요." }
-    Write-Host "발행 exe/빌드 산출물이 없어 빌드합니다: dotnet build -c Release ..."
-    $b = & dotnet build $csproj -c Release --nologo 2>&1
-    $b | Out-File -LiteralPath $logPath -Append -Encoding utf8
-    if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $dll)) {
-        throw "빌드 실패(폐쇄망에서 Roslyn 패키지 복원 불가일 수 있음). 인터넷 PC에서 미리 발행한 exe를 -ExePath로 지정하세요. 로그: $logPath"
+    Write-Host "발행 exe/빌드 산출물이 없어 빌드합니다: dotnet build -c Release"
+    Write-Host "  (첫 빌드는 NuGet 복원 포함 — 아래 진행이 흐릅니다. 인터넷 없는 PC면 복원에서 멈출 수 있으니, 그 경우"
+    Write-Host "   Ctrl+C 후 인터넷 PC에서 발행한 exe를 -ExePath 로 지정하세요.)"
+    # 빌드는 네이티브(dotnet) 호출 — stderr가 EAP=Stop+2>&1에서 종료오류로 throw되는 것을 막기 위해 Continue로 격리.
+    # 출력은 삼키지 않고 한 줄씩 콘솔+로그로 흘려 "멈춘 것처럼 보임"을 방지.
+    $prevEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        & dotnet build $csproj -c Release --nologo -v minimal 2>&1 | ForEach-Object {
+            Write-Host "  | $_"
+            Add-Content -LiteralPath $logPath -Value $_
+        }
+        $buildExit = $LASTEXITCODE
     }
+    finally { $ErrorActionPreference = $prevEap }
+    if ($buildExit -ne 0 -or -not (Test-Path -LiteralPath $dll)) {
+        throw "빌드 실패/미완(exit=$buildExit). 폐쇄망에서 Roslyn 패키지 복원 불가일 수 있습니다. 인터넷 PC에서 발행한 exe를 -ExePath 로 지정하세요. 로그: $logPath"
+    }
+    Write-Host "빌드 완료: $dll"
     return @{ kind = 'dll'; path = $dll }
 }
 $tool = Resolve-Tool

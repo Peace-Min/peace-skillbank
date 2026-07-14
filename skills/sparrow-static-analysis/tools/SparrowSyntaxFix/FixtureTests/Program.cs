@@ -116,21 +116,36 @@ namespace SparrowSyntaxFix.FixtureTests
                 Cond("(eNodeTag == ENodeTag.BSM) || (eNodeTag == ENodeTag.BSMPlayer)"),
                 SyntaxRule.Parens, false, true);
 
-            ExpectTransform("mixed &&/|| wraps only the && group",
+            ExpectTransform("mixed &&/|| wraps the && group and every leaf",
                 Cond("a || b && c"),
-                Cond("a || (b && c)"),
+                Cond("(a) || ((b) && (c))"),
+                SyntaxRule.Parens, false, true);
+
+            // Sparrow wants EVERY operand wrapped, including atoms — `(a) || b` stays flagged, `(a) || (b)` clears.
+            ExpectTransform("atom operands (identifiers) are wrapped too",
+                Local("bool ok = a && b;"),
+                Local("bool ok = (a) && (b);"),
+                SyntaxRule.Parens, false, true);
+
+            ExpectTransform("invocation operands are wrapped",
+                Cond("finfile.Name.Equals(\"x\") || finfile.Name.Equals(\"y\")"),
+                Cond("(finfile.Name.Equals(\"x\")) || (finfile.Name.Equals(\"y\"))"),
+                SyntaxRule.Parens, false, true);
+
+            // A half-done expression from an earlier/older pass is completed, not left asymmetric.
+            ExpectTransform("completes a partially-parenthesized operand",
+                Cond("(a > 0) || flag"),
+                Cond("(a > 0) || (flag)"),
                 SyntaxRule.Parens, false, true);
         }
 
         private static void ParensNegatives()
         {
             Console.WriteLine("[parens negative — must stay byte-identical]");
-            ExpectUnchanged("both operands are invocations",
-                Cond("finfile.Name.Equals(\"x\") || finfile.Name.Equals(\"y\")"), SyntaxRule.All);
+            // Both operands already parenthesized -> idempotent, no change (and the inner `a > 0` / `b < 1`
+            // are operands of a comparison, not of &&/||, so they are not wrapped either).
             ExpectUnchanged("already parenthesized (idempotent)",
                 Cond("(a > 0) && (b < 1)"), SyntaxRule.All);
-            ExpectUnchanged("identifiers only",
-                Local("bool ok = a && b;"), SyntaxRule.All);
         }
 
         private static void StringLiteralSafety()

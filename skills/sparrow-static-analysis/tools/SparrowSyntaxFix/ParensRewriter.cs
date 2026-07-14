@@ -1,13 +1,13 @@
-// Rule 2 (parens): for a logical &&/|| expression, wrap each operand in parentheses when the operand is
-//   (a) a comparison/relational/equality binary expr:  <  >  <=  >=  ==  != , OR
-//   (b) an arithmetic/shift/bitwise binary expr:        +  -  *  /  %  <<  >>  >>>  &  |  ^ , OR
-//   (c) a logical binary expr of the OTHER operator (an `&&` operand under `||`, or vice versa),
-// UNLESS the operand is already a ParenthesizedExpression.
+// Rule 2 (parens): for a logical &&/|| expression, wrap EVERY operand in parentheses — atoms
+// (identifier/literal/member `a.b.c`/invocation `f()`/element access/`this`/unary `!x`/cast), comparisons
+// (`< > <= >= == !=`), arithmetic/bitwise (`+ - * / % << >> & | ^`), and the OTHER logical operator —
+// UNLESS the operand is already a ParenthesizedExpression, or is a same-operator logical chain
+// (`a && b && c` stays flat; its leaf operands are wrapped by recursion).
 //
-// Atomic operands (identifiers, literals, member access `a.b.c`, invocations `f()`, element access,
-// `this`, unary `!x`/`-x`, casts) are left alone: they are not what MISSING_PARENTHESIS_IN_EXPRESSION
-// targets, and wrapping a complete subexpression in parens is always semantics-preserving anyway.
-// Idempotent: an already-`(a > 0)` operand is a ParenthesizedExpression and is never re-wrapped.
+// Sparrow's MISSING_PARENTHESIS_IN_EXPRESSION requires ALL operands wrapped, not just the ambiguous ones:
+// re-analysis confirmed `(a) || b` is still flagged while `(a) || (b)` clears. Wrapping any complete
+// subexpression in parens is always semantics-preserving. Idempotent: `(a > 0)` is already parenthesized,
+// and a same-operator chain is left flat so a second pass changes nothing.
 
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
@@ -48,40 +48,14 @@ namespace SparrowSyntaxFix
 
         private static bool ShouldWrap(ExpressionSyntax operand, SyntaxKind parentKind)
         {
-            if (operand is ParenthesizedExpressionSyntax) return false;   // already parenthesized
-            if (operand is not BinaryExpressionSyntax bin) return false;  // atomic w.r.t. precedence -> skip
-
-            SyntaxKind k = bin.Kind();
-            if (IsComparison(k) || IsArithmeticOrBitwise(k)) return true;
-
-            // (c) a logical binary expr of the OTHER operator.
-            if (parentKind == SyntaxKind.LogicalAndExpression && k == SyntaxKind.LogicalOrExpression) return true;
-            if (parentKind == SyntaxKind.LogicalOrExpression && k == SyntaxKind.LogicalAndExpression) return true;
-
-            // Same-operator chains (a && b && c) are associative -> no redundant parens. Other binary kinds
-            // (?? / is / as) are out of this checker's scope -> left alone.
-            return false;
+            if (operand is ParenthesizedExpressionSyntax) return false;   // already parenthesized -> idempotent
+            // A same-operator logical chain (a && b && c) stays flat; its leaf operands are wrapped by recursion,
+            // yielding (a) && (b) && (c) rather than ((a) && (b)) && (c).
+            if (operand.IsKind(parentKind)) return false;
+            // Everything else is wrapped: atoms (identifier/literal/member/invocation/element/this/unary/cast),
+            // comparisons, arithmetic/bitwise, and the OTHER logical operator. Sparrow requires EVERY operand of
+            // &&/|| to be parenthesized (confirmed: `(a) || b` is still flagged; `(a) || (b)` clears).
+            return true;
         }
-
-        private static bool IsComparison(SyntaxKind k) =>
-            k == SyntaxKind.LessThanExpression ||
-            k == SyntaxKind.GreaterThanExpression ||
-            k == SyntaxKind.LessThanOrEqualExpression ||
-            k == SyntaxKind.GreaterThanOrEqualExpression ||
-            k == SyntaxKind.EqualsExpression ||
-            k == SyntaxKind.NotEqualsExpression;
-
-        private static bool IsArithmeticOrBitwise(SyntaxKind k) =>
-            k == SyntaxKind.AddExpression ||
-            k == SyntaxKind.SubtractExpression ||
-            k == SyntaxKind.MultiplyExpression ||
-            k == SyntaxKind.DivideExpression ||
-            k == SyntaxKind.ModuloExpression ||
-            k == SyntaxKind.LeftShiftExpression ||
-            k == SyntaxKind.RightShiftExpression ||
-            k == SyntaxKind.UnsignedRightShiftExpression ||
-            k == SyntaxKind.BitwiseAndExpression ||
-            k == SyntaxKind.BitwiseOrExpression ||
-            k == SyntaxKind.ExclusiveOrExpression;
     }
 }

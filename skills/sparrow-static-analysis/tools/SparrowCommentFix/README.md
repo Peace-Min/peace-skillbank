@@ -72,7 +72,8 @@ For an operator who just wants to point at a solution/folder and go, `Run-Sparro
 (mirrors `Run-SparrowSyntaxFix.ps1`) wraps the tool:
 
 ```
-.\Run-SparrowCommentFix.ps1 -Solution C:\Work\OSTES\OSTES.sln          # or a .csproj / folder
+.\Run-SparrowCommentFix.ps1 -Solution C:\Work\OSTES\OSTES.sln          # apply; asks about commit if neither -Commit/-DryRun
+.\Run-SparrowCommentFix.ps1 -Solution ...\OSTES.sln -Commit            # per-rule git commit (no prompt)
 .\Run-SparrowCommentFix.ps1 -Solution C:\Work\OSTES -DryRun            # report only, writes nothing
 .\Run-SparrowCommentFix.ps1 -Solution ...\OSTES.sln -Rules period      # subset of rules
 .\Run-SparrowCommentFix.ps1 -Solution ...\OSTES.sln -FilesFrom index.csv   # (precise) skip auto-glob, use this CSV
@@ -88,8 +89,11 @@ in PowerShell, then hands the resulting full paths to the tool via a temp `--fil
   segment, or a filename matching `*.g.cs` / `*.g.i.cs` / `*.Designer.cs` / `AssemblyInfo.cs`, or a name
   containing `복사본` / `TemporaryGeneratedFile` / `GeneratedInternalTypeHelper` (case-insensitive). Counts
   are reported transparently (found / excluded / targeted) — no silent drops.
-- Runs **space + period** in one pass (`-Rules` narrows it), honoring `-DryRun`.
-- **No git / no commit** anywhere (runner only). Writes a timestamped `.log` next to the working dir.
+- Runs each rule (**space**, then **period**) in turn (`-Rules` narrows it), honoring `-DryRun`.
+- **Commit UX mirrors `Run-TrackA.ps1` / `Run-SparrowSyntaxFix.ps1`**: with `-Commit` it makes a per-rule
+  git commit (`sparrow: <label> (SparrowCommentFix)`, staging `*.cs`); with `-DryRun` it commits nothing;
+  with neither, an interactive run **prompts** `규칙별로 커밋할까요? (Y/N)` (non-interactive → no commit).
+  Writes a timestamped `.log` next to the working dir.
 
 ## Per-checker commits
 

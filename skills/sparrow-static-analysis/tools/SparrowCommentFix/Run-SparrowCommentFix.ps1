@@ -4,13 +4,14 @@
     자작 Roslyn 툴 SparrowCommentFix로 주석 trivia 두 규칙을 결정론 처리:
       - space  : `//x` -> `// x`  (FORMATTING.COMMENT.MISSING_SPACE_AFTER_DELIMITER)
       - period : 주석 문장 끝 마침표 보정                     (FORMATTING.COMMENT.MISSING_PERIOD)
-    Run-SparrowSyntaxFix.ps1과 동일 UX: 솔루션/폴더 경로만 주면 동작. 단, SparrowCommentFix는
+    Run-TrackA.ps1 / Run-SparrowSyntaxFix.ps1과 동일 UX: 솔루션/폴더 경로만 주면 동작(내부에서 exe 확보
+    -> 규칙별 실행 -> 규칙별 커밋). -Commit/-DryRun 둘 다 없으면 커밋 여부를 물음. 단, SparrowCommentFix는
     디렉터리를 받지 않으므로(개별 .cs 경로 또는 --files-from CSV만) 러너가 PowerShell에서 .cs 재귀
     수집 + 생성/백업 파일 제외를 직접 수행한 뒤, 대상 전체경로를 임시 --files-from CSV로 툴에 넘긴다.
-    커밋은 하지 않는다(러너 전용). 규칙별로 나누지 않고 한 번에 실행한다.
 
     사용:
-      .\Run-SparrowCommentFix.ps1 -Solution C:\Work\OSTES\OSTES.sln          # 폴더/.sln/.csproj 아래 실소스 .cs에 space+period 적용
+      .\Run-SparrowCommentFix.ps1 -Solution C:\Work\OSTES\OSTES.sln          # 적용. -Commit/-DryRun 없으면 커밋 여부를 물음
+      .\Run-SparrowCommentFix.ps1 -Solution ...\OSTES.sln -Commit            # 규칙별 git 커밋(안 물어봄)
       .\Run-SparrowCommentFix.ps1 -Solution C:\Work\OSTES -DryRun            # 변경 안 함, 무엇이 바뀔지만 보고
       .\Run-SparrowCommentFix.ps1 -Solution ...\OSTES.sln -Rules period      # 일부 규칙만
       .\Run-SparrowCommentFix.ps1 -Solution ...\OSTES.sln -FilesFrom index.csv   # (정밀) 자동 글롭 대신 준 CSV 사용(SparrowXlsExport 산출)
@@ -24,6 +25,7 @@
 param(
     [Parameter(Mandatory = $true)][string]$Solution,      # .sln / .csproj / 폴더 경로 (소스 루트)
     [ValidateSet('space', 'period')][string[]]$Rules = @('space', 'period'),
+    [switch]$Commit,
     [switch]$DryRun,
     [string]$FilesFrom,          # (정밀) 이미 있는 index.csv를 주면 자동 글롭 대신 그걸 사용
     [switch]$IncludeGenerated,   # 기본 off: 생성/백업 파일 제외. on이면 전부 포함
@@ -35,6 +37,12 @@ $ErrorActionPreference = 'Stop'
 
 # $PSScriptRoot가 일부 호출에서 비어 있을 수 있어 본문에서 스크립트 폴더 해석
 $scriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
+
+# 규칙 -> 커밋 라벨 (검수 가능한 단위로 규칙별 커밋; Run-TrackA / Run-SparrowSyntaxFix와 동일 방식)
+$labels = [ordered]@{
+    space  = '주석 구분자 뒤 공백 일괄 (//x -> // x)'
+    period = '주석 끝 마침표 일괄'
+}
 
 # 0) preflight
 if (-not (Test-Path -LiteralPath $Solution)) { throw "솔루션/경로 없음: $Solution" }
@@ -84,6 +92,18 @@ if (-not $DryRun) {
     $ErrorActionPreference = 'Stop'
     if ($gitCode -eq 0 -and $dirty.Count -gt 0) {
         Write-Warning "작업트리에 미커밋 변경이 있습니다($($dirty.Count)개). 자동수정 diff와 섞일 수 있으니 깨끗한 상태에서 권장."
+    }
+}
+
+# 1b) -Commit/-DryRun 둘 다 없으면 물어봄(플래그 빼먹는 실수 방지). 비대화형은 안 물어보고 커밋 안 함.
+if (-not $Commit -and -not $DryRun) {
+    if ([Environment]::UserInteractive) {
+        $ans = Read-Host "규칙별로 커밋할까요? (Y=규칙별 자동 커밋 / N=파일만 수정, 커밋 안 함)"
+        if ($ans -match '^\s*(y|yes|예|ㅛ)\s*$') { $Commit = $true; Write-Host "-> 규칙별 커밋 진행" }
+        else { Write-Host "-> 파일만 수정(커밋 안 함). 나중에 -Commit으로 재실행 가능." }
+    }
+    else {
+        Write-Host "(비대화형: -Commit 미지정 -> 커밋 안 함)"
     }
 }
 
@@ -159,40 +179,52 @@ try {
         Add-Content -LiteralPath $logPath -Value ("files-from(temp)=$tmpCsv")
     }
 
-    # 3) 툴 1회 실행(커밋 없으니 규칙별 분할 불필요) — native(dotnet) stderr가 EAP=Stop에서 throw되는 것을
-    #    막기 위해 이 구간만 Continue.
-    $toolArgs = @('--files-from', $csvForTool, '--rules', ($Rules -join ','), '--root', $root)
-    if ($DryRun) { $toolArgs += '--dry-run' }
-
+    # 3) 규칙별 실행(+ -Commit이면 규칙별 커밋) — Run-TrackA / Run-SparrowSyntaxFix와 동일 패턴.
+    #    native(dotnet/git) stderr가 EAP=Stop에서 throw되는 것을 막기 위해 이 구간은 Continue.
     $ErrorActionPreference = 'Continue'
-    if ($tool.kind -eq 'dll') { $out = & dotnet $tool.path @toolArgs 2>&1 }
-    else { $out = & $tool.path @toolArgs 2>&1 }
-    $code = $LASTEXITCODE
+    $failed = $false
+    $grand = 0
+    foreach ($r in $Rules) {
+        $toolArgs = @('--files-from', $csvForTool, '--rules', $r, '--root', $root)
+        if ($DryRun) { $toolArgs += '--dry-run' }
+
+        if ($tool.kind -eq 'dll') { $out = & dotnet $tool.path @toolArgs 2>&1 }
+        else { $out = & $tool.path @toolArgs 2>&1 }
+        $code = $LASTEXITCODE
+        $text = ($out | Out-String)
+
+        Add-Content -LiteralPath $logPath -Value ("`n========== $r | exit=$code ==========")
+        Add-Content -LiteralPath $logPath -Value $text
+
+        $nChanged = [regex]::Match($text, 'files changed:\s*(\d+)').Groups[1].Value
+        $nEdits = [regex]::Match($text, 'rule ' + [regex]::Escape($r) + ':\s*(\d+)').Groups[1].Value
+        if ($nEdits) { $grand += [int]$nEdits }
+
+        Write-Host ""
+        Write-Host "=== $r  | exit=$code ==="
+        Write-Host "  변경 파일 : $(if ($nChanged) { $nChanged } else { '? (로그 확인)' })"
+        Write-Host "  수정 건수 : $(if ($nEdits) { $nEdits } else { '0' })"
+
+        if ($DryRun) { Write-Host "  결과      : [dry-run] 파일 변경 안 함"; continue }
+        if ($code -eq 2) { Write-Warning "  사용법 오류(exit 2) - 로그 확인."; $failed = $true; break }
+        if ($code -ne 0) { Write-Warning "  실패(exit $code) - 로그 확인."; $failed = $true; break }
+
+        if ($Commit) {
+            & git -C $root add -- '*.cs' 2>&1 | Out-Null
+            & git -C $root diff --cached --quiet
+            if ($LASTEXITCODE -ne 0) {
+                & git -C $root commit -q -m "sparrow: $($labels[$r]) (SparrowCommentFix)"
+                Write-Host "  커밋      : sparrow: $($labels[$r])"
+            }
+            else { Write-Host "  커밋      : 변경 없음 -> 건너뜀 (이 규칙에서 바뀐 .cs 없음)" }
+        }
+        else { Write-Host "  커밋      : -Commit 미지정 -> 커밋 안 함 (파일만 수정됨)" }
+    }
     $ErrorActionPreference = 'Stop'
-    $text = ($out | Out-String)
 
-    Add-Content -LiteralPath $logPath -Value ("`n========== rules=$($Rules -join ',') | exit=$code ==========")
-    Add-Content -LiteralPath $logPath -Value $text
     Write-Host ""
-    Write-Host $text
-
-    # 4) 요약 파싱
-    $nScanned = [regex]::Match($text, 'files scanned:\s*(\d+)').Groups[1].Value
-    $nChanged = [regex]::Match($text, 'files changed:\s*(\d+)').Groups[1].Value
-    $nSpace = [regex]::Match($text, 'rule space:\s*(\d+)').Groups[1].Value
-    $nPeriod = [regex]::Match($text, 'rule period:\s*(\d+)').Groups[1].Value
-    $nTotal = [regex]::Match($text, 'total changes:\s*(\d+)').Groups[1].Value
-
-    Write-Host "=== 요약  | rules=$($Rules -join ',') | exit=$code ==="
-    Write-Host "  스캔 파일 : $(if ($nScanned) { $nScanned } else { '? (로그 확인)' })"
-    Write-Host "  변경 파일 : $(if ($nChanged) { $nChanged } else { '? (로그 확인)' })"
-    if ($Rules -contains 'space') { Write-Host "  space     : $(if ($nSpace) { $nSpace } else { '0' })" }
-    if ($Rules -contains 'period') { Write-Host "  period    : $(if ($nPeriod) { $nPeriod } else { '0' })" }
-    Write-Host "  총 수정   : $(if ($nTotal) { $nTotal } else { '? (로그 확인)' })"
-    if ($DryRun) { Write-Host "  결과      : [dry-run] 파일 변경 안 함" }
-
-    if ($code -eq 2) { Write-Warning "사용법 오류(exit 2) - 로그 확인." }
-    elseif ($code -ne 0) { Write-Warning "실패(exit $code) - 로그 확인." }
+    if (-not $DryRun) { Write-Host "총 수정 건수(적용된 규칙 합): $grand" }
+    if ($failed) { Write-Host "일부 규칙 미완 -> 로그 확인." }
 }
 finally {
     if ($tmpCsv -and (Test-Path -LiteralPath $tmpCsv)) {

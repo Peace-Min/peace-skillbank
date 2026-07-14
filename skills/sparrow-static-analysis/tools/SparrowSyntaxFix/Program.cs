@@ -1,0 +1,187 @@
+// SparrowSyntaxFix CLI. Argument-parsing + console-output style mirrors the sibling SparrowXlsExport:
+// manual arg loop, aligned summary block, exit codes 0 = success (changed or not), 1 = real error,
+// 2 = usage. Discovers .cs files, reads each preserving encoding/BOM/newline, applies the enabled
+// Roslyn rewriter(s), and writes back atomically ONLY when the tree text actually changed.
+//
+//   SparrowSyntaxFix <file-or-dir>... [--files-from index.csv] [--root dir] [--rules list] [--dry-run]
+
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.IO;
+using System.Text;
+
+namespace SparrowSyntaxFix
+{
+    internal static class Program
+    {
+        private static int Main(string[] args)
+        {
+            try { Console.OutputEncoding = new UTF8Encoding(false); } catch { /* stdout may be redirected */ }
+
+            var targets = new List<string>();
+            string? filesFrom = null;
+            string? root = null;
+            SyntaxRule rules = SyntaxRule.All;
+            bool dryRun = false;
+
+            for (int i = 0; i < args.Length; i++)
+            {
+                string a = args[i];
+                switch (a)
+                {
+                    case "--files-from": if (!Next(args, ref i, out filesFrom)) return Usage("--files-from requires a value"); break;
+                    case "--root": if (!Next(args, ref i, out root)) return Usage("--root requires a value"); break;
+                    case "--rules":
+                        if (!Next(args, ref i, out string rulesArg)) return Usage("--rules requires a value");
+                        if (!TryParseRules(rulesArg, out rules))
+                            return Usage("invalid --rules value: " + rulesArg + " (expected: all | nullcast | parens | nullcast,parens)");
+                        break;
+                    case "--dry-run": dryRun = true; break;
+                    case "-h":
+                    case "--help": return Usage(null);
+                    default:
+                        if (a.StartsWith("--", StringComparison.Ordinal)) return Usage("unknown option: " + a);
+                        targets.Add(a);
+                        break;
+                }
+            }
+
+            if (targets.Count == 0 && filesFrom == null)
+                return Usage("at least one <file-or-dir> or --files-from is required");
+
+            try
+            {
+                return Run(targets, filesFrom, root, rules, dryRun);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine("error: " + ex.Message);
+                return 1;   // real error: unreadable path / IO failure
+            }
+        }
+
+        private static int Run(List<string> targets, string? filesFrom, string? rootArg, SyntaxRule rules, bool dryRun)
+        {
+            string root = Path.GetFullPath(rootArg ?? Directory.GetCurrentDirectory());
+            if (rootArg != null && !Directory.Exists(root)) throw new DirectoryNotFoundException("--root not found: " + root);
+
+            bool missingExplicit = false;
+            var files = FileDiscovery.ExpandTargets(targets, root, m =>
+            {
+                Console.Error.WriteLine("error: path not found: " + m);
+                missingExplicit = true;
+            });
+            if (missingExplicit) return 1;   // an explicit target that does not exist is a real error
+
+            if (filesFrom != null)
+            {
+                string idx = Path.IsPathRooted(filesFrom) ? filesFrom : Path.Combine(root, filesFrom);
+                idx = Path.GetFullPath(idx);
+                if (!File.Exists(idx)) throw new FileNotFoundException("--files-from not found: " + idx);
+
+                // A referenced-but-absent file is a warning, not fatal (the index may list files not in this checkout).
+                var indexFiles = FileDiscovery.FromIndex(idx, root, m =>
+                    Console.Error.WriteLine("warn: --files-from entry not found (skipped): " + m));
+
+                var merged = new HashSet<string>(files, StringComparer.OrdinalIgnoreCase);
+                foreach (string f in indexFiles) if (merged.Add(f)) files.Add(f);
+                files.Sort(StringComparer.OrdinalIgnoreCase);
+            }
+
+            int found = files.Count;
+            int generatedSkipped = 0, encodingSkipped = 0, changed = 0;
+            long totalNull = 0, totalParens = 0;
+
+            foreach (string file in files)
+            {
+                if (FileDiscovery.IsGeneratedName(Path.GetFileName(file))) { generatedSkipped++; continue; }
+
+                SourceFile? sf = SourceFileIo.TryRead(file);
+                if (sf == null)
+                {
+                    encodingSkipped++;
+                    Console.Error.WriteLine("warn: skipped (not clean UTF-8): " + file);
+                    continue;
+                }
+                if (FileDiscovery.HasAutoGeneratedHeader(sf.Text)) { generatedSkipped++; continue; }
+
+                RewriteResult result = RewriteEngine.Rewrite(sf.Text, rules);
+                if (!result.Changed) continue;
+
+                totalNull += result.NullCastEdits;
+                totalParens += result.ParensEdits;
+                changed++;
+
+                string tail = "  nullcast=" + result.NullCastEdits + " parens=" + result.ParensEdits;
+                if (dryRun)
+                {
+                    Console.WriteLine("would-change " + file + tail);
+                }
+                else
+                {
+                    SourceFileIo.WriteAtomic(file, result.NewText, sf.HasBom);
+                    Console.WriteLine("changed " + file + tail);
+                }
+            }
+
+            string N(long v) => v.ToString(CultureInfo.InvariantCulture);
+            Console.WriteLine("rules:            " + RulesText(rules) + (dryRun ? "   (dry-run: no files written)" : ""));
+            Console.WriteLine("root:             " + root);
+            Console.WriteLine("files found:      " + N(found));
+            Console.WriteLine("generated skip:   " + N(generatedSkipped));
+            Console.WriteLine("non-UTF8 skip:    " + N(encodingSkipped));
+            Console.WriteLine((dryRun ? "files to change:  " : "files changed:    ") + N(changed));
+            Console.WriteLine("nullcast edits:   " + N(totalNull));
+            Console.WriteLine("parens edits:     " + N(totalParens));
+            return 0;
+        }
+
+        private static bool TryParseRules(string arg, out SyntaxRule rules)
+        {
+            rules = SyntaxRule.None;
+            foreach (string tokenRaw in arg.Split(','))
+            {
+                string t = tokenRaw.Trim().ToLowerInvariant();
+                if (t.Length == 0) continue;
+                switch (t)
+                {
+                    case "all": rules |= SyntaxRule.All; break;
+                    case "nullcast": rules |= SyntaxRule.NullCast; break;
+                    case "parens": rules |= SyntaxRule.Parens; break;
+                    default: return false;
+                }
+            }
+            return rules != SyntaxRule.None;
+        }
+
+        private static string RulesText(SyntaxRule r)
+        {
+            var parts = new List<string>();
+            if ((r & SyntaxRule.NullCast) != 0) parts.Add("nullcast");
+            if ((r & SyntaxRule.Parens) != 0) parts.Add("parens");
+            return string.Join(",", parts);
+        }
+
+        private static bool Next(string[] args, ref int i, out string value)
+        {
+            if (i + 1 >= args.Length) { value = ""; return false; }
+            value = args[++i];
+            return true;
+        }
+
+        private static int Usage(string? message)
+        {
+            var w = message == null ? Console.Out : Console.Error;
+            if (message != null) w.WriteLine("error: " + message);
+            w.WriteLine("usage: SparrowSyntaxFix <file-or-dir>... [options]");
+            w.WriteLine("options:");
+            w.WriteLine("  --files-from <index.csv>  read target .cs paths from a CSV (파일명/경로 column) or newline list");
+            w.WriteLine("  --root <dir>              base dir for resolving relative paths (default: current dir)");
+            w.WriteLine("  --rules <list>            comma list of {nullcast,parens} or 'all' (default: all)");
+            w.WriteLine("  --dry-run                 report per-file/per-rule counts without writing");
+            w.WriteLine("exit codes: 0 = success (changed or not), 1 = error, 2 = usage");
+            return message == null ? 0 : 2;
+        }
+    }
+}

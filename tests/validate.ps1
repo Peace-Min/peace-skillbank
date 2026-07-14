@@ -1,7 +1,8 @@
 param(
     [string]$RepositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path,
-    [switch]$IncludeClrMdE2E,   # opt-in: also build+dump+run the ClrMD root-chain tool (needs .NET SDK; heavy)
-    [switch]$IncludeSparrowE2E  # opt-in: also build+run the Sparrow XLS export tool (needs .NET SDK + NPOI restore)
+    [switch]$IncludeClrMdE2E,    # opt-in: also build+dump+run the ClrMD root-chain tool (needs .NET SDK; heavy)
+    [switch]$IncludeSparrowE2E,  # opt-in: also build+run the Sparrow XLS export tool (needs .NET SDK + NPOI restore)
+    [switch]$IncludeSyntaxFixE2E # opt-in: also build+run the SparrowSyntaxFix rewriter tool (needs .NET SDK + Roslyn restore)
 )
 
 $ErrorActionPreference = "Stop"
@@ -193,6 +194,23 @@ foreach ($sparrowFile in @($sparrowToolProj, $sparrowToolProgram, $sparrowFixtur
 }
 Test-PowerShellSyntax -Path $sparrowE2E
 if ($IncludeSparrowE2E) { & $sparrowE2E -RepositoryRoot $RepositoryRoot }
+
+# SparrowSyntaxFix E2E: always syntax-check + assert the tool/fixture projects exist; only RUN when opted
+# in (builds + restores Roslyn; needs the SDK). Mirrors the Sparrow XLS export wiring above.
+$syntaxToolProj = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\SparrowSyntaxFix\SparrowSyntaxFix.csproj"
+$syntaxToolProgram = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\SparrowSyntaxFix\Program.cs"
+$syntaxEngine = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\SparrowSyntaxFix\RewriteEngine.cs"
+$syntaxNullCast = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\SparrowSyntaxFix\NullCastRewriter.cs"
+$syntaxParens = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\SparrowSyntaxFix\ParensRewriter.cs"
+$syntaxReadme = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\SparrowSyntaxFix\README.md"
+$syntaxFixtureProj = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\SparrowSyntaxFix\FixtureTests\FixtureTests.csproj"
+$syntaxFixtureProgram = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\SparrowSyntaxFix\FixtureTests\Program.cs"
+$syntaxE2E = Join-Path $RepositoryRoot "tests\sparrow-syntaxfix-fixtures.ps1"
+foreach ($syntaxFile in @($syntaxToolProj, $syntaxToolProgram, $syntaxEngine, $syntaxNullCast, $syntaxParens, $syntaxReadme, $syntaxFixtureProj, $syntaxFixtureProgram, $syntaxE2E)) {
+    Assert-Condition (Test-Path -LiteralPath $syntaxFile) "Missing SparrowSyntaxFix file: $syntaxFile"
+}
+Test-PowerShellSyntax -Path $syntaxE2E
+if ($IncludeSyntaxFixE2E) { & $syntaxE2E -RepositoryRoot $RepositoryRoot }
 
 # Track A auto-fix kit (LLM-free): assert the .editorconfig + runner exist and the runner parses.
 # (Run-TrackA.ps1 carries Korean text -> must stay UTF-8-with-BOM or PS 5.1 mis-parses it.)

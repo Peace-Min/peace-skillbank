@@ -16,7 +16,8 @@ param(
     [ValidateSet('var', 'parens', 'initializer')][string[]]$Rules = @('var', 'parens', 'initializer'),
     [switch]$Commit,
     [switch]$DryRun,
-    [string]$Severity = 'info'
+    [string]$Severity = 'info',
+    [ValidateSet('quiet', 'minimal', 'normal', 'detailed', 'diagnostic')][string]$Verbosity = 'minimal'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -66,7 +67,7 @@ foreach ($r in $Rules) {
     $g = $groups[$r]
     Write-Host ""
     Write-Host "=== $r  ($($g.ids -join ','))  ==="
-    $fmtArgs = @('format', 'style', $slnFull, '--severity', $Severity, '--diagnostics') + $g.ids + @('--verbosity', 'minimal')
+    $fmtArgs = @('format', 'style', $slnFull, '--severity', $Severity, '--diagnostics') + $g.ids + @('--verbosity', $Verbosity)
     if ($DryRun) { $fmtArgs += '--verify-no-changes' }
 
     & dotnet @fmtArgs

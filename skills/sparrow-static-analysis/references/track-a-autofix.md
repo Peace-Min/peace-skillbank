@@ -38,6 +38,14 @@ Sparrow 검출 중 **스타일/포맷 계열(버킷1)** 은 약한 LLM에게 시
 > ⚠ 실행 후에도 **아래 3) 검증(빌드 + 스패로우 재분석)은 필수**. 러너는 수정만 하고 "스패로우가 지웠다"를
 > 보장하지 않음(Roslyn 경계 != Sparrow 경계).
 
+**워크스페이스 로드 경고가 뜰 때**(레거시에서 흔함): 치명적이진 않지만 *부분 로드=수정 누락* 신호일 수 있으니
+`-Verbosity diagnostic`으로 정체를 확인. "could not resolve / project could not be loaded"면 부분 로드 →
+**VS 경로로**. 최종 판단은 exit code가 아니라 **스패로우 재분석 후 건수**.
+
+```powershell
+.\Run-TrackA.ps1 -Solution ...\OSTES.sln -Rules var -DryRun -Verbosity diagnostic   # 숨은 로드 경고 노출
+```
+
 수동으로 하려면(러너 없이) 아래 절차를 그대로:
 
 ## 절차 (수동)

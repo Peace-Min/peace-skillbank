@@ -4,13 +4,18 @@
     .NET SDK + a Roslyn restore -- env/time heavy). Run it manually, or via `validate.ps1 -IncludeCommentE2E`.
 
     It builds the tool, writes synthetic .cs fixtures to a temp dir, runs the tool per rule, and asserts the
-    4 rules (space / period / capitalize / blankline) before/after, the string-literal SAFETY guarantee
-    (`//` inside a string is never touched), idempotency, --dry-run (writes nothing), --files-from CSV
-    parsing, and the unknown/`asterisk` rule exit code. Skips cleanly (not fails) when the .NET SDK is missing.
+    2 ACTIVE rules (space / period) before/after, the string-literal SAFETY guarantee (`//` inside a string is
+    never touched), idempotency, --dry-run (writes nothing), --files-from CSV parsing, and that the three
+    NOT-active rules (capitalize / blankline / asterisk) and any unknown key all exit 2. Skips cleanly (not
+    fails) when the .NET SDK is missing.
+
+    (capitalize/blankline were REMOVED from the tool per real-data analysis: capitalize=한글/기호 첫글자 대문자화
+    결정론 불가·주석처리 코드 오변형 위험, blankline=실물은 트레일링 주석 지적이라 반대 타깃; asterisk stays
+    deferred. So `--rules all` now means space+period.)
 
     PS 5.1 notes honored here: collections wrapped in @() before .Count; no &&/ternary/null-coalescing;
     fixtures/results read with -Encoding UTF8 (the TOOL writes UTF-8 via .NET, not via PowerShell);
-    capitalize assertions use .Contains (ordinal/case-sensitive; -match is case-insensitive in PS).
+    before/after assertions use .Contains (ordinal/case-sensitive; -match is case-insensitive in PS).
     This script carries Korean literals -> it MUST stay UTF-8 WITH BOM so PS 5.1 parses it correctly.
 #>
 param([string]$RepositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path)
@@ -116,61 +121,8 @@ class C {
     Check "period: // ---- divider unchanged" { $pd.Contains("// ----") -and (-not $pd.Contains("// ----.")) }
     Check "period: // 3) ends non-letter unchanged" { $pd.Contains("// 3)") -and (-not $pd.Contains("// 3).")) }
 
-    # --- rule: capitalize ---
-    $capSrc = @'
-class C {
-    void M() {
-        // hello
-        // 안녕
-        // Hello
-        // 3 apples
-        int a = 0;
-    }
-}
-'@
-    $capFile = New-Fixture "capitalize.cs" $capSrc
-    Check "capitalize: exit 0" { (Invoke-Tool @($capFile, "--rules", "capitalize")) -eq 0 }
-    $cp = Read-Text $capFile
-    Check "capitalize: // hello -> // Hello (no lowercase left)" { $cp.Contains("// Hello") -and (-not $cp.Contains("// hello")) }
-    Check "capitalize: // 안녕 (Hangul) unchanged" { $cp.Contains("// 안녕") }
-    Check "capitalize: // 3 apples (digit first) unchanged" { $cp.Contains("// 3 apples") }
-
-    # --- rule: blankline ---
-    $blankSrc = @'
-class C
-{
-    void M()
-    {
-        int x = 0;
-        // after statement
-        int y = 0;
-    }
-
-    void N()
-    {
-        // first inside block
-        int z = 0;
-    }
-
-    void O()
-    {
-        int a = 0;
-        // run comment 1
-        // run comment 2
-        int b = 0;
-
-        // already spaced
-        int c = 0;
-    }
-}
-'@
-    $blankFile = New-Fixture "blank.cs" $blankSrc
-    Check "blankline: exit 0" { (Invoke-Tool @($blankFile, "--rules", "blankline")) -eq 0 }
-    $bl = Read-Text $blankFile
-    Check "blankline: inserted before comment after a statement" { $bl -match "int x = 0;\r?\n\r?\n[ \t]*// after statement" }
-    Check "blankline: NOT inserted for comment right after {" { ($bl -match "\{\r?\n[ \t]*// first inside block") -and (-not ($bl -match "\{\r?\n\r?\n[ \t]*// first inside block")) }
-    Check "blankline: 2nd of consecutive comments NOT inserted" { $bl -match "// run comment 1\r?\n[ \t]*// run comment 2" }
-    Check "blankline: already-spaced comment unchanged (single blank)" { ($bl -match "int b = 0;\r?\n\r?\n[ \t]*// already spaced") -and (-not ($bl -match "int b = 0;\r?\n\r?\n\r?\n")) }
+    # capitalize / blankline were REMOVED from the tool (real-data analysis). Their exit-2 checks live with the
+    # asterisk/unknown checks at the end of this script; there are no before/after fixtures for them anymore.
 
     # --- SAFETY: `//` inside string literals is never a comment -> --rules all leaves the file byte-identical ---
     $safeSrc = @'
@@ -249,8 +201,10 @@ items/1.md,101,FORMATTING.COMMENT.MISSING_SPACE_AFTER_DELIMITER,"낮음,높음",
     $ffText = Read-Text (Join-Path $work "ff_fixture.cs")
     Check "files-from: named fixture edited (//x -> // x)" { $ffText.Contains("// x") -and (-not $ffText.Contains("//x")) }
 
-    # --- unknown / asterisk rule -> exit 2 ---
-    Check "asterisk rule -> exit 2" { (Invoke-Tool @($spaceFile, "--rules", "asterisk")) -eq 2 }
+    # --- not-active / unknown rules -> exit 2 (capitalize & blankline removed per real-data analysis) ---
+    Check "capitalize rule -> exit 2 (removed)" { (Invoke-Tool @($spaceFile, "--rules", "capitalize")) -eq 2 }
+    Check "blankline rule -> exit 2 (removed)" { (Invoke-Tool @($spaceFile, "--rules", "blankline")) -eq 2 }
+    Check "asterisk rule -> exit 2 (deferred)" { (Invoke-Tool @($spaceFile, "--rules", "asterisk")) -eq 2 }
     Check "unknown rule -> exit 2" { (Invoke-Tool @($spaceFile, "--rules", "bogus")) -eq 2 }
 }
 finally {

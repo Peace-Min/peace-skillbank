@@ -37,7 +37,7 @@ Track C 가이드 md(`<체커키>.md`)는 **C 항목 우선**, 검출된 것만 
 ## 집계
 - **A (자동, dotnet format)**: 4종, **~4,105건** — 완료(Run-TrackA).
 - **B (결정론 자작/whitespace)**: 11종, **~2,700건** — 주석 5종(~1,950)=SparrowCommentFix, 여백 6종(~750)=`dotnet format whitespace`.
-  - **SparrowCommentFix 현황(Track B 부분완료)**: `MISSING_SPACE_AFTER_DELIMITER`(space)·`MISSING_PERIOD`(period)·`LOWERCASE_FIRST_LETTER`(capitalize)·`MISSING_BLANK_LINE_BEFORE_COMMENT`(blankline) **4종 구현 완료**. `BLOCK_OF_ASTERISK`(asterisk)은 **보류**(실제 Sparrow 예시 대기) — `--rules asterisk` 지정 시 exit 2.
+  - **SparrowCommentFix 현황(Track B 부분완료)**: 실물 대조 후 `MISSING_SPACE_AFTER_DELIMITER`(space)·`MISSING_PERIOD`(period) **2종 적용**. `LOWERCASE_FIRST_LETTER`(capitalize)·`MISSING_BLANK_LINE_BEFORE_COMMENT`(blankline)은 **실물 부적합으로 도구에서 제거**(capitalize=한글/기호 결정론 불가, blankline=반대 타깃), `BLOCK_OF_ASTERISK`(asterisk)은 **보류** — 이 3종은 `--rules` 지정 시 exit 2.
 - **C (LLM/사람 판단)**: 13종, **~370건** — 매우위험 119 + 높음 93 + 위험 18 + OVERLY_BROAD_CATCH 139 + 소량.
 
 ## 주의

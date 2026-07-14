@@ -3,6 +3,27 @@
 // non-SDK .csproj / .NET Framework 4.7.2 targets are irrelevant. Purpose: take the deterministic comment
 // clean-ups out of a weak local LLM's hands in an air-gapped environment (Track B of the pipeline).
 //
+// SCOPE = 2 ACTIVE RULES (reduced after validating every rule against the REAL Sparrow output,
+// issues_OSTES_6827.xls / 6855.xls, plus the checker descriptions):
+//   space  (FORMATTING.COMMENT.MISSING_SPACE_AFTER_DELIMITER, "//와 주석 사이 공백") -- CORRECT. Kept.
+//   period (FORMATTING.COMMENT.MISSING_PERIOD, "주석 문장 끝 종결부호")             -- CORRECT and the tool's
+//           main rule (~221 real-source hits). Its guard (append '.' only when the last content char is a
+//           letter/digit) auto-skips commented-out code ending in `;`/`]` and divider lines. Kept.
+//
+// THREE RULES ARE INTENTIONALLY NOT ACTIVE (removed/deferred per that same real-data analysis). This is the
+// "code-fix-only" decision: deterministically-unfixable items are simply left unhandled rather than mis-edited.
+//   capitalize (FORMATTING.COMMENT.LOWERCASE_FIRST_LETTER) -- REMOVED. Real flagged comments mostly start with
+//               한글/기호(`[`, `<`, `.`) that have no deterministic "uppercase", and capitalizing commented-out
+//               code (`/*att*/`->`/*Att*/`) is a wrong edit. No safe mechanical contract exists.
+//   blankline  (MISSING_BLANK_LINE_BEFORE_COMMENT) -- REMOVED. The real rule flags TRAILING/inline comments
+//               (`code; //c`) and wants them on their OWN line; the old implementation instead inserted a blank
+//               line before comments that already began a line -- the opposite target. Re-targeting is a risky
+//               structural rewrite for only ~10 real hits, so it was pulled rather than shipped wrong.
+//   asterisk   (FORMATTING.COMMENT.BLOCK_OF_ASTERISK) -- DEFERRED. Removing Doxygen `/** * */` blocks is a style
+//               judgment, not a safe mechanical edit.
+// Each can be re-added later as a SMALL DIFF (one rule key + one rewrite method) once a correct, real-data-backed
+// contract is defined -- the clean rule-registry architecture below is preserved for exactly that.
+//
 // Design points baked in:
 //  - ROSLYN, NOT REGEX. Each file is parsed with CSharpSyntaxTree.ParseText and edits are confined to spans
 //    that Roslyn identifies as comment trivia. CORRECTNESS GUARANTEE: a `//` or `/*` inside a string or char
@@ -11,21 +32,17 @@
 //  - Parse with DocumentationMode.None so `///` doc comments are lexed as ordinary SingleLineCommentTrivia
 //    (text `///...`) and `/**...*/` as ordinary MultiLineCommentTrivia. That keeps every rule a simple,
 //    total text transform on the comment's delimiter+content -- no structured-XML trivia to reason about.
-//  - CLEAN RULE REGISTRY (Rule[] + Dictionary): the 4 implemented rules (space, capitalize, period,
-//    blankline) each slot in by key. A 5th rule `asterisk` (FORMATTING.COMMENT.BLOCK_OF_ASTERISK) is
-//    intentionally NOT implemented yet (pending real Sparrow examples); passing it exits 2 with a clear
-//    message. Adding it later is a small diff: one Rule entry + one rewrite method.
-//  - TEXT rules (space/capitalize/period) are pure comment-text rewrites. The BLANKLINE rule is the one
-//    STRUCTURAL rule: it inserts one blank line before a comment that directly follows a code line. It is
-//    implemented on the TRIVIA/token model (comments beginning a physical line), using Roslyn to classify
-//    each physical line as blank / comment-only / code so a `//` inside a string can never drive an insert.
+//  - CLEAN RULE REGISTRY (AllRuleKeys + per-comment rewrite dispatch): the 2 active rules (space, period)
+//    each slot in by key. capitalize / blankline / asterisk are intentionally not active (see SCOPE above);
+//    passing any of them -- or an unknown key -- exits 2 with a message naming the valid keys and the reason.
+//  - TEXT rules (space, period) are pure comment-text rewrites, applied per comment in canonical order.
 //  - Every rule is IDEMPOTENT: a second run is a no-op (verified by fixtures).
 //  - PER-CHECKER COMMITS: run ONE rule at a time (e.g. `--rules period`) so that run's diff == that one
 //    Sparrow checker's fixes, matching the "규칙/체커별 커밋" gate.
 //  - Encoding/newline preservation: each edited file keeps its original UTF-8-BOM-presence and its existing
-//    newlines; the blankline insert uses the file's DOMINANT newline (CRLF vs LF). Files whose bytes do not
-//    round-trip as UTF-8 are skipped with a WARN (never risk corrupting non-UTF-8 bytes). Writes are atomic
-//    (temp file in the same directory, then replace) and only happen when the bytes actually change.
+//    newlines. Files whose bytes do not round-trip as UTF-8 are skipped with a WARN (never risk corrupting
+//    non-UTF-8 bytes). Writes are atomic (temp file in the same directory, then replace) and only happen when
+//    the bytes actually change.
 
 using System;
 using System.Collections.Generic;
@@ -35,14 +52,14 @@ using System.Linq;
 using System.Text;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
-using Microsoft.CodeAnalysis.Text;
 
 namespace SparrowCommentFix
 {
     internal static class Program
     {
-        // Canonical order the text rules are applied in (selection order is irrelevant; application is fixed).
-        private static readonly string[] AllRuleKeys = { "space", "capitalize", "period", "blankline" };
+        // Canonical order the active text rules are applied in (selection order is irrelevant; application is
+        // fixed). Reduced to space+period per real-data analysis; capitalize/blankline/asterisk are NOT active.
+        private static readonly string[] AllRuleKeys = { "space", "period" };
 
         private static int Main(string[] args)
         {
@@ -83,8 +100,7 @@ namespace SparrowCommentFix
                     continue;
                 }
                 if (Array.IndexOf(AllRuleKeys, token) >= 0) { enabled.Add(token); continue; }
-                return Usage("unknown rule '" + token + "'. valid rules: space, period, capitalize, blankline, all "
-                             + "(asterisk is intentionally not yet implemented, pending real Sparrow examples)");
+                return Usage(InvalidRuleMessage(token));
             }
             if (enabled.Count == 0) return Usage("--rules selected no rules");
 
@@ -209,53 +225,33 @@ namespace SparrowCommentFix
         {
             var parseOptions = new CSharpParseOptions(languageVersion: LanguageVersion.Latest,
                                                       documentationMode: DocumentationMode.None);
-            SyntaxTree tree = CSharpSyntaxTree.ParseText(SourceText.From(text), parseOptions);
+            SyntaxTree tree = CSharpSyntaxTree.ParseText(text, parseOptions);
             SyntaxNode root = tree.GetRoot();
-            SourceText sourceText = tree.GetText();
 
             var comments = root.DescendantTrivia().Where(t => IsComment(t.Kind())).ToList();
 
             var edits = new List<Edit>();
 
-            // --- text rules (space, capitalize, period), applied per comment in canonical order ---
-            bool anyText = enabled.Contains("space") || enabled.Contains("capitalize") || enabled.Contains("period");
-            if (anyText)
+            // The active rules (space, period) are all pure comment-text rewrites, applied per comment in
+            // canonical order. Each rule's guards make it a no-op when it does not apply (=> idempotent).
+            foreach (SyntaxTrivia t in comments)
             {
-                foreach (SyntaxTrivia t in comments)
+                string original = t.ToFullString();
+                string cur = original;
+
+                if (enabled.Contains("space"))
                 {
-                    string original = t.ToFullString();
-                    string cur = original;
-
-                    if (enabled.Contains("space"))
-                    {
-                        string next = RewriteSpace(cur);
-                        if (!string.Equals(next, cur, StringComparison.Ordinal)) { ruleCounts["space"]++; cur = next; }
-                    }
-                    if (enabled.Contains("capitalize"))
-                    {
-                        string next = RewriteCapitalize(cur);
-                        if (!string.Equals(next, cur, StringComparison.Ordinal)) { ruleCounts["capitalize"]++; cur = next; }
-                    }
-                    if (enabled.Contains("period"))
-                    {
-                        string next = RewritePeriod(cur);
-                        if (!string.Equals(next, cur, StringComparison.Ordinal)) { ruleCounts["period"]++; cur = next; }
-                    }
-
-                    if (!string.Equals(cur, original, StringComparison.Ordinal))
-                        edits.Add(new Edit(t.SpanStart, t.Span.Length, cur));
+                    string next = RewriteSpace(cur);
+                    if (!string.Equals(next, cur, StringComparison.Ordinal)) { ruleCounts["space"]++; cur = next; }
                 }
-            }
-
-            // --- structural rule (blankline) ---
-            if (enabled.Contains("blankline"))
-            {
-                string newline = DominantNewline(text);
-                foreach (int at in CollectBlankLineInserts(text, sourceText, comments))
+                if (enabled.Contains("period"))
                 {
-                    edits.Add(new Edit(at, 0, newline));
-                    ruleCounts["blankline"]++;
+                    string next = RewritePeriod(cur);
+                    if (!string.Equals(next, cur, StringComparison.Ordinal)) { ruleCounts["period"]++; cur = next; }
                 }
+
+                if (!string.Equals(cur, original, StringComparison.Ordinal))
+                    edits.Add(new Edit(t.SpanStart, t.Span.Length, cur));
             }
 
             if (edits.Count == 0) return text;
@@ -290,27 +286,6 @@ namespace SparrowCommentFix
             return text;
         }
 
-        // FORMATTING.COMMENT.LOWERCASE_FIRST_LETTER: uppercase the first ASCII-lowercase content letter.
-        private static string RewriteCapitalize(string text)
-        {
-            if (IsSingleLine(text)) return CapitalizeAt(text, SlashRun(text), text.Length);
-            if (IsBlock(text)) return CapitalizeAt(text, 2, text.Length - 2);
-            return text;
-        }
-
-        private static string CapitalizeAt(string text, int start, int end)
-        {
-            int i = start;
-            while (i < end && char.IsWhiteSpace(text[i])) i++;
-            if (i < end)
-            {
-                char c = text[i];
-                if (c >= 'a' && c <= 'z')
-                    return text.Substring(0, i) + char.ToUpperInvariant(c) + text.Substring(i + 1);
-            }
-            return text;
-        }
-
         // FORMATTING.COMMENT.MISSING_PERIOD: append `.` when the last content char is a letter/digit.
         private static string RewritePeriod(string text)
         {
@@ -337,78 +312,6 @@ namespace SparrowCommentFix
         }
 
         // ---------------------------------------------------------------------------------------------------
-        // Structural rule: blankline
-        // ---------------------------------------------------------------------------------------------------
-
-        // Returns the source offsets (line starts) at which one blank line should be inserted.
-        private static IEnumerable<int> CollectBlankLineInserts(string text, SourceText sourceText, List<SyntaxTrivia> comments)
-        {
-            // Mark which character positions are inside comment trivia (so line classification is Roslyn-driven
-            // and a `//` inside a string can never be mistaken for a comment).
-            var inComment = new bool[text.Length];
-            foreach (SyntaxTrivia t in comments)
-            {
-                int a = t.SpanStart, b = t.Span.End;
-                for (int i = a; i < b && i < text.Length; i++) inComment[i] = true;
-            }
-
-            TextLineCollection lines = sourceText.Lines;
-            var inserts = new List<int>();
-
-            foreach (SyntaxTrivia t in comments)
-            {
-                int pos = t.SpanStart;
-                TextLine line = lines.GetLineFromPosition(pos);
-
-                // The comment must BEGIN a physical line (only whitespace before it on that line).
-                bool beginsLine = true;
-                for (int i = line.Start; i < pos; i++) { if (!char.IsWhiteSpace(text[i])) { beginsLine = false; break; } }
-                if (!beginsLine) continue;
-
-                int idx = line.LineNumber;
-                if (idx == 0) continue;   // guard 4: first line of file
-
-                TextLine prev = lines[idx - 1];
-                LineKind kind = ClassifyLine(text, inComment, prev);
-                if (kind.IsBlank) continue;        // guard 2: already a blank line before the comment
-                if (kind.IsCommentOnly) continue;  // guard 1: preceding line is itself a comment (covers runs)
-                if (kind.CodeEndsWithOpenBrace) continue;   // guard 3: comment is first line inside a block
-
-                inserts.Add(line.Start);
-            }
-
-            return inserts;
-        }
-
-        private struct LineKind
-        {
-            public bool IsBlank;
-            public bool IsCommentOnly;
-            public bool CodeEndsWithOpenBrace;
-        }
-
-        private static LineKind ClassifyLine(string text, bool[] inComment, TextLine line)
-        {
-            var kind = new LineKind();
-            int start = line.Start, end = line.End;   // end excludes the line break
-
-            bool anyNonWs = false, anyCode = false;
-            int lastCodeChar = -1;
-            for (int i = start; i < end; i++)
-            {
-                char c = text[i];
-                if (char.IsWhiteSpace(c)) continue;
-                anyNonWs = true;
-                if (!inComment[i]) { anyCode = true; lastCodeChar = i; }
-            }
-
-            if (!anyNonWs) { kind.IsBlank = true; return kind; }
-            if (!anyCode) { kind.IsCommentOnly = true; return kind; }
-            kind.CodeEndsWithOpenBrace = lastCodeChar >= 0 && text[lastCodeChar] == '{';
-            return kind;
-        }
-
-        // ---------------------------------------------------------------------------------------------------
         // Edit application
         // ---------------------------------------------------------------------------------------------------
 
@@ -422,8 +325,8 @@ namespace SparrowCommentFix
 
         private static string ApplyEdits(string text, List<Edit> edits)
         {
-            // Ascending by Start, then by Length (a zero-length insertion at position P is applied BEFORE a
-            // replacement that also starts at P, so an inserted blank line lands before the comment text).
+            // Ascending by Start (each edit replaces one distinct, non-overlapping comment span), with Length
+            // as a stable tie-break. Splice the replacements into the original text in one pass.
             edits.Sort((x, y) => x.Start != y.Start ? x.Start.CompareTo(y.Start) : x.Length.CompareTo(y.Length));
 
             var sb = new StringBuilder(text.Length + 16);
@@ -558,23 +461,8 @@ namespace SparrowCommentFix
             if (c >= '가' && c <= '힣') return true;   // Hangul syllables
             if (c >= '一' && c <= '鿿') return true;   // CJK Unified Ideographs
             if (c >= '㐀' && c <= '䶿') return true;   // CJK Unified Ideographs Extension A
-            if (c >= '豈' && c <= '﫿') return true;   // CJK Compatibility Ideographs
+            if (c >= '豈' && c <= '﫿') return true;   // CJK Compatibility Ideographs
             return false;
-        }
-
-        private static string DominantNewline(string text)
-        {
-            int crlf = 0, lf = 0;
-            for (int i = 0; i < text.Length; i++)
-            {
-                if (text[i] == '\n')
-                {
-                    if (i > 0 && text[i - 1] == '\r') crlf++;
-                    else lf++;
-                }
-            }
-            if (crlf == 0 && lf == 0) return "\n";
-            return crlf >= lf ? "\r\n" : "\n";
         }
 
         private static byte[] Prepend(byte[] prefix, byte[] body)
@@ -601,11 +489,23 @@ namespace SparrowCommentFix
             return true;
         }
 
+        // capitalize / blankline / asterisk are intentionally NOT active (removed/deferred per real-data
+        // analysis; see the file header). Name the valid keys AND state the reason so the operator is not
+        // left guessing why a checker key they saw in Sparrow is rejected.
+        private static string InvalidRuleMessage(string token)
+        {
+            return "unknown or inactive rule '" + token + "'. valid rules: space, period, all.\n"
+                 + "  not active (removed/deferred per real-data analysis; re-addable as a small diff):\n"
+                 + "  - capitalize: 한글/기호로 시작하는 주석이 많아 대문자화 결정론 불가 + 주석처리 코드 오변형 위험 -> 제거\n"
+                 + "  - blankline:  실물은 트레일링(인라인) 주석 지적이라 반대 타깃 + 구조 재작성 위험 -> 제거\n"
+                 + "  - asterisk:   Doxygen 별표(*) 블록 제거는 스타일 판단 -> 보류";
+        }
+
         private static int Usage(string message)
         {
             Console.Error.WriteLine("error: " + message);
             Console.Error.WriteLine("usage: SparrowCommentFix <file.cs> [<file2.cs> ...] [--files-from index.csv] "
-                                    + "[--root DIR] --rules <space,period,capitalize,blankline|all> [--dry-run]");
+                                    + "[--root DIR] --rules <space,period|all> [--dry-run]");
             return 2;   // usage / validation error
         }
     }

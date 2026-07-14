@@ -18,7 +18,8 @@ param(
     [switch]$DryRun,
     [string]$Severity = 'info',
     [ValidateSet('quiet', 'minimal', 'normal', 'detailed', 'diagnostic')][string]$Verbosity = 'diagnostic',
-    [string]$LogDir
+    [string]$LogDir,
+    [switch]$KeepEditorConfig
 )
 
 $ErrorActionPreference = 'Stop'
@@ -60,13 +61,19 @@ if (-not $DryRun) {
     }
 }
 
-# 1) .editorconfig 배치(기존 것 있으면 덮지 않음)
-if (Test-Path -LiteralPath $targetCfg) {
-    Write-Warning "$slnDir 에 이미 .editorconfig 존재 -> 덮어쓰지 않음. 이 파일이 버킷1 규칙(IDE0007/0048/0017)을 안 가지면 변경이 0이 됩니다. 내용 확인 후, 우리 규칙으로 돌리려면 그 파일을 백업/제거하고 재실행."
+# 1) .editorconfig 배치 — 기존 것이 있으면 백업 후 *최신 bucket1로 덮어씀*(버전 꼬임/충돌 방지가 기본).
+#    -KeepEditorConfig 를 주면 기존 것을 유지(우리 규칙을 이미 공유 config에 병합해 둔 경우).
+if ($KeepEditorConfig -and (Test-Path -LiteralPath $targetCfg)) {
+    Write-Warning "$targetCfg 유지(-KeepEditorConfig). 이 파일에 버킷1 규칙(IDE0007/0048/0017)이 있어야 변경이 발생합니다."
 }
 else {
+    if (Test-Path -LiteralPath $targetCfg) {
+        $bak = "$targetCfg.pre-tracka-$stamp.bak"
+        Copy-Item -LiteralPath $targetCfg -Destination $bak -Force
+        Write-Warning "기존 .editorconfig 를 백업: $bak  ->  최신 bucket1로 덮어씀. (원래가 OSTES 자체 설정이면 병합/복원 필요; 유지하려면 -KeepEditorConfig)"
+    }
     Copy-Item -LiteralPath $EditorConfig -Destination $targetCfg -Force
-    Write-Host "배치: $targetCfg"
+    Write-Host "배치(최신 bucket1): $targetCfg"
 }
 
 # 1b) -Commit/-DryRun 둘 다 없으면 물어봄(플래그 빼먹는 실수 방지). 비대화형(CI/파이프)은 안 물어보고 커밋 안 함.

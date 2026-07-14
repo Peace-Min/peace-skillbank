@@ -93,7 +93,10 @@ parens edits:     741
 규칙별 커밋(검수 가능한 단위). `references/Run-TrackA.ps1`(dotnet format 1단계)의 짝.
 
 ```powershell
-# 적용(‑Commit/‑DryRun 없으면 커밋 여부를 물음). 솔루션(.sln) 또는 소스 폴더 경로.
+# 원큐: 그냥 실행하면 솔루션 경로를 묻고, 이어서 커밋 여부(Y/N)를 물어봄.
+.\Run-SparrowSyntaxFix.ps1
+
+# 경로를 미리 줘도 됨(커밋 여부는 여전히 물음). 솔루션(.sln) 또는 소스 폴더 경로.
 .\Run-SparrowSyntaxFix.ps1 -Solution C:\Work\OSTES\OSTES.sln
 
 .\Run-SparrowSyntaxFix.ps1 -Solution ...\OSTES.sln -DryRun                 # 미리보기(변경 안 함)

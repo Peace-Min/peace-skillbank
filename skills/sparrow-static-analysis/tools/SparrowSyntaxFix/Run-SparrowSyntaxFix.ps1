@@ -6,9 +6,10 @@
       - parens   : `a && b` 등의 비교/산술 피연산자 괄호                (MISSING_PARENTHESIS)
     Run-TrackA.ps1과 동일 UX: 솔루션 경로만 주면 동작(내부에서 exe 확보 -> 규칙별 실행 -> 규칙별 커밋).
 
-    사용:
-      .\Run-SparrowSyntaxFix.ps1 -Solution C:\Work\OSTES\OSTES.sln              # 적용. -Commit/-DryRun 없으면 커밋 여부를 물음
-      .\Run-SparrowSyntaxFix.ps1 -Solution ...\OSTES.sln -Commit                # 규칙별 git 커밋(안 물어봄)
+    사용(원큐): 그냥 실행 -> 솔루션 경로를 물어보고 -> 이어서 커밋 여부(Y/N)를 물어봄. 끝.
+      .\Run-SparrowSyntaxFix.ps1                                                # ← 이게 원큐. 경로 입력 후 커밋 Y/N
+      .\Run-SparrowSyntaxFix.ps1 -Solution C:\Work\OSTES\OSTES.sln              # 경로를 미리 줘도 됨(커밋 여부는 물음)
+      .\Run-SparrowSyntaxFix.ps1 -Solution ...\OSTES.sln -Commit                # 안 물어보고 규칙별 자동 커밋
       .\Run-SparrowSyntaxFix.ps1 -Solution ...\OSTES.sln -DryRun                # 변경 안 함, 무엇이 바뀔지만 보고
       .\Run-SparrowSyntaxFix.ps1 -Solution ...\OSTES.sln -Rules nullcast        # 일부 규칙만
       .\Run-SparrowSyntaxFix.ps1 -Solution ...\OSTES.sln -FilesFrom index.csv   # (정밀) 검출된 파일만 (SparrowXlsExport 산출)
@@ -19,7 +20,7 @@
     (4) 없으면 `dotnet build`(패키지 복원 가능할 때)  순으로 확보합니다. 인터넷 없는 PC는 (1)/(2)로 반입 exe를 주세요.
 #>
 param(
-    [Parameter(Mandatory = $true)][string]$Solution,
+    [string]$Solution,
     [ValidateSet('nullcast', 'parens')][string[]]$Rules = @('nullcast', 'parens'),
     [switch]$Commit,
     [switch]$DryRun,
@@ -32,6 +33,13 @@ $ErrorActionPreference = 'Stop'
 
 # $PSScriptRoot가 일부 호출에서 비어 있을 수 있어 본문에서 스크립트 폴더 해석
 $scriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
+
+# 원큐 UX: 인자 없이 실행하면 솔루션 경로를 물어봄(그다음 커밋 여부도 물어봄). 붙여넣기 따옴표 자동 제거.
+if (-not $Solution) {
+    $Solution = Read-Host "정리할 솔루션(.sln) 파일 또는 소스 폴더 경로를 입력하세요"
+}
+if ($Solution) { $Solution = $Solution.Trim().Trim('"').Trim("'").Trim() }
+if (-not $Solution) { throw "경로가 비었습니다. 솔루션(.sln) 또는 소스 폴더 경로가 필요합니다." }
 
 # 규칙 -> 커밋 라벨 (검수 가능한 단위로 규칙별 커밋)
 $labels = [ordered]@{

@@ -9,9 +9,10 @@
     디렉터리를 받지 않으므로(개별 .cs 경로 또는 --files-from CSV만) 러너가 PowerShell에서 .cs 재귀
     수집 + 생성/백업 파일 제외를 직접 수행한 뒤, 대상 전체경로를 임시 --files-from CSV로 툴에 넘긴다.
 
-    사용:
-      .\Run-SparrowCommentFix.ps1 -Solution C:\Work\OSTES\OSTES.sln          # 적용. -Commit/-DryRun 없으면 커밋 여부를 물음
-      .\Run-SparrowCommentFix.ps1 -Solution ...\OSTES.sln -Commit            # 규칙별 git 커밋(안 물어봄)
+    사용(원큐): 그냥 실행 -> 솔루션/폴더 경로를 물어보고 -> 이어서 커밋 여부(Y/N)를 물어봄. 끝.
+      .\Run-SparrowCommentFix.ps1                                            # ← 원큐. 경로 입력 후 커밋 Y/N
+      .\Run-SparrowCommentFix.ps1 -Solution C:\Work\OSTES\OSTES.sln          # 경로 미리 줘도 됨(커밋 여부는 물음)
+      .\Run-SparrowCommentFix.ps1 -Solution ...\OSTES.sln -Commit            # 안 물어보고 규칙별 자동 커밋
       .\Run-SparrowCommentFix.ps1 -Solution C:\Work\OSTES -DryRun            # 변경 안 함, 무엇이 바뀔지만 보고
       .\Run-SparrowCommentFix.ps1 -Solution ...\OSTES.sln -Rules period      # 일부 규칙만
       .\Run-SparrowCommentFix.ps1 -Solution ...\OSTES.sln -FilesFrom index.csv   # (정밀) 자동 글롭 대신 준 CSV 사용(SparrowXlsExport 산출)
@@ -19,11 +20,11 @@
       .\Run-SparrowCommentFix.ps1 -Solution ...\OSTES.sln -ExePath C:\tools\SparrowCommentFix.exe  # 폐쇄망: 반입 exe 지정
 
     폐쇄망 참고: 이 툴은 Roslyn을 품은 컴파일 exe라, 대상 PC에 exe가 있어야 합니다. 러너는
-    (1) -ExePath  (2) 스크립트 옆 publish\SparrowCommentFix.exe  (3) bin\Release\net8.0\SparrowCommentFix.dll
-    (4) 없으면 `dotnet build`(패키지 복원 가능할 때)  순으로 확보합니다. 인터넷 없는 PC는 (1)/(2)로 반입 exe를 주세요.
+    (1) -ExePath  (2) 스크립트 옆 publish\SparrowCommentFix.exe  (3) 소스(csproj)+SDK 있으면 **항상 증분 빌드**
+    (오래된 dll 재사용 방지)  (4) 빌드 불가면 기존 bin\Release dll  순으로 확보합니다. 인터넷 없는 PC는 (1)/(2)로 반입 exe를 주세요.
 #>
 param(
-    [Parameter(Mandatory = $true)][string]$Solution,      # .sln / .csproj / 폴더 경로 (소스 루트)
+    [string]$Solution,      # .sln / .csproj / 폴더 경로 (소스 루트). 안 주면 실행 시 물어봄(원큐)
     [ValidateSet('space', 'period')][string[]]$Rules = @('space', 'period'),
     [switch]$Commit,
     [switch]$DryRun,
@@ -44,6 +45,13 @@ $labels = [ordered]@{
     period = '주석 끝 마침표 일괄'
 }
 
+# 원큐 UX: 인자 없이 실행하면 솔루션/폴더 경로를 물어봄(그다음 커밋 여부도 물어봄). 붙여넣기 따옴표 자동 제거.
+if (-not $Solution) {
+    $Solution = Read-Host "정리할 솔루션(.sln) 파일 또는 소스 폴더 경로를 입력하세요"
+}
+if ($Solution) { $Solution = $Solution.Trim().Trim('"').Trim("'").Trim() }
+if (-not $Solution) { throw "경로가 비었습니다. 솔루션(.sln) 또는 소스 폴더 경로가 필요합니다." }
+
 # 0) preflight
 if (-not (Test-Path -LiteralPath $Solution)) { throw "솔루션/경로 없음: $Solution" }
 $slnFull = (Resolve-Path -LiteralPath $Solution).Path
@@ -58,7 +66,9 @@ $logPath = Join-Path $LogDir ("Run-SparrowCommentFix.$stamp.log")
 Write-Host "실행 로그(전체): $logPath"
 Write-Host "소스 루트      : $root"
 
-# 1) 툴 바이너리 확보: ExePath > publish exe > 빌드된 dll > dotnet build
+# 1) 툴 바이너리 확보: ExePath > publish exe > (소스 있으면) 항상 증분 빌드 > 기존 dll(폐쇄망 fallback)
+#    ★ 중요: 소스(csproj)가 있으면 항상 재빌드한다. 오래된 bin\Release\dll을 그대로 쓰면 소스 갱신 후에도 옛
+#    규칙이 돌아 "안 고쳐졌다"처럼 보이기 때문(형제 SyntaxFix 러너에서 실제 발생). 증분 빌드는 최신이면 ~수초 no-op.
 function Resolve-Tool {
     if ($ExePath) {
         if (-not (Test-Path -LiteralPath $ExePath)) { throw "-ExePath 없음: $ExePath" }
@@ -67,18 +77,43 @@ function Resolve-Tool {
     }
     $pubExe = Join-Path $scriptDir 'publish\SparrowCommentFix.exe'
     if (Test-Path -LiteralPath $pubExe) { return @{ kind = 'exe'; path = $pubExe } }
+
     $dll = Join-Path $scriptDir 'bin\Release\net8.0\SparrowCommentFix.dll'
-    if (Test-Path -LiteralPath $dll) { return @{ kind = 'dll'; path = $dll } }
     $csproj = Join-Path $scriptDir 'SparrowCommentFix.csproj'
-    if (-not (Test-Path -LiteralPath $csproj)) { throw "SparrowCommentFix.csproj/exe 모두 없음: $scriptDir (폐쇄망은 -ExePath로 반입 exe 지정)" }
-    if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) { throw "dotnet SDK 없음 + 발행 exe 없음. -ExePath로 반입 exe 지정하세요." }
-    Write-Host "발행 exe/빌드 산출물이 없어 빌드합니다: dotnet build -c Release ..."
-    $b = & dotnet build $csproj -c Release --nologo 2>&1
-    $b | Out-File -LiteralPath $logPath -Append -Encoding utf8
-    if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $dll)) {
-        throw "빌드 실패(폐쇄망에서 Roslyn 패키지 복원 불가일 수 있음). 인터넷 PC에서 미리 발행한 exe를 -ExePath로 지정하세요. 로그: $logPath"
+
+    # 소스 + SDK가 있으면 항상 증분 빌드로 dll을 최신 소스와 일치시킨다.
+    if ((Test-Path -LiteralPath $csproj) -and (Get-Command dotnet -ErrorAction SilentlyContinue)) {
+        Write-Host "소스에서 빌드(증분, 최신 규칙 보장): dotnet build -c Release"
+        Write-Host "  (첫 빌드는 NuGet 복원 포함 — 아래 진행이 흐릅니다. 인터넷 없는 PC면 Ctrl+C 후 -ExePath 로 반입 exe 지정.)"
+        # 빌드는 네이티브(dotnet) 호출 — stderr가 EAP=Stop+2>&1에서 종료오류로 throw되는 것을 막기 위해 Continue로 격리.
+        # 출력은 삼키지 않고 한 줄씩 콘솔+로그로 흘려 "멈춘 것처럼 보임"을 방지.
+        $prevEap = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        try {
+            & dotnet build $csproj -c Release --nologo -v minimal 2>&1 | ForEach-Object {
+                Write-Host "  | $_"
+                Add-Content -LiteralPath $logPath -Value $_
+            }
+            $buildExit = $LASTEXITCODE
+        }
+        finally { $ErrorActionPreference = $prevEap }
+        if ($buildExit -eq 0 -and (Test-Path -LiteralPath $dll)) {
+            Write-Host "빌드 완료(최신): $dll"
+            return @{ kind = 'dll'; path = $dll }
+        }
+        if (Test-Path -LiteralPath $dll) {
+            Write-Warning "빌드 실패(exit=$buildExit) — 기존 dll을 사용합니다(최신 소스와 다를 수 있음!). 로그: $logPath"
+            return @{ kind = 'dll'; path = $dll }
+        }
+        throw "빌드 실패/미완(exit=$buildExit) + 기존 dll 없음. 인터넷 PC에서 발행한 exe를 -ExePath 로 지정하세요. 로그: $logPath"
     }
-    return @{ kind = 'dll'; path = $dll }
+
+    # 소스/SDK 없음(폐쇄망): 기존 dll이 있으면 사용, 없으면 안내.
+    if (Test-Path -LiteralPath $dll) {
+        Write-Warning "소스(csproj)/SDK 없음 — 기존 dll을 사용합니다(최신 소스와 다를 수 있음). $dll"
+        return @{ kind = 'dll'; path = $dll }
+    }
+    throw "SparrowCommentFix 실행 바이너리를 찾지 못했습니다($scriptDir). 폐쇄망은 -ExePath로 반입 exe/dll을 지정하세요."
 }
 $tool = Resolve-Tool
 Write-Host "툴            : $($tool.path)"

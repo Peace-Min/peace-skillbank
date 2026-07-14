@@ -8,6 +8,9 @@
     "after": "var node = list.FirstOrDefault(n => n.Id == id);\nif (node == null) return;\nProcess(node.Value);"
   },
   "false_positive_reason": "",
-  "hold_reason": "", "needs_frontier": false,
+  "hold_reason": "",
+  "needs_context": false,
+  "missing_context": [],
+  "needs_frontier": false,
   "cwe": "CWE-476", "weapon_item": "미매핑(187 추출 후 기입)"
 }

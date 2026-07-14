@@ -17,7 +17,8 @@
    가이드에 없는 일반론으로 판정하지 마라.
 2. 항목의 **`## 소스 코드` 를 실제로 보고** 판단하라. 코드에 근거가 보이지 않으면 진성이라고 단정하지 마라.
 3. **확신이 없으면 지어내지 마라.** 소스가 잘린 경우, null/자원 근원이 이 스니펫 밖(외부 경로)이라
-   판단 불가한 경우 → `verdict = 보류`, `needs_frontier = true`, `hold_reason`에 무엇이 부족한지 적어라.
+   판단 불가한 경우 → `verdict = 보류`, `needs_context = true`, `missing_context`에 필요한 파일/심볼/코드 범위를 적어라.
+   자료는 충분하지만 로컬 모델 판단이 어려운 경우에만 `needs_frontier = true`로 둔다.
 4. **진성**이면 가이드의 `## 수정 패턴 (C# 예시)`를 따라 **.NET Framework 4.7.2 / C# 7.3** 문법으로
    `before`/`after` 수정을 작성하라.
    - `using (...) { }` **블록** 문법만(using 선언 금지), switch 식·nullable 참조형 금지.
@@ -37,7 +38,10 @@
   "rationale": "가이드 기준을 인용한 판정 근거",
   "fix": { "lines": "string", "before": "C# 코드", "after": "C# 코드" },
   "false_positive_reason": "위양성일 때만, 가이드의 위양성 패턴 인용",
-  "hold_reason": "보류일 때만", "needs_frontier": false,
+  "hold_reason": "보류일 때만",
+  "needs_context": false,
+  "missing_context": ["필요한 추가 문맥"],
+  "needs_frontier": false,
   "cwe": "CWE-476", "weapon_item": "미매핑(187 추출 후 기입)"
 }
 ```
@@ -45,7 +49,8 @@
 채움 규칙:
 - **진성** → `fix.lines`/`fix.before`/`fix.after` 채우고, `false_positive_reason`·`hold_reason`은 `""`.
 - **위양성** → `false_positive_reason`만 채우고, `fix`의 문자열들은 `""`.
-- **보류** → `hold_reason` 채우고 `needs_frontier`를 판단(상위 모델 필요하면 `true`), `fix`는 `""`.
+- **보류** → `hold_reason` 채우고, 자료 부족이면 `needs_context=true` 및 `missing_context`를 채운다.
+  자료는 충분하지만 상위 모델 판단이 필요하면 `needs_frontier=true`, `fix`는 `""`.
 
 `id`/`checker`/`file`/`line`은 [검출 항목]의 표(`| 필드 | 값 |`)와 H1(`# 체커키 @ 파일:라인`)에서 그대로 옮긴다.
 

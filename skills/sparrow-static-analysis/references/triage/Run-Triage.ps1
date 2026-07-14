@@ -177,6 +177,12 @@ function Invoke-Prepare {
         }
 
         $guideText = Read-TextNoBom -Path $guidePath
+        if ($checkerKey -eq 'NULL_RETURN_STD') {
+            $contractPath = Join-Path (Split-Path -Parent $GuidesDir) 'dotnet-contracts\null-return-std.md'
+            if (Test-Path -LiteralPath $contractPath) {
+                $guideText = $guideText + "`n`n---`n`n## [추가 계약표: .NET null-return API]`n`n" + (Read-TextNoBom -Path $contractPath)
+            }
+        }
         $itemText = Read-TextNoBom -Path $itemPath
 
         # 자리표시자 치환(리터럴). -replace 는 정규식이라 부작용 위험 → .Replace() 사용.
@@ -225,6 +231,17 @@ function Test-Verdict {
     }
     $verdict = [string]$v.verdict
     if (@('진성', '위양성', '보류') -notcontains $verdict) { return "verdict 값 오류: '$verdict'" }
+    foreach ($boolKey in @('needs_context', 'needs_frontier')) {
+        if ($v.PSObject.Properties.Name -contains $boolKey) {
+            if (-not ($v.$boolKey -is [bool])) { return "$boolKey 값은 boolean이어야 함" }
+        }
+    }
+    $needsContext = ($v.PSObject.Properties.Name -contains 'needs_context' -and $v.needs_context)
+    $needsFrontier = ($v.PSObject.Properties.Name -contains 'needs_frontier' -and $v.needs_frontier)
+    if ($needsContext -and $needsFrontier) { return 'needs_context와 needs_frontier를 동시에 true로 둘 수 없음' }
+    if ($verdict -ne '보류' -and ($needsContext -or $needsFrontier)) {
+        return '진성/위양성 verdict에는 needs_context/needs_frontier=true를 사용할 수 없음'
+    }
 
     if ($verdict -eq '진성') {
         if (-not ($v.PSObject.Properties.Name -contains 'fix') -or $null -eq $v.fix) { return '진성인데 fix 없음' }
@@ -239,6 +256,15 @@ function Test-Verdict {
     }
     elseif ($verdict -eq '보류') {
         if ([string]::IsNullOrWhiteSpace([string]$v.hold_reason)) { return '보류인데 hold_reason 없음' }
+        if ($needsContext) {
+            if (-not ($v.PSObject.Properties.Name -contains 'missing_context') -or $null -eq $v.missing_context) {
+                return 'needs_context=true인데 missing_context 없음'
+            }
+            $missing = @($v.missing_context)
+            if ($missing.Count -eq 0 -or [string]::IsNullOrWhiteSpace(($missing -join ' '))) {
+                return 'needs_context=true인데 missing_context 비어있음'
+            }
+        }
     }
     return $null
 }
@@ -291,8 +317,10 @@ function Invoke-Collect {
 
     # 원장(ledger)
     $ledger = New-Object System.Collections.Generic.List[string]
-    $ledger.Add('id,체커,파일,라인,verdict,cwe,needs_frontier,근거요약')
+    $ledger.Add('id,체커,파일,라인,verdict,cwe,needs_context,missing_context,needs_frontier,근거요약')
     foreach ($v in $sorted) {
+        $nc = if ($v.PSObject.Properties.Name -contains 'needs_context' -and $v.needs_context) { 'true' } else { 'false' }
+        $mc = if ($v.PSObject.Properties.Name -contains 'missing_context' -and $null -ne $v.missing_context) { (@($v.missing_context) -join '; ') } else { '' }
         $nf = if ($v.PSObject.Properties.Name -contains 'needs_frontier' -and $v.needs_frontier) { 'true' } else { 'false' }
         $summary = if ([string]$v.verdict -eq '위양성') { [string]$v.false_positive_reason }
         elseif ([string]$v.verdict -eq '보류') { [string]$v.hold_reason }
@@ -301,6 +329,7 @@ function Invoke-Collect {
                     (ConvertTo-CsvField ([string]$v.id)), (ConvertTo-CsvField ([string]$v.checker)),
                     (ConvertTo-CsvField ([string]$v.file)), (ConvertTo-CsvField ([string]$v.line)),
                     (ConvertTo-CsvField ([string]$v.verdict)), (ConvertTo-CsvField ([string]$v.cwe)),
+                    $nc, (ConvertTo-CsvField (ConvertTo-Csv1Line $mc)),
                     $nf, (ConvertTo-CsvField (ConvertTo-Csv1Line $summary))
                 ) -join ','))
     }
@@ -330,11 +359,13 @@ function Invoke-Collect {
         foreach ($v in $wi) {
             [void]$sb.Append(("- [{0}] {1}:{2} — {3}`n" -f [string]$v.id, [string]$v.file, [string]$v.line, (ConvertTo-Csv1Line ([string]$v.false_positive_reason))))
         }
-        [void]$sb.Append("`n## 보류 (frontier 이관 후보)`n`n")
+        [void]$sb.Append("`n## 보류 (문맥 보강 또는 frontier 검토 후보)`n`n")
         if ($bo.Count -eq 0) { [void]$sb.Append("- (없음)`n") }
         foreach ($v in $bo) {
+            $nc = if ($v.PSObject.Properties.Name -contains 'needs_context' -and $v.needs_context) { 'true' } else { 'false' }
+            $mc = if ($v.PSObject.Properties.Name -contains 'missing_context' -and $null -ne $v.missing_context) { (@($v.missing_context) -join '; ') } else { '' }
             $nf = if ($v.PSObject.Properties.Name -contains 'needs_frontier' -and $v.needs_frontier) { 'true' } else { 'false' }
-            [void]$sb.Append(("- [{0}] {1}:{2} — {3} (needs_frontier={4})`n" -f [string]$v.id, [string]$v.file, [string]$v.line, (ConvertTo-Csv1Line ([string]$v.hold_reason)), $nf))
+            [void]$sb.Append(("- [{0}] {1}:{2} — {3} (needs_context={4}; missing_context={5}; needs_frontier={6})`n" -f [string]$v.id, [string]$v.file, [string]$v.line, (ConvertTo-Csv1Line ([string]$v.hold_reason)), $nc, (ConvertTo-Csv1Line $mc), $nf))
         }
         Write-Utf8Lf -Path (Join-Path $byCheckerDir ((Get-SafeName $checkerKey) + '.md')) -Content $sb.ToString()
     }

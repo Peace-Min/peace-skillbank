@@ -4,6 +4,9 @@
   "rationale": "가이드 흔한 위양성 패턴(소유권 이전) 해당.",
   "fix": { "lines": "", "before": "", "after": "" },
   "false_positive_reason": "소유권 이전: 23행에서 생성한 SqlConnection 을 호출측에 return 하므로 해제 책임이 이 스코프에 없다. 여기서 Dispose 하면 오히려 사용-후-해제 버그.",
-  "hold_reason": "", "needs_frontier": false,
+  "hold_reason": "",
+  "needs_context": false,
+  "missing_context": [],
+  "needs_frontier": false,
   "cwe": "CWE-772", "weapon_item": "미매핑(187 추출 후 기입)"
 }

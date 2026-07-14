@@ -14,10 +14,21 @@ try { [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false) } 
 $ScriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
 $TriageDir = Split-Path -Parent $ScriptDir                      # references\triage
 $RefsDir   = Split-Path -Parent $TriageDir                      # references
+$SkillDir  = Split-Path -Parent $RefsDir                        # skills\sparrow-static-analysis
 $Checkers  = Join-Path $RefsDir 'checkers'
 $RunTriage = Join-Path $TriageDir 'Run-Triage.ps1'
 $Compare   = Join-Path $TriageDir 'Compare-Sparrow.ps1'
 $ParserExe = 'C:\Users\CEO\Desktop\dotnet-gcdump-offline\sparrow-xlsexport\win-x64\SparrowXlsExport.exe'
+
+if (-not (Test-Path -LiteralPath $ParserExe)) {
+    $parserProject = Join-Path $SkillDir 'tools\SparrowXlsExport\SparrowXlsExport.csproj'
+    $localParser = Join-Path (Split-Path -Parent $parserProject) 'bin\Release\net8.0\SparrowXlsExport.exe'
+    if (-not (Test-Path -LiteralPath $localParser)) {
+        & dotnet build $parserProject -c Release | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "SparrowXlsExport build failed: $parserProject" }
+    }
+    $ParserExe = $localParser
+}
 
 $Out       = Join-Path $ScriptDir '_out'
 $BeforeXls = Join-Path $ScriptDir 'sample-before.xls'
@@ -118,6 +129,11 @@ foreach ($rf in $reqFiles) {
     Check ("B: request {0} merges guide ({1}) + source ('{2}')" -f $chk, $cwe, $frag) `
         (($cwe -and $txt.Contains($cwe)) -and ($frag -and $txt.Contains($frag)))
 }
+$nullStdReq = $reqFiles | Where-Object { $_.BaseName -match '_NULL_RETURN_STD$' } | Select-Object -First 1
+$nullStdText = if ($nullStdReq) { Read-TextNoBom $nullStdReq.FullName } else { '' }
+Check "B: NULL_RETURN_STD request includes dotnet contract table" `
+    (($nullStdText -match '추가 계약표: \.NET null-return API') -and ($nullStdText -match 'Regex\.Match')) `
+    $(if ($nullStdReq) { $nullStdReq.FullName } else { 'request missing' })
 $unresolved = Join-Path $triage 'unresolved.csv'
 $unrLines = @((Read-TextNoBom $unresolved) -split "`n" | Where-Object { $_.Trim().Length -gt 0 })
 Check "B: unresolved.csv empty (header only)" ($unrLines.Count -eq 1) "lines=$($unrLines.Count)"
@@ -137,6 +153,8 @@ function New-Verdict {
         verdict = $verdict; rationale = $rationale;
         fix = [ordered]@{ lines = $fixLines; before = $fixBefore; after = $fixAfter };
         false_positive_reason = $fpReason; hold_reason = $holdReason;
+        needs_context = $false;
+        missing_context = @();
         needs_frontier = [bool]$needsFrontier;
         cwe = $cwe; weapon_item = '미매핑(187 추출 후 기입)'
     }

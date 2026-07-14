@@ -1,4 +1,4 @@
-# PRACTICE.FINALLY_BLOCK.RESOURCE_DISPOSITION_ONLY — finally 블록의 자원 해제 전용(→using 대체)
+﻿# PRACTICE.FINALLY_BLOCK.RESOURCE_DISPOSITION_ONLY — finally 블록의 자원 해제 전용(→using 대체)
 
 - **건수**: 2  |  **심각도**: 보통  |  **트랙**: C
 - **Sparrow 설명**: try-finally 문장에서 finally 블록 안에 Dispose 메소드 호출만 있는 경우에 using문으로 대체해야 합니다.
@@ -19,6 +19,25 @@
 - `finally`가 자원해제 **외 다른 정리**(플래그 복원, 락 해제, 로깅)도 수행 → `using` 단순 치환 불가, 지적 부적합 → 사유서.
 - 자원이 **조건부로만** 생성되거나 스코프 밖에서 소유권이 넘어옴 → `using` 부적합, 현행 유지.
 - 이미 예외 안전하게 잘 작성된 `try/finally`로 의도된 경우.
+
+
+## LLM 판단에 필요한 필수 문맥
+- try/finally 전체와 finally 블록의 모든 문장.
+- Dispose/Close 대상 변수가 어디서 생성 또는 할당되는지.
+- 자원 소유권이 현재 scope에 있는지, 필드/반환값/외부 소유 자원인지.
+- null 가능성과 조건부 생성 여부.
+- using 블록으로 바꿨을 때 자원 생명주기가 짧아지지 않는지.
+
+## 문맥 부족 시 보류 기준
+- finally의 일부만 보이고 자원 생성 위치가 없으면 보류한다.
+- 자원이 호출자에게 반환되거나 필드에 저장되는지 알 수 없으면 `needs_context=true`로 둔다.
+- finally가 Dispose 외 플래그 복원, 락 해제, 로깅 등 다른 정리를 하는지 확인할 수 없으면 보류한다.
+
+## 추가로 요청해야 할 코드 범위
+- 검출 try/finally 전체.
+- 자원 변수 선언과 최초 할당 지점.
+- 해당 자원이 반환/필드 저장/외부 전달되는 주변 코드.
+- 같은 클래스의 Dispose 패턴 구현 여부.
 
 ## 수정 패턴 (C# 예시, net472)
 ```csharp

@@ -1,4 +1,4 @@
-# NULL_RETURN_STD — 표준 라이브러리의 널 반환 값 역참조
+﻿# NULL_RETURN_STD — 표준 라이브러리의 널 반환 값 역참조
 
 - **건수**: 6  |  **심각도**: 매우위험  |  **트랙**: C
 - **Sparrow 설명**: 표준 라이브러리 널 반환 값 역참조 체커는 C# 표준 라이브러리 메소드 중에서 널을 반환할 가능성이 있는 메소드의 반환 값을 확인 없이 역참조하는 경우를 검출합니다.
@@ -19,14 +19,32 @@ C# 표준 라이브러리(BCL)에는 **실패/부재 시 null 을 반환**하는
   - `Marshal.PtrToStringAnsi(...)` / `Marshal.PtrToStringUni(...)` — 포인터가 널이면 null
   - `XmlNode.SelectSingleNode(...)` — 매치 없으면 null
   - `HttpContext.Current` — 요청 컨텍스트 밖이면 null
-  - `Regex.Match(...)` 후 실패한 `Match`(성공 여부 미확인 상태로 사용)
   - `ConfigurationManager.GetSection(...)` — 섹션 없으면 null
-  - `Nullable<T>` 관련(`.Value` 무검사 접근 등) — "없으면 null" 계약 메서드 전반
+- `Regex.Match(...)`는 실패 시 null 을 반환하지 않고 `Match.Success == false`인 `Match` 객체를 반환하므로, NULL_RETURN_STD의 null 반환 예시로 쓰지 않는다.
+- `Nullable<T>.Value` 무검사 접근은 `InvalidOperationException` 위험이지 "null 반환 값 역참조"가 아니므로 이 체커의 대표 예시로 쓰지 않는다.
 - 반환을 받은 뒤 `!= null` / `?.` / `??` / 패턴검사(`is T t`) 중 **어느 것도 없이** `.멤버`·인덱싱·메서드 호출로 역참조한다.
 
 ## 흔한 위양성 패턴
 - 입력이 항상 유효해 해당 BCL 메서드가 실제로는 null 을 반환하지 않음이 상위 계약으로 보장되지만, 분석기가 보수적으로 판단 → 위양성 사유서(어느 근거로 null 이 불가능한지 명시).
 - 앞선 검증(예: 존재 확인/형식 등록 보장) 이후라 non-null 이 확정되나 분석기가 흐름을 못 이음.
+
+
+## LLM 판단에 필요한 필수 문맥
+- 호출한 .NET/BCL API의 정확한 타입, 메서드명, overload, 입력값.
+- 반환값을 역참조하기 전 null 검사/패턴 매칭/널 병합이 있었는지.
+- API 계약상 null 반환 가능 여부를 확인할 수 있는 계약표 또는 공식 문서 근거.
+- reflection/XML/WinForms/WPF 등 프레임워크 API의 컨텍스트.
+
+## 문맥 부족 시 보류 기준
+- API명이 불명확하거나 overload가 구분되지 않으면 보류한다.
+- API 계약상 null 반환 가능 여부가 guide/계약표에 없으면 `needs_context=true`로 둔다.
+- 입력값이 항상 유효해 null이 불가능하다는 보장이 코드 조각에 없으면 위양성 단정 금지.
+
+## 추가로 요청해야 할 코드 범위
+- 검출 라인을 포함하는 전체 메서드.
+- API 호출 결과를 저장하고 사용하는 전체 구간.
+- 입력값 검증/생성 지점.
+- `references/dotnet-contracts/null-return-std.md`의 해당 API 항목(없으면 보류).
 
 ## 수정 패턴 (C# 예시)
 ```csharp

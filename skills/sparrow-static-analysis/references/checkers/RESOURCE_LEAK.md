@@ -1,4 +1,4 @@
-# RESOURCE_LEAK — 자원 누수
+﻿# RESOURCE_LEAK — 자원 누수
 
 - **건수**: 14  |  **심각도**: 매우위험  |  **트랙**: C
 - **Sparrow 설명**: 리소스 누수 체커는 파일, 소켓 등 리소스를 할당한 후에 해제하지 않는 코드를 검출합니다.
@@ -22,6 +22,24 @@
 - 이미 `using` 바깥의 상위 `try-finally`나 소유 객체(`Component.components`)가 해제를 보장.
 - 프레임워크가 소유하는 스트림(예: `HttpContext.Response.OutputStream`) — 닫으면 안 됨.
 - **주의**: `StreamReader`/`StreamWriter` 를 닫으면 내부 Stream 도 닫힘 → 이중 해제/소유 혼동에 유의.
+
+
+## LLM 판단에 필요한 필수 문맥
+- IDisposable 자원 생성 지점부터 모든 return/throw/break 경로까지의 흐름.
+- Dispose/Close/using/try-finally가 모든 경로에서 실행되는지.
+- 자원이 현재 scope 소유인지, 반환/필드 저장/외부 컨테이너/DI로 소유권이 이전되는지.
+- 예외 가능 호출이 자원 생성 후 Dispose 전 사이에 있는지.
+
+## 문맥 부족 시 보류 기준
+- 자원 생성 한 줄만 있고 생명주기 전체가 없으면 진성 단정 금지.
+- 반환 또는 필드 저장으로 소유권이 이전되는지 알 수 없으면 `needs_context=true`로 둔다.
+- 상위 객체의 Dispose 패턴이 있는지 확인할 수 없으면 보류한다.
+
+## 추가로 요청해야 할 코드 범위
+- 검출 라인을 포함하는 전체 메서드.
+- 자원 변수의 모든 사용, 반환, 필드 저장, Dispose 호출.
+- 같은 클래스의 `Dispose`/`Close`/finalizer 구현.
+- 호출자가 자원을 Dispose하는 계약이 있는 경우 해당 호출자 예시.
 
 ## 수정 패턴 (C# 예시, net472 = using 블록 문법)
 ```csharp

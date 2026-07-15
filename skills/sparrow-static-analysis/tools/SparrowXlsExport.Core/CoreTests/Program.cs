@@ -138,6 +138,45 @@ internal static class Program
                 realIndex, realItems, guidesDir, work, "C7",
                 checker: "EMPTY_CATCH_BLOCK", severity: null, max: null);
 
+            // C8: real -Tracks C (explicit default; C-track checkers only).
+            ComparePrepare("C8 real-Tracks-C", runTriage, promptPath, conventionsPath, templatePath,
+                realIndex, realItems, guidesDir, work, "C8",
+                checker: null, severity: null, max: null, tracks: "C");
+
+            // C9: real -Tracks A,B,C (opt-in: A/B checkers ALSO emit requests).
+            ComparePrepare("C9 real-Tracks-ABC", runTriage, promptPath, conventionsPath, templatePath,
+                realIndex, realItems, guidesDir, work, "C9",
+                checker: null, severity: null, max: null, tracks: "A,B,C");
+
+            // ================================================================ CT. track-filter behavior
+            Console.WriteLine("\n==== CT. Track filter: C-only default vs A,B,C opt-in (real xls) ====");
+            string ctC = Path.Combine(work, "C8_cs", "requests");     // Core output of the -Tracks C run
+            string ctAbc = Path.Combine(work, "C9_cs", "requests");   // Core output of the -Tracks A,B,C run
+
+            // -Tracks C => ONLY C-track checker folders appear (no A/B).
+            Check(Directory.Exists(Path.Combine(ctC, "FORWARD_NULL")),
+                  "CT: -Tracks C has C-track folder FORWARD_NULL");
+            Check(!Directory.Exists(Path.Combine(ctC, "PRACTICE.OBVIOUS_VARIABLE_TYPE.NOT_USED_IMPLICIT_TYPING")),
+                  "CT: -Tracks C has NO Track-A folder PRACTICE.OBVIOUS_VARIABLE_TYPE.NOT_USED_IMPLICIT_TYPING");
+            Check(!Directory.Exists(Path.Combine(ctC, "FORMATTING.COMMENT.MISSING_PERIOD")),
+                  "CT: -Tracks C has NO Track-B folder FORMATTING.COMMENT.MISSING_PERIOD");
+
+            // -Tracks A,B,C => A/B checker folders ALSO appear, C folders still present.
+            Check(Directory.Exists(Path.Combine(ctAbc, "FORWARD_NULL")),
+                  "CT: -Tracks A,B,C still has C-track folder FORWARD_NULL");
+            Check(Directory.Exists(Path.Combine(ctAbc, "PRACTICE.LOOP_VARIABLE.NOT_USED_IMPLICIT_TYPING")),
+                  "CT: -Tracks A,B,C has Track-A folder PRACTICE.LOOP_VARIABLE.NOT_USED_IMPLICIT_TYPING");
+            Check(Directory.Exists(Path.Combine(ctAbc, "FORMATTING.COMMENT.MISSING_PERIOD")),
+                  "CT: -Tracks A,B,C has Track-B folder FORMATTING.COMMENT.MISSING_PERIOD");
+
+            // Count difference matches: A+B rows (6798) added on top of C (372) => 7170 total.
+            int cReq = CountRequests(ctC);
+            int abcReq = CountRequests(ctAbc);
+            Check(cReq == 372, "CT: -Tracks C request count = 372 (C-track rows)", "count=" + cReq);
+            Check(abcReq == 7170, "CT: -Tracks A,B,C request count = 7170 (all rows)", "count=" + abcReq);
+            Check(abcReq - cReq == 6798, "CT: A/B opt-in adds 6798 requests (count difference matches)",
+                  "diff=" + (abcReq - cReq));
+
             // ================================================================ D. policy-embed content
             Console.WriteLine("\n==== D. Policy embeds + per-checker _작업지침.md (content) ====");
 
@@ -186,7 +225,7 @@ internal static class Program
     private static void ComparePrepare(string label, string runTriage, string promptPath,
         string conventionsPath, string templatePath,
         string index, string itemsDir, string guidesDir, string work, string tag,
-        string? checker, string? severity, int? max)
+        string? checker, string? severity, int? max, string? tracks = null)
     {
         Console.WriteLine("\n-- " + label + " --");
         string psOut = Path.Combine(work, tag + "_ps");
@@ -202,6 +241,7 @@ internal static class Program
         };
         if (checker != null) { psArgs.Add("-Checker"); psArgs.Add(checker); }
         if (severity != null) { psArgs.Add("-Severity"); psArgs.Add(severity); }
+        if (tracks != null) { psArgs.Add("-Tracks"); psArgs.Add(tracks); }
         if (max.HasValue) { psArgs.Add("-Max"); psArgs.Add(max.Value.ToString()); }
         var (psExit, _) = RunProcess("powershell.exe", psArgs.ToArray());
         Check(psExit == 0, label + ": PS prepare exit 0", "exit=" + psExit);
@@ -218,6 +258,7 @@ internal static class Program
             OutDir = csOut,
             Checker = checker,
             Severity = severity,
+            Tracks = tracks,
             Max = max,
         }, TextWriter.Null);
 
@@ -316,6 +357,14 @@ internal static class Program
             .Where(p => !string.Equals(Path.GetFileName(p), "_작업지침.md", StringComparison.Ordinal))
             .OrderBy(p => Path.GetFileName(p), StringComparer.Ordinal)
             .FirstOrDefault();
+    }
+
+    // Count request md files (any *.md except _작업지침.md) anywhere under a requests\ tree.
+    private static int CountRequests(string requestsDir)
+    {
+        if (!Directory.Exists(requestsDir)) return 0;
+        return Directory.GetFiles(requestsDir, "*.md", SearchOption.AllDirectories)
+            .Count(p => !string.Equals(Path.GetFileName(p), "_작업지침.md", StringComparison.Ordinal));
     }
 
     private static bool HasUtf8Bom(string path)

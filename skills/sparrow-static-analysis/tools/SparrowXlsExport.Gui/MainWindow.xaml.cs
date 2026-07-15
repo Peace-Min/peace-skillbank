@@ -119,6 +119,12 @@ namespace SparrowXlsExport.Gui
 
             ExportOptions opts = BuildOptions(input);
 
+            // 처리 트랙: Track C는 항상 포함, A/B는 체크박스 선택 시 추가. (UI 스레드에서 읽어 캡처.)
+            var trackList = new List<string> { "C" };
+            if (TrackAInclude.IsChecked == true) trackList.Add("A");
+            if (TrackBInclude.IsChecked == true) trackList.Add("B");
+            string tracksValue = string.Join(",", trackList);
+
             SetRunning(true);
             _lastOutputDir = null;
             OpenOutputButton.IsEnabled = false;
@@ -151,6 +157,7 @@ namespace SparrowXlsExport.Gui
                         ConventionsPath = Path.Combine(referencesRoot, "project-conventions.md"),
                         TemplatePath = Path.Combine(referencesRoot, "triage", "folder-instruction-template.md"),
                         OutDir = parse.OutputDir,
+                        Tracks = tracksValue,
                     };
                     TriagePreparer.Prepare(prepOpts, log);
                     return parse.OutputDir;

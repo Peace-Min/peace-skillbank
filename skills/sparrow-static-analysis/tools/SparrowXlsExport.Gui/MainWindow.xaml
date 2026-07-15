@@ -91,6 +91,14 @@
                     <CheckBox x:Name="SevLow" Content="낮음" Margin="0,0,16,0"/>
                 </WrapPanel>
 
+                <TextBlock Text="처리 트랙" Style="{StaticResource SectionLabel}"/>
+                <WrapPanel Margin="0,0,0,2">
+                    <CheckBox x:Name="TrackAInclude" Content="Track A 포함" Margin="0,0,16,0"/>
+                    <CheckBox x:Name="TrackBInclude" Content="Track B 포함" Margin="0,0,16,0"/>
+                </WrapPanel>
+                <TextBlock Text="Track C(보안 결함)는 항상 포함됩니다. Track A/B(스타일·관례)는 체크할 때만 요청을 생성합니다."
+                           Style="{StaticResource HintText}" Margin="0,0,0,12"/>
+
                 <TextBlock Text="최대 건수 (Max)" Style="{StaticResource SectionLabel}"/>
                 <TextBox x:Name="MaxBox" Width="120" HorizontalAlignment="Left" Height="26"
                          VerticalContentAlignment="Center" Margin="0,0,0,12"/>

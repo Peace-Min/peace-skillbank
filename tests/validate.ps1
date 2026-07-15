@@ -8,6 +8,7 @@ param(
     [switch]$IncludeSparrowRealPatternTests, # opt-in: also run the grounded real-OSTES-pattern pipeline regression (needs .NET SDK + Roslyn)
     [switch]$IncludeSparrowRealXlsC3Tests, # opt-in: also run the real-xls C3 detect+fix regression (verbatim xls code; needs .NET SDK + Roslyn)
     [switch]$IncludeSparrowRealXlsForHoistTests, # opt-in: also run the real-xls forhoist detect+fix regression (verbatim xls code; needs .NET SDK + Roslyn)
+    [switch]$IncludeSparrowRealXlsContinuationDeepTests, # opt-in: also run the real-xls deep-continuation normalize regression (verbatim xls code; needs .NET SDK + Roslyn)
     [switch]$IncludeSparrowExhaustiveXls # opt-in: exhaustive Track A/B coverage over the REAL OSTES xls (needs .NET SDK + the xls in Downloads; self-skips if absent)
 )
 
@@ -268,6 +269,16 @@ $sparrowRealXlsForHoist = Join-Path $RepositoryRoot "tests\sparrow-realxls-forho
 Assert-Condition (Test-Path -LiteralPath $sparrowRealXlsForHoist) "Missing Sparrow real-xls forhoist test script"
 Test-PowerShellSyntax -Path $sparrowRealXlsForHoist
 if ($IncludeSparrowRealXlsForHoistTests) { & $sparrowRealXlsForHoist -RepositoryRoot $RepositoryRoot }
+
+# Sparrow real-xls deep-continuation regression: fixture embeds the EXACT xls-detected deep-continuation shape
+# (Geometry.cs:171/197, verbatim, prefix stripped) for the `continuation` rule's deep-down extension; assert BOTH
+# detection (rule fires -> positive edit count) AND remediation (both arbitrary-deep lines pulled to opening+4 +
+# parses clean + idempotent), plus delimiter-aligned / already-correct no-churn negatives. Always syntax-check +
+# assert existence; only RUN when opted in.
+$sparrowRealXlsContDeep = Join-Path $RepositoryRoot "tests\sparrow-realxls-continuation-deep-tests.ps1"
+Assert-Condition (Test-Path -LiteralPath $sparrowRealXlsContDeep) "Missing Sparrow real-xls continuation-deep test script"
+Test-PowerShellSyntax -Path $sparrowRealXlsContDeep
+if ($IncludeSparrowRealXlsContinuationDeepTests) { & $sparrowRealXlsContDeep -RepositoryRoot $RepositoryRoot }
 
 # EXHAUSTIVE Sparrow Track A/B xls coverage: extract the REAL flagged code of EVERY Track A/B finding in the
 # OSTES issues .xls, generate a parseable snippet for each, run the matching tool+rule over all of them, and

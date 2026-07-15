@@ -324,6 +324,9 @@ class C {
     Check "continuation: arguments indented one level" { $ct.Contains("        PlayerInfoXML = new XElement(`"playerInfo`",`r`n            new XAttribute") -or $ct.Contains("        PlayerInfoXML = new XElement(`"playerInfo`",`n            new XAttribute") }
     Check "continuation: binary right operand indented one level" { $ct.Contains("        if ((A) &&`r`n            (B))") -or $ct.Contains("        if ((A) &&`n            (B))") }
 
+    # over-indented ARGUMENT continuation whose indent (16) is neither opening+4 (12) nor aligned to the open
+    # `(` (col 37) -> arbitrary deep indent -> normalized DOWN to opening+4. (Delimiter-aligned deep args are
+    # instead protected by the guard; see the dedicated aligned-negative below.)
     $contOverSrc = @'
 class C {
     void M() {
@@ -333,10 +336,13 @@ class C {
 }
 '@
     $contOverFile = New-Fixture "continuation_overindented.cs" $contOverSrc
-    $contOverBefore = [System.IO.File]::ReadAllBytes($contOverFile)
     Check "continuation overindented: exit 0" { (Invoke-Tool @($contOverFile, "--rules", "continuation")) -eq 0 }
-    $contOverAfter = [System.IO.File]::ReadAllBytes($contOverFile)
-    Check "continuation overindented: byte-identical no churn" { Test-BytesEqual $contOverBefore $contOverAfter }
+    $contOver = Read-Text $contOverFile
+    Check "continuation overindented: arbitrary deep arg pulled DOWN to opening+4 (12)" { $contOver.Contains("        PlayerInfoXML = new XElement(`"playerInfo`",`r`n            new XAttribute") -or $contOver.Contains("        PlayerInfoXML = new XElement(`"playerInfo`",`n            new XAttribute") }
+    $contOver1 = [System.IO.File]::ReadAllBytes($contOverFile)
+    Invoke-Tool @($contOverFile, "--rules", "continuation") | Out-Null
+    $contOver2 = [System.IO.File]::ReadAllBytes($contOverFile)
+    Check "continuation overindented: idempotent (2nd run byte-identical)" { Test-BytesEqual $contOver1 $contOver2 }
 
     # --- continuation: OPERATOR-LED style (dominant in OSTES): the continuation line begins with `&&`/`||`,
     #     not the operand. The indent fix must target the operator token and set it to if-indent + 4. ---
@@ -422,7 +428,8 @@ class C {
     $contOpsOkAfter = [System.IO.File]::ReadAllBytes($contOpsOkFile)
     Check "continuation ops already-correct: byte-identical no churn" { Test-BytesEqual $contOpsOkBefore $contOpsOkAfter }
 
-    # conservative: an over-indented operator continuation is left alone (never de-indented).
+    # over-indented OPERATOR continuation with NO enclosing delimiter (all parens balanced on the opening line):
+    # its deep indent (20) can align to nothing -> arbitrary -> normalized DOWN to opening+4 (12).
     $contOpsOverSrc = @'
 class C {
     void M() {
@@ -432,10 +439,13 @@ class C {
 }
 '@
     $contOpsOverFile = New-Fixture "continuation_ops_over.cs" $contOpsOverSrc
-    $contOpsOverBefore = [System.IO.File]::ReadAllBytes($contOpsOverFile)
     Check "continuation ops over-indented: exit 0" { (Invoke-Tool @($contOpsOverFile, "--rules", "continuation")) -eq 0 }
-    $contOpsOverAfter = [System.IO.File]::ReadAllBytes($contOpsOverFile)
-    Check "continuation ops over-indented: byte-identical no churn" { Test-BytesEqual $contOpsOverBefore $contOpsOverAfter }
+    $contOpsOver = Read-Text $contOpsOverFile
+    Check "continuation ops over-indented: arbitrary deep operand pulled DOWN to opening+4 (12)" { $contOpsOver.Contains("        d = a +`r`n            b;") -or $contOpsOver.Contains("        d = a +`n            b;") }
+    $contOpsOver1 = [System.IO.File]::ReadAllBytes($contOpsOverFile)
+    Invoke-Tool @($contOpsOverFile, "--rules", "continuation") | Out-Null
+    $contOpsOver2 = [System.IO.File]::ReadAllBytes($contOpsOverFile)
+    Check "continuation ops over-indented: idempotent (2nd run byte-identical)" { Test-BytesEqual $contOpsOver1 $contOpsOver2 }
 
     # --- continuation: METHOD-CHAIN + INITIALIZER extension (per FORMATTING.CONTINUATION_LINE.BAD_INDENTATION) ---
     # A fluent `.Method()` line at the receiver's indent, and an initializer `{`/elements/`}` at or below the
@@ -489,20 +499,82 @@ class C {
     $cin = Read-Text $contInitFile
     Check "continuation init-shallow: shallow brace shifted to opening-indent+4 (20)" { $cin.Contains("                var dummy = new System.Collections.Generic.List<int>()`r`n                    {") -or $cin.Contains("                var dummy = new System.Collections.Generic.List<int>()`n                    {") }
 
-    # conservative: a continuation line already indented deeper than opening+4 (Geometry.cs:171 style) is untouched.
+    # GUARD (binary category): a continuation line deeper than opening+4 that is DELIMITER-ALIGNED -- here `* 2.0`
+    # sits at col 16, the column immediately after the still-open `return (` paren -> intentional alignment Sparrow
+    # accepts -> left byte-identical (NOT de-indented to opening+4). Contrast the arbitrary-deep cases above.
     $contDeepSrc = @'
 class C {
     double Geo(double a) {
         return (System.Math.Cos(a)
-                    * 2.0);
+                * 2.0);
     }
 }
 '@
     $contDeepFile = New-Fixture "continuation_deep.cs" $contDeepSrc
     $contDeepBefore = [System.IO.File]::ReadAllBytes($contDeepFile)
-    Check "continuation deep: exit 0" { (Invoke-Tool @($contDeepFile, "--rules", "continuation")) -eq 0 }
+    Check "continuation deep-aligned: exit 0" { (Invoke-Tool @($contDeepFile, "--rules", "continuation")) -eq 0 }
     $contDeepAfter = [System.IO.File]::ReadAllBytes($contDeepFile)
-    Check "continuation deep: already-deeper line byte-identical (no de-indent)" { Test-BytesEqual $contDeepBefore $contDeepAfter }
+    Check "continuation deep-aligned: delimiter-aligned deep line byte-identical (guard, no de-indent)" { Test-BytesEqual $contDeepBefore $contDeepAfter }
+
+    # --- continuation: DEEP-DOWN normalization on the REAL Geometry.cs:171/197 shape (issues_ktlee_GUI xls) ---
+    # `var a =` opens at indent 12; both continuation lines sit at an arbitrary 23 (aligned to nothing: line 1's
+    # parens are balanced, and line 2's indent is not the col after its own open `(` at 23) -> both pulled DOWN
+    # to opening+4 (16). This is the finding CONTINUATION_LINE.BAD_INDENTATION cleared by the deep-down extension.
+    $contGeoSrc = @'
+class C {
+    double Haversine(double deltaPhi, double phi1, double phi2, double deltaLambda) {
+            var a = (System.Math.Sin(deltaPhi / 2) * System.Math.Sin(deltaPhi / 2)) +
+                       (System.Math.Cos(phi1) * System.Math.Cos(phi2) *
+                       System.Math.Sin(deltaLambda / 2) * System.Math.Sin(deltaLambda / 2));
+            return a;
+    }
+}
+'@
+    $contGeoFile = New-Fixture "continuation_geo_deep.cs" $contGeoSrc
+    Check "continuation geo-deep: exit 0" { (Invoke-Tool @($contGeoFile, "--rules", "continuation")) -eq 0 }
+    $contGeo = Read-Text $contGeoFile
+    Check "continuation geo-deep: 2nd line (System.Math.Cos paren) pulled DOWN to opening+4 (16)" { $contGeo -match "(?m)^ {16}\(System\.Math\.Cos" }
+    Check "continuation geo-deep: 3rd line (System.Math.Sin) pulled DOWN to opening+4 (16)"      { $contGeo -match "(?m)^ {16}System\.Math\.Sin" }
+    $contGeo1 = [System.IO.File]::ReadAllBytes($contGeoFile)
+    Invoke-Tool @($contGeoFile, "--rules", "continuation") | Out-Null
+    Invoke-Tool @($contGeoFile, "--rules", "continuation") | Out-Null
+    $contGeo3 = [System.IO.File]::ReadAllBytes($contGeoFile)
+    Check "continuation geo-deep: idempotent (byte-identical after 2 more runs)" { Test-BytesEqual $contGeo1 $contGeo3 }
+
+    # GUARD (arg category): args aligned under the open `(` (col 16 == col after `Foo(`) are intentional alignment
+    # Sparrow accepts -> byte-identical, never pulled to opening+4.
+    $contAlignSrc = @'
+class C {
+    void M(int aaaa, int bbbb, int cccc) {
+            Foo(aaaa,
+                bbbb,
+                cccc);
+    }
+    void Foo(int a, int b, int c) { }
+}
+'@
+    $contAlignFile = New-Fixture "continuation_delim_aligned.cs" $contAlignSrc
+    $contAlignBefore = [System.IO.File]::ReadAllBytes($contAlignFile)
+    Check "continuation delim-aligned: exit 0" { (Invoke-Tool @($contAlignFile, "--rules", "continuation")) -eq 0 }
+    $contAlignAfter = [System.IO.File]::ReadAllBytes($contAlignFile)
+    Check "continuation delim-aligned: aligned args byte-identical (guard, no churn)" { Test-BytesEqual $contAlignBefore $contAlignAfter }
+
+    # NEGATIVE: a continuation already at exactly opening+4 -> no-op (no churn from the deep-down pass).
+    $contExactSrc = @'
+class C {
+    void M(bool a, bool b) {
+        if (a &&
+            b)
+        {
+        }
+    }
+}
+'@
+    $contExactFile = New-Fixture "continuation_exact.cs" $contExactSrc
+    $contExactBefore = [System.IO.File]::ReadAllBytes($contExactFile)
+    Check "continuation exact opening+4: exit 0" { (Invoke-Tool @($contExactFile, "--rules", "continuation")) -eq 0 }
+    $contExactAfter = [System.IO.File]::ReadAllBytes($contExactFile)
+    Check "continuation exact opening+4: byte-identical no churn" { Test-BytesEqual $contExactBefore $contExactAfter }
 
     # --- layout: linqalign ---
     $linqSrc = @'

@@ -775,6 +775,13 @@ namespace SparrowCommentFix
         {
             var touchedLines = new HashSet<int>();
 
+            // DEEP normalization runs FIRST so it can claim over-indented ("deep") continuation lines before the
+            // under-indent loops below touch them. It pulls a continuation line whose indent is DEEPER than the
+            // statement's opening line + 4 back DOWN to opening + 4 -- but ONLY when that indent is NOT aligned to
+            // an open delimiter (`(` `[` `{`) left unclosed by an earlier line of the same statement. Delimiter-
+            // aligned deep lines (intentional argument/element alignment Sparrow accepts) are left byte-identical.
+            AddDeepContinuationNormalizeEdits(text, root, touchedLines, edits, ruleCounts);
+
             foreach (ArgumentListSyntax list in root.DescendantNodes().OfType<ArgumentListSyntax>())
             {
                 int baseLine = LineStart(text, list.SpanStart);
@@ -876,6 +883,148 @@ namespace SparrowCommentFix
                 edits.Add(edit);
                 ruleCounts["continuation"]++;
             }
+        }
+
+        // Deep-continuation normalization: pull over-indented continuation lines DOWN to the statement's opening
+        // line indent + 4. Mirrors the four continuation categories of the under-indent loops (argument list,
+        // binary operator, method chain, initializer), but reindents in the opposite direction and only for lines
+        // strictly deeper than opening+4 that are NOT delimiter-aligned. Runs before the under-indent loops and
+        // shares `touchedLines`, so a line it normalizes (or one it deliberately leaves aligned) is not re-touched.
+        private static void AddDeepContinuationNormalizeEdits(string text, SyntaxNode root,
+            HashSet<int> touchedLines, List<Edit> edits, Dictionary<string, int> ruleCounts)
+        {
+            foreach (ArgumentListSyntax list in root.DescendantNodes().OfType<ArgumentListSyntax>())
+            {
+                SeparatedSyntaxList<ArgumentSyntax> args = list.Arguments;
+                for (int i = 0; i < args.Count; i++)
+                {
+                    ArgumentSyntax arg = args[i];
+                    int anchor = arg.SpanStart;
+                    if (i >= 1)
+                    {
+                        int sepStart = args.GetSeparator(i - 1).SpanStart;
+                        if (LineStart(text, sepStart) == LineStart(text, arg.SpanStart)) anchor = sepStart;
+                    }
+                    TryDeepNormalizeContinuation(text, list, anchor, touchedLines, edits, ruleCounts);
+                }
+            }
+
+            foreach (BinaryExpressionSyntax binary in root.DescendantNodes().OfType<BinaryExpressionSyntax>())
+            {
+                if (!IsContinuationBinaryKind(binary.Kind())) continue;
+                int opStart = binary.OperatorToken.SpanStart;
+                int rightStart = binary.Right.SpanStart;
+                int anchor = LineStart(text, opStart) == LineStart(text, rightStart) ? opStart : rightStart;
+                TryDeepNormalizeContinuation(text, binary, anchor, touchedLines, edits, ruleCounts);
+            }
+
+            foreach (MemberAccessExpressionSyntax member in root.DescendantNodes().OfType<MemberAccessExpressionSyntax>())
+            {
+                if (!member.IsKind(SyntaxKind.SimpleMemberAccessExpression)) continue;
+                TryDeepNormalizeContinuation(text, member, member.OperatorToken.SpanStart, touchedLines, edits, ruleCounts);
+            }
+
+            foreach (InitializerExpressionSyntax initializer in root.DescendantNodes().OfType<InitializerExpressionSyntax>())
+            {
+                TryDeepNormalizeContinuation(text, initializer, initializer.OpenBraceToken.SpanStart, touchedLines, edits, ruleCounts);
+                foreach (ExpressionSyntax element in initializer.Expressions)
+                    TryDeepNormalizeContinuation(text, initializer, element.SpanStart, touchedLines, edits, ruleCounts);
+                TryDeepNormalizeContinuation(text, initializer, initializer.CloseBraceToken.SpanStart, touchedLines, edits, ruleCounts);
+            }
+        }
+
+        // Reindent the physical line that `anchor` begins DOWN to (enclosing statement opening indent + 4), but only
+        // when: `anchor` is the first non-whitespace on its line (a real continuation start, no leading tabs), the
+        // line is a continuation (not the opening line), the line is STRICTLY deeper than opening+4 (shallower/exact
+        // lines are left for the under-indent loops / already correct), and the indent is NOT delimiter-aligned.
+        // Whitespace-only, compile-invariant, idempotent. Dirty anchors return WITHOUT claiming the line so a later
+        // node whose anchor truly begins the line can still handle it.
+        private static void TryDeepNormalizeContinuation(string text, SyntaxNode node, int anchor,
+            HashSet<int> touchedLines, List<Edit> edits, Dictionary<string, int> ruleCounts)
+        {
+            int line = LineStart(text, anchor);
+            string before = text.Substring(line, anchor - line);
+            if (before.Trim().Length != 0) return;   // code precedes the anchor -> not a continuation-start we manage
+            if (before.IndexOf('\t') >= 0) return;    // tab-indented -> leave (consistent with TrySetLineIndent)
+
+            SyntaxNode? opening = node.FirstAncestorOrSelf<StatementSyntax>() as SyntaxNode
+                                  ?? node.FirstAncestorOrSelf<MemberDeclarationSyntax>();
+            if (opening == null) return;
+            int openingLine = LineStart(text, opening.SpanStart);
+            if (openingLine == line) return;          // anchor is on the statement's opening line -> not a continuation
+
+            string desired = IndentBefore(text, opening.SpanStart) + "    ";
+            if (before.Length <= desired.Length) return;                 // not deep (under/exact handled elsewhere)
+            if (IsDelimiterAligned(text, opening.SpanStart, line, before.Length)) return;  // intentional alignment
+            if (!touchedLines.Add(line)) return;
+
+            edits.Add(new Edit(line, before.Length, desired));
+            ruleCounts["continuation"]++;
+        }
+
+        // True when `indentColumns` (the leading-space count of a continuation line starting at `to`) equals the
+        // column immediately after some bracket `(` `[` `{` that was opened between `from` (the statement start) and
+        // `to` and is still unclosed at `to` -- i.e. the line is intentionally aligned under an open delimiter.
+        // A minimal lexer skips brackets inside string/char literals and line/block comments so they don't miscount.
+        private static bool IsDelimiterAligned(string text, int from, int to, int indentColumns)
+        {
+            var stack = new List<int>();          // columns (relative to their own line start) of still-open brackets
+            int ls = LineStart(text, from);       // running line start, for column computation
+            int i = from;
+            while (i < to)
+            {
+                char c = text[i];
+                if (c == '\n') { i++; ls = i; continue; }
+                if (c == '\r') { i++; if (i < to && text[i] == '\n') i++; ls = i; continue; }
+                if (c == '/' && i + 1 < to && text[i + 1] == '/')
+                {
+                    while (i < to && text[i] != '\n' && text[i] != '\r') i++;
+                    continue;
+                }
+                if (c == '/' && i + 1 < to && text[i + 1] == '*')
+                {
+                    i += 2;
+                    while (i < to && !(text[i] == '*' && i + 1 < text.Length && text[i + 1] == '/'))
+                    {
+                        if (text[i] == '\n') ls = i + 1;
+                        i++;
+                    }
+                    if (i < to) i += 2;
+                    continue;
+                }
+                if (c == '\'')
+                {
+                    i++;
+                    while (i < to && text[i] != '\'') { if (text[i] == '\\') i++; i++; }
+                    if (i < to) i++;
+                    continue;
+                }
+                if (c == '"')
+                {
+                    bool verbatim = i > from && text[i - 1] == '@';
+                    i++;
+                    if (verbatim)
+                    {
+                        while (i < to)
+                        {
+                            if (text[i] == '"') { if (i + 1 < to && text[i + 1] == '"') { i += 2; continue; } i++; break; }
+                            if (text[i] == '\n') ls = i + 1;
+                            i++;
+                        }
+                    }
+                    else
+                    {
+                        while (i < to && text[i] != '"') { if (text[i] == '\\') i++; i++; }
+                        if (i < to) i++;
+                    }
+                    continue;
+                }
+                if (c == '(' || c == '[' || c == '{') { stack.Add(i - ls); i++; continue; }
+                if (c == ')' || c == ']' || c == '}') { if (stack.Count > 0) stack.RemoveAt(stack.Count - 1); i++; continue; }
+                i++;
+            }
+            foreach (int col in stack) if (col + 1 == indentColumns) return true;
+            return false;
         }
 
         // Binary operators whose operator-led / operator-trailing continuation lines the `continuation` rule

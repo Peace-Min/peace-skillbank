@@ -122,12 +122,9 @@ namespace SparrowXlsExport.Core
                 // 필터(AND). checker=정확 일치(체커 키), severity=집합 포함.
                 if (opts.Checker != null && checkerKey != opts.Checker) continue;
                 if (sevSet.Count > 0 && !sevSet.Contains(sev.Trim())) continue;
-                // Max is a DOCUMENTED NO-OP here, matching Run-Triage.ps1 prepare exactly. In the PS script the
-                // cap guard is `$PSBoundParameters.ContainsKey('Max')`, evaluated INSIDE the parameterless
-                // Invoke-Prepare function whose $PSBoundParameters is always empty — so -Max never caps prepare.
-                // Byte-identical parity requires we not cap either. (The GUI enforces Max at the PARSE stage,
-                // where SparrowExporter honours it correctly; PrepareOptions.Max is kept only for API shape.)
-                _ = opts.Max;
+                // Max caps the number of processed items (requests + unresolved) among the filtered rows,
+                // matching Run-Triage.ps1 prepare (guard: `$Max -gt 0`). Break before processing the (Max+1)th.
+                if (opts.Max is int _max && _max > 0 && requestCount + unresolvedCount >= _max) break;
 
                 string idPart = id.Trim().Length > 0 ? id.Trim() : ordinal.ToString("D5", CultureInfo.InvariantCulture);
                 string itemLeaf = mdField.Length > 0 ? LeafName(mdField) : "";

@@ -13,10 +13,17 @@ namespace SparrowSyntaxFix
         public override SyntaxNode? VisitForEachStatement(ForEachStatementSyntax node)
         {
             ForEachStatementSyntax visited = (ForEachStatementSyntax)base.VisitForEachStatement(node)!;
+            // Skip when the loop already uses `var` (nothing to widen) or when the source is already a
+            // Cast<T>(...) / OfType<T>(...) invocation (idempotent — a second pass must be a no-op).
             if (VarRewriteHelpers.IsVarType(visited.Type)) return visited;
             if (IsAlreadyCastOrOfType(visited.Expression)) return visited;
-            if (!IsSafeXmlNodeListPattern(visited)) return visited;
+            if (visited.Expression == null) return visited;
 
+            // Generalized beyond XmlNode: `foreach (T x in expr)` already casts EACH element to the explicit
+            // type T per iteration, so `Enumerable.Cast<T>(expr)` is semantics-equivalent for ANY collection
+            // expression (identifier, member access, invocation) whether the collection is generic
+            // (List<T>) or non-generic (XmlNodeList, DataColumnCollection, UIElementCollection, ItemCollection).
+            // Fully-qualified System.Linq.Enumerable.Cast needs no `using`. Remains review-needed + build-gated.
             TypeSyntax oldType = visited.Type;
             TypeSyntax varType = VarRewriteHelpers.VarLike(oldType);
 
@@ -35,31 +42,6 @@ namespace SparrowSyntaxFix
 
             Count++;
             return visited.WithType(varType).WithExpression(castExpression);
-        }
-
-        private static bool IsSafeXmlNodeListPattern(ForEachStatementSyntax node)
-        {
-            if (!VarRewriteHelpers.TypeMatchesAny(node.Type, "XmlNode", "System.Xml.XmlNode")) return false;
-            if (HasUserDefinedXmlNodeNames(node)) return false;
-            // The original `foreach (XmlNode x in <expr>)` already casts each element to XmlNode per
-            // iteration, so `Enumerable.Cast<XmlNode>(<expr>)` is semantics-equivalent for ANY collection
-            // expression — identifier, member access (`node.ChildNodes`), invocation, field, parameter.
-            // (The prior guard required <expr> to be a locally-declared XmlNodeList identifier, which
-            // missed the dominant real pattern `foreach (XmlNode c in x.ChildNodes)` -> 0 conversions.)
-            // We only require a non-null collection expression; safety is preserved because element access
-            // is unchanged. review-needed + build-gate covers the rare non-IEnumerable-foreachable case.
-            return node.Expression != null;
-        }
-
-        private static bool HasUserDefinedXmlNodeNames(SyntaxNode node)
-        {
-            SyntaxNode root = node.SyntaxTree.GetRoot();
-            foreach (TypeDeclarationSyntax type in root.DescendantNodes().OfType<TypeDeclarationSyntax>())
-            {
-                string name = type.Identifier.ValueText;
-                if (name == "XmlNode" || name == "XmlNodeList") return true;
-            }
-            return false;
         }
 
         private static bool IsAlreadyCastOrOfType(ExpressionSyntax expression)

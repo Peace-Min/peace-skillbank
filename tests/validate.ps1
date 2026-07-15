@@ -3,7 +3,8 @@ param(
     [switch]$IncludeClrMdE2E,     # opt-in: also build+dump+run the ClrMD root-chain tool (needs .NET SDK; heavy)
     [switch]$IncludeSparrowE2E,   # opt-in: also build+run the Sparrow XLS export tool (needs .NET SDK + NPOI restore)
     [switch]$IncludeSyntaxFixE2E, # opt-in: also build+run the SparrowSyntaxFix rewriter tool (needs .NET SDK + Roslyn restore)
-    [switch]$IncludeCommentE2E    # opt-in: also build+run the SparrowCommentFix tool (needs .NET SDK + Roslyn restore)
+    [switch]$IncludeCommentE2E,   # opt-in: also build+run the SparrowCommentFix tool (needs .NET SDK + Roslyn restore)
+    [switch]$IncludeSparrowLoopTests # opt-in: also run the cross-rule loop/idempotency/compile tests (needs .NET SDK + Roslyn/WPF)
 )
 
 $ErrorActionPreference = "Stop"
@@ -231,6 +232,13 @@ foreach ($commentFile in @($commentToolProj, $commentToolProgram, $commentE2E)) 
 }
 Test-PowerShellSyntax -Path $commentE2E
 if ($IncludeCommentE2E) { & $commentE2E -RepositoryRoot $RepositoryRoot }
+
+# Sparrow cross-rule loop/idempotency/compile tests ("충분한 루프 테스트"): always syntax-check + assert the
+# script exists; only RUN when opted in (builds both tools + WPF/System.Data compile checks; needs the SDK).
+$sparrowLoop = Join-Path $RepositoryRoot "tests\sparrow-loop-tests.ps1"
+Assert-Condition (Test-Path -LiteralPath $sparrowLoop) "Missing Sparrow loop test script"
+Test-PowerShellSyntax -Path $sparrowLoop
+if ($IncludeSparrowLoopTests) { & $sparrowLoop -RepositoryRoot $RepositoryRoot }
 
 # Track A auto-fix kit (LLM-free): assert the .editorconfig + runner exist and the runner parses.
 # (Run-TrackA.ps1 carries Korean text -> must stay UTF-8-with-BOM or PS 5.1 mis-parses it.)

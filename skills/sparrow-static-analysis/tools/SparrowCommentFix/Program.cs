@@ -611,26 +611,69 @@ namespace SparrowCommentFix
             foreach (TypeDeclarationSyntax type in root.DescendantNodes().OfType<TypeDeclarationSyntax>())
             {
                 SyntaxList<MemberDeclarationSyntax> members = type.Members;
+                // Loop from i=1 so the FIRST member (right after `{`) never gets a blank before it. Insert one
+                // blank between EVERY consecutive method/property pair -- not just some.
                 for (int i = 1; i < members.Count; i++)
                 {
                     MemberDeclarationSyntax prev = members[i - 1];
                     MemberDeclarationSyntax next = members[i];
                     if (!IsBlankLineTarget(prev) || !IsBlankLineTarget(next)) continue;
-                    if (HasRiskyTrivia(prev) || HasRiskyTrivia(next)) continue;
-                    if (next.AttributeLists.Count > 0) continue;
+                    // Only directives / disabled / skipped tokens between the two members are unsafe. A comment
+                    // (or comment run / attribute list) preceding `next` is part of `next` -- it must NOT block
+                    // the edit; the blank goes BEFORE that comment block (handled by MemberBlockStart below).
+                    if (HasRiskyBetween(prev, next)) continue;
                     if (LineStart(text, prev.SpanStart) == LineStart(text, next.SpanStart)) continue;
-                    int betweenStart = prev.Span.End;
-                    int betweenEnd = next.SpanStart;
-                    if (betweenStart >= betweenEnd) continue;
-                    string between = text.Substring(betweenStart, betweenEnd - betweenStart);
-                    if (between.Trim().Length != 0) continue;
-                    if (HasCommentOrDirectiveBetween(text, betweenStart, betweenEnd)) continue;
-                    if (NewlineCount(text, betweenStart, betweenEnd) >= 2) continue;
-                    int insertAt = LineStart(text, next.SpanStart);
-                    edits.Add(new Edit(insertAt, 0, DetectNewline(text)));
+
+                    // The blank belongs before `next`'s leading comment/attribute block, never between the
+                    // comment and its member. Attributes live inside next.Span (so next.SpanStart already
+                    // precedes them); own-line leading comments live in leading trivia, handled explicitly.
+                    int blockStart = MemberBlockStart(text, next);
+                    int gapStart = prev.Span.End;
+                    if (gapStart >= blockStart) continue;
+                    // Idempotent: a blank line already sits before the block (>=2 newlines from prev's end).
+                    if (NewlineCount(text, gapStart, blockStart) >= 2) continue;
+                    edits.Add(new Edit(blockStart, 0, DetectNewline(text)));
                     ruleCounts["memberblank"]++;
                 }
             }
+        }
+
+        // Start of `next`'s member block = the line start of its FIRST own-line leading comment (that comment
+        // run belongs to the member below it), or the line start of the member token itself when it has no
+        // leading comment. Attributes are children of the member node (inside next.SpanStart), so they need no
+        // special handling here.
+        private static int MemberBlockStart(string text, MemberDeclarationSyntax next)
+        {
+            foreach (SyntaxTrivia trivia in next.GetLeadingTrivia())
+            {
+                if (trivia.IsKind(SyntaxKind.SingleLineCommentTrivia)
+                    || trivia.IsKind(SyntaxKind.MultiLineCommentTrivia)
+                    || trivia.IsKind(SyntaxKind.SingleLineDocumentationCommentTrivia)
+                    || trivia.IsKind(SyntaxKind.MultiLineDocumentationCommentTrivia))
+                {
+                    return LineStart(text, trivia.FullSpan.Start);
+                }
+            }
+            return LineStart(text, next.SpanStart);
+        }
+
+        // Directive / disabled-text / skipped-tokens trivia between two members makes a blank-line insertion
+        // unsafe. Comments do NOT count -- they legitimately precede a member. Only the gap trivia matters, so
+        // we inspect prev's trailing trivia and next's leading trivia (which together span the between-region).
+        private static bool HasRiskyBetween(MemberDeclarationSyntax prev, MemberDeclarationSyntax next)
+        {
+            foreach (SyntaxTrivia trivia in prev.GetTrailingTrivia())
+                if (IsRiskyGapTrivia(trivia)) return true;
+            foreach (SyntaxTrivia trivia in next.GetLeadingTrivia())
+                if (IsRiskyGapTrivia(trivia)) return true;
+            return false;
+        }
+
+        private static bool IsRiskyGapTrivia(SyntaxTrivia trivia)
+        {
+            return trivia.IsDirective
+                   || trivia.IsKind(SyntaxKind.DisabledTextTrivia)
+                   || trivia.IsKind(SyntaxKind.SkippedTokensTrivia);
         }
 
         private static bool IsBlankLineTarget(MemberDeclarationSyntax member)
@@ -761,7 +804,7 @@ namespace SparrowCommentFix
 
             foreach (BinaryExpressionSyntax binary in root.DescendantNodes().OfType<BinaryExpressionSyntax>())
             {
-                if (!binary.IsKind(SyntaxKind.LogicalAndExpression) && !binary.IsKind(SyntaxKind.LogicalOrExpression)) continue;
+                if (!IsContinuationBinaryKind(binary.Kind())) continue;
                 int baseLine = LineStart(text, binary.Left.SpanStart);
                 // The continuation line's first token is either the operator (operator-led style, dominant in
                 // OSTES: `if (a\n    && b)`) or the right operand (operator-trailing style: `if (a &&\n    b)`).
@@ -779,6 +822,32 @@ namespace SparrowCommentFix
                     edits.Add(edit);
                     ruleCounts["continuation"]++;
                 }
+            }
+        }
+
+        // Binary operators whose operator-led / operator-trailing continuation lines the `continuation` rule
+        // re-indents to statement-indent + 4. Originally only &&/|| (logical); broadened to arithmetic, shift,
+        // bitwise, and string-concat (`+` on strings is AddExpression — already covered). The anchor + indent
+        // logic is identical for every kind; only the physical continuation line's leading whitespace is touched.
+        private static bool IsContinuationBinaryKind(SyntaxKind kind)
+        {
+            switch (kind)
+            {
+                case SyntaxKind.LogicalAndExpression:      // &&
+                case SyntaxKind.LogicalOrExpression:       // ||
+                case SyntaxKind.AddExpression:             // +  (also string concatenation)
+                case SyntaxKind.SubtractExpression:        // -
+                case SyntaxKind.MultiplyExpression:        // *
+                case SyntaxKind.DivideExpression:          // /
+                case SyntaxKind.ModuloExpression:          // %
+                case SyntaxKind.LeftShiftExpression:       // <<
+                case SyntaxKind.RightShiftExpression:      // >>
+                case SyntaxKind.BitwiseAndExpression:      // &
+                case SyntaxKind.BitwiseOrExpression:       // |
+                case SyntaxKind.ExclusiveOrExpression:     // ^
+                    return true;
+                default:
+                    return false;
             }
         }
 

@@ -241,16 +241,49 @@ namespace SparrowSyntaxFix.FixtureTests
                 "class C\n{\n    void M(System.Xml.XmlNode root)\n    {\n        foreach (XmlNode node in root.ChildNodes)\n        {\n            _ = node.Name;\n        }\n    }\n}\n",
                 "class C\n{\n    void M(System.Xml.XmlNode root)\n    {\n        foreach (var node in System.Linq.Enumerable.Cast<XmlNode>(root.ChildNodes))\n        {\n            _ = node.Name;\n        }\n    }\n}\n",
                 SyntaxRule.ForeachCast, false, false, foreachCast: true);
+
+            // Generalized beyond XmlNode: ANY explicit element type over a non-generic collection converts.
+            // DataColumn over DataTable.Columns (DataColumnCollection : non-generic IEnumerable).
+            ExpectTransform("DataColumn over member-access collection converts",
+                "class C\n{\n    void M(System.Data.DataTable srcTable)\n    {\n        foreach (System.Data.DataColumn c in srcTable.Columns)\n        {\n            _ = c.ColumnName;\n        }\n    }\n}\n",
+                "class C\n{\n    void M(System.Data.DataTable srcTable)\n    {\n        foreach (var c in System.Linq.Enumerable.Cast<System.Data.DataColumn>(srcTable.Columns))\n        {\n            _ = c.ColumnName;\n        }\n    }\n}\n",
+                SyntaxRule.ForeachCast, false, false, foreachCast: true);
+
+            // TabItem over ItemCollection (WPF, non-generic IEnumerable).
+            ExpectTransform("TabItem over WPF ItemCollection converts",
+                "class C\n{\n    void M(System.Windows.Controls.TabControl tab)\n    {\n        foreach (System.Windows.Controls.TabItem obj in tab.Items)\n        {\n            _ = obj;\n        }\n    }\n}\n",
+                "class C\n{\n    void M(System.Windows.Controls.TabControl tab)\n    {\n        foreach (var obj in System.Linq.Enumerable.Cast<System.Windows.Controls.TabItem>(tab.Items))\n        {\n            _ = obj;\n        }\n    }\n}\n",
+                SyntaxRule.ForeachCast, false, false, foreachCast: true);
+
+            // Generic collection member-access: List<ModelTreeData> over delObject.Items.
+            ExpectTransform("explicit type over generic List<T> member-access converts",
+                "class C\n{\n    void M(H delObject)\n    {\n        foreach (ModelTreeData x in delObject.Items)\n        {\n            _ = x;\n        }\n    }\n}\n",
+                "class C\n{\n    void M(H delObject)\n    {\n        foreach (var x in System.Linq.Enumerable.Cast<ModelTreeData>(delObject.Items))\n        {\n            _ = x;\n        }\n    }\n}\n",
+                SyntaxRule.ForeachCast, false, false, foreachCast: true);
+
+            // Formerly a NEGATIVE ("pattern enumerator skipped"): an explicit type over a non-XmlNode
+            // collection now CONVERTS (the XmlNode-only restriction was dropped). Cast<Foo>(xs) is
+            // semantics-equivalent because the original foreach already cast each element to Foo.
+            ExpectTransform("explicit type over arbitrary collection now converts",
+                "class C\n{\n    void M()\n    {\n        var xs = GetItems();\n        foreach (Foo node in xs)\n        {\n            _ = node;\n        }\n    }\n}\n",
+                "class C\n{\n    void M()\n    {\n        var xs = GetItems();\n        foreach (var node in System.Linq.Enumerable.Cast<Foo>(xs))\n        {\n            _ = node;\n        }\n    }\n}\n",
+                SyntaxRule.ForeachCast, false, false, foreachCast: true);
         }
 
         private static void ForeachCastNegatives()
         {
             Console.WriteLine("[foreachcast negative]");
-            ExpectUnchanged("pattern enumerator skipped",
-                "class C\n{\n    void M()\n    {\n        PatternOnly xs = GetPatternOnly();\n        foreach (Foo node in xs)\n        {\n            _ = node;\n        }\n    }\n}\n",
+            // Already `var` -> nothing to widen.
+            ExpectUnchanged("already-var loop skipped",
+                "class C\n{\n    void M()\n    {\n        foreach (var node in xs)\n        {\n            _ = node;\n        }\n    }\n}\n",
                 SyntaxRule.ForeachCast);
-            ExpectUnchanged("user-defined XmlNode names skipped",
-                "class XmlNode { }\nclass XmlNodeList { }\nclass C\n{\n    void M()\n    {\n        XmlNodeList clsNodes = GetNodes();\n        foreach (XmlNode node in clsNodes)\n        {\n            _ = node;\n        }\n    }\n}\n",
+            // Already Cast<T>(...) -> idempotent: a second pass must be a no-op.
+            ExpectUnchanged("already-Cast<T> source skipped (idempotent)",
+                "class C\n{\n    void M()\n    {\n        foreach (XmlNode node in System.Linq.Enumerable.Cast<XmlNode>(clsNodes))\n        {\n            _ = node.Name;\n        }\n    }\n}\n",
+                SyntaxRule.ForeachCast);
+            // Already OfType<T>(...) -> idempotent no-op.
+            ExpectUnchanged("already-OfType<T> source skipped (idempotent)",
+                "class C\n{\n    void M()\n    {\n        foreach (XmlNode node in System.Linq.Enumerable.OfType<XmlNode>(clsNodes))\n        {\n            _ = node.Name;\n        }\n    }\n}\n",
                 SyntaxRule.ForeachCast);
         }
 

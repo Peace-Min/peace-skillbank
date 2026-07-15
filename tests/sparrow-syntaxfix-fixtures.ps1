@@ -67,8 +67,8 @@ try {
         "class InitTarget { public int A { get; set; } public int B { get; set; } }",
         "class CComponentInfo { }",
         "class CPlayerObjectInfo { }",
-        "class PatternOnly { public PatternEnumerator GetEnumerator() { return new PatternEnumerator(); } }",
-        "class PatternEnumerator { public FooNode Current { get { return new FooNode(); } } public bool MoveNext() { return false; } }",
+        "class PatternOnly : System.Collections.IEnumerable { public System.Collections.IEnumerator GetEnumerator() { return new PatternEnumerator(); } }",
+        "class PatternEnumerator : System.Collections.IEnumerator { public object Current { get { return new FooNode(); } } public bool MoveNext() { return false; } public void Reset() { } }",
         "class FooNode { }",
         "",
         "class C",
@@ -169,7 +169,9 @@ try {
     Check "arrayvar-narrowing method group target typing skipped" { $text.Contains("Delegate[] handlers = new Action[] { Target };") }
     Check "arrayvar-narrowing parenthesized method group target typing skipped" { $text.Contains("Delegate[] handlers2 = new Action[] { (Target) };") }
     Check "foreachcast applied" { $text.Contains("foreach (var node in System.Linq.Enumerable.Cast<XmlNode>(clsNodes))") }
-    Check "foreachcast pattern enumerator skipped" { $text.Contains("foreach (FooNode item in pattern)") }
+    # Generalized beyond XmlNode: an explicit element type over ANY IEnumerable collection now converts
+    # (formerly skipped). PatternOnly is IEnumerable, so Cast<FooNode>(pattern) compiles.
+    Check "foreachcast explicit-type over IEnumerable converts" { $text.Contains("foreach (var item in System.Linq.Enumerable.Cast<FooNode>(pattern))") }
     Check "parens applied" { $text.Contains("(nIndex > 0) && (nIndex <= nCount - 1)") }
 
     $buildOut = (& $dotnet.Source build $proj -c Release -v q 2>&1 | Out-String)

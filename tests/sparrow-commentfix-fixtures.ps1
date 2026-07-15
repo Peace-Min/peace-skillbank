@@ -231,6 +231,35 @@ class C { void A() { } void B() { } }
     $compactMemberAfter2 = [System.IO.File]::ReadAllBytes($compactMemberFile)
     Check "memberblank compact: second run byte-identical" { Test-BytesEqual $compactMemberAfter1 $compactMemberAfter2 }
 
+    # --- memberblank: comment-before-member + several consecutive members (real interface pattern) ---
+    # A leading comment BELONGS to the member below it, so the blank goes BEFORE the comment. Every pair of
+    # consecutive members after the first must be separated -> here 3 blanks (before members 2, 3, 4).
+    $memberCommentSrc = @'
+public interface I {
+  uint QueryPreProcessingDataCount(int[] a);
+  // 20210407 MSeungH CA1026.
+  DataTable QueryPreProcessingData(int[] a, uint b, uint c);
+  DataTable QueryPreProcessingAddVariableInfo();
+  DataTable QueryDataFilteringInfoList();
+}
+'@
+    $memberCommentFile = New-Fixture "memberblank_comment.cs" $memberCommentSrc
+    Check "memberblank comment: exit 0" { (Invoke-Tool @($memberCommentFile, "--rules", "memberblank")) -eq 0 }
+    $mbc = Read-Text $memberCommentFile
+    # blank inserted BEFORE the leading comment (comment stays glued to its member below it)
+    Check "memberblank comment: blank before comment block (not between comment and member)" { $mbc.Contains("QueryPreProcessingDataCount(int[] a);`r`n`r`n  // 20210407 MSeungH CA1026.`r`n  DataTable QueryPreProcessingData") -or $mbc.Contains("QueryPreProcessingDataCount(int[] a);`n`n  // 20210407 MSeungH CA1026.`n  DataTable QueryPreProcessingData") }
+    Check "memberblank comment: blank before 3rd member" { $mbc.Contains("uint b, uint c);`r`n`r`n  DataTable QueryPreProcessingAddVariableInfo") -or $mbc.Contains("uint b, uint c);`n`n  DataTable QueryPreProcessingAddVariableInfo") }
+    Check "memberblank comment: blank before 4th member" { $mbc.Contains("QueryPreProcessingAddVariableInfo();`r`n`r`n  DataTable QueryDataFilteringInfoList") -or $mbc.Contains("QueryPreProcessingAddVariableInfo();`n`n  DataTable QueryDataFilteringInfoList") }
+    Check "memberblank comment: no blank before FIRST member (right after {)" { $mbc.Contains("public interface I {`r`n  uint QueryPreProcessingDataCount") -or $mbc.Contains("public interface I {`n  uint QueryPreProcessingDataCount") }
+    Check "memberblank comment: no double blanks" { (-not $mbc.Contains("`r`n`r`n`r`n")) -and (-not $mbc.Contains("`n`n`n")) }
+    # idempotency: apply 3 MORE times -> byte-identical after the first application.
+    $mbc1 = [System.IO.File]::ReadAllBytes($memberCommentFile)
+    Invoke-Tool @($memberCommentFile, "--rules", "memberblank") | Out-Null
+    Invoke-Tool @($memberCommentFile, "--rules", "memberblank") | Out-Null
+    Invoke-Tool @($memberCommentFile, "--rules", "memberblank") | Out-Null
+    $mbc4 = [System.IO.File]::ReadAllBytes($memberCommentFile)
+    Check "memberblank comment: byte-identical after 3 more runs (idempotent)" { Test-BytesEqual $mbc1 $mbc4 }
+
     # --- layout: onedeclaration ---
     $declSrc = @'
 class C {
@@ -349,6 +378,64 @@ public class C {
     Check "continuation op-led already-correct: exit 0" { (Invoke-Tool @($contOkFile, "--rules", "continuation")) -eq 0 }
     $contOkAfter = [System.IO.File]::ReadAllBytes($contOkFile)
     Check "continuation op-led already-correct: byte-identical no churn" { Test-BytesEqual $contOkBefore $contOkAfter }
+
+    # --- continuation: ALL binary operators (arithmetic / string-concat / bitwise / shift), not just &&/|| ---
+    # Real OSTES continuations led by +, |, << etc. must re-indent to statement-indent + 4, same as &&/||.
+    $contOpsSrc = @'
+class C {
+    void M() {
+        sql = $"SELECT {a} " +
+        $"FROM {b} ";
+        x = (color.A << 24) |
+        (color.R << 16);
+        d = System.Math.Abs(left.R - right.R) +
+        System.Math.Abs(left.G - right.G);
+    }
+}
+'@
+    $contOpsFile = New-Fixture "continuation_ops.cs" $contOpsSrc
+    Check "continuation ops: exit 0" { (Invoke-Tool @($contOpsFile, "--rules", "continuation")) -eq 0 }
+    $cops = Read-Text $contOpsFile
+    Check "continuation ops: string-concat '+' continuation indented to stmt+4" { $cops.Contains("        sql = `$`"SELECT {a} `" +`r`n            `$`"FROM {b} `";") -or $cops.Contains("        sql = `$`"SELECT {a} `" +`n            `$`"FROM {b} `";") }
+    Check "continuation ops: bitwise '|' continuation indented to stmt+4" { $cops.Contains("        x = (color.A << 24) |`r`n            (color.R << 16);") -or $cops.Contains("        x = (color.A << 24) |`n            (color.R << 16);") }
+    Check "continuation ops: arithmetic '+' continuation indented to stmt+4" { $cops.Contains("right.R) +`r`n            System.Math.Abs(left.G") -or $cops.Contains("right.R) +`n            System.Math.Abs(left.G") }
+    # idempotency: apply 3 MORE times -> byte-identical after the first application.
+    $cops1 = [System.IO.File]::ReadAllBytes($contOpsFile)
+    Invoke-Tool @($contOpsFile, "--rules", "continuation") | Out-Null
+    Invoke-Tool @($contOpsFile, "--rules", "continuation") | Out-Null
+    Invoke-Tool @($contOpsFile, "--rules", "continuation") | Out-Null
+    $cops4 = [System.IO.File]::ReadAllBytes($contOpsFile)
+    Check "continuation ops: byte-identical after 3 more runs (idempotent)" { Test-BytesEqual $cops1 $cops4 }
+
+    # conservative: an already-correct operator continuation (already at stmt+4) must not churn.
+    $contOpsOkSrc = @'
+class C {
+    void M() {
+        d = a +
+            b;
+    }
+}
+'@
+    $contOpsOkFile = New-Fixture "continuation_ops_ok.cs" $contOpsOkSrc
+    $contOpsOkBefore = [System.IO.File]::ReadAllBytes($contOpsOkFile)
+    Check "continuation ops already-correct: exit 0" { (Invoke-Tool @($contOpsOkFile, "--rules", "continuation")) -eq 0 }
+    $contOpsOkAfter = [System.IO.File]::ReadAllBytes($contOpsOkFile)
+    Check "continuation ops already-correct: byte-identical no churn" { Test-BytesEqual $contOpsOkBefore $contOpsOkAfter }
+
+    # conservative: an over-indented operator continuation is left alone (never de-indented).
+    $contOpsOverSrc = @'
+class C {
+    void M() {
+        d = a +
+                    b;
+    }
+}
+'@
+    $contOpsOverFile = New-Fixture "continuation_ops_over.cs" $contOpsOverSrc
+    $contOpsOverBefore = [System.IO.File]::ReadAllBytes($contOpsOverFile)
+    Check "continuation ops over-indented: exit 0" { (Invoke-Tool @($contOpsOverFile, "--rules", "continuation")) -eq 0 }
+    $contOpsOverAfter = [System.IO.File]::ReadAllBytes($contOpsOverFile)
+    Check "continuation ops over-indented: byte-identical no churn" { Test-BytesEqual $contOpsOverBefore $contOpsOverAfter }
 
     # --- layout: linqalign ---
     $linqSrc = @'

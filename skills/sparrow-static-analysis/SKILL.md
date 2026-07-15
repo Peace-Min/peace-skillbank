@@ -13,6 +13,19 @@ Work only inside `skills/sparrow-static-analysis` and the explicit Sparrow XLS/s
 
 Track A and Track B are deterministic tooling tracks. Track C is not an autofix track; it is an LLM/human judgment workflow.
 
+## Windows Launcher UX
+
+For normal one-shot local execution, prefer the `.cmd` launchers next to the PowerShell scripts:
+
+- `references/Run-TrackA.cmd`
+- `tools/SparrowSyntaxFix/Run-SparrowSyntaxFix.cmd`
+- `tools/SparrowCommentFix/Run-SparrowCommentFix.cmd`
+- `tools/Run-SparrowAll.cmd`
+
+The `.cmd` launchers call the matching `.ps1` with `powershell.exe -NoProfile -ExecutionPolicy Bypass -NoExit -File ...`.
+This preserves the existing prompt flow (solution path, optional rules, commit choice) while preventing a newly opened PowerShell window from closing before the user can read errors or completion output.
+Use raw `.ps1` files from an already-open PowerShell terminal, tests, or automation.
+
 ## Track A
 
 For code-rule fixes, use the one-shot runner UX. Do not ask the user to memorize `-Rules` values for normal operation.

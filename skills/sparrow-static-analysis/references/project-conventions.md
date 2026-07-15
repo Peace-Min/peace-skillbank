@@ -25,7 +25,8 @@
 
 - `catch(Exception)` / `catch`(무형) **절대 금지** — 최상위 경계 핸들러도 예외 없음.
 - try 본문에서 호출하는 각 API의 **문서화된 예외형을 전부 열거**해, 예외형마다 명시 catch 절을 작성한다.
-- **예외 열거 근거 = ExceptionAnalyzer 로그**: 이 폴더에 넣어둔 `*_ApiCallCandidates.txt`(사용자 제공)에서 해당 try(파일:라인) 구간의 예외 목록·권장 catch 순서(파생→기반, Exception 제외)를 우선 근거로 삼는다. 로그가 없으면 예외를 추측하지 말고 보류(needs_context: ExceptionAnalyzer 로그 필요).
+- **예외 열거 = LLM 직접**: try 본문의 코드·호출에서 **발생 가능한 예외를 LLM이 직접 열거**해 예외형별 명시 catch를 작성한다(파생→기반 순서). ExceptionAnalyzer 로그(`*_ApiCallCandidates.txt`)가 폴더에 있으면 그 예외 목록을 **교차 근거로 사용(선택)**한다.
+- **완전성 주의**: OVERLY_BROAD_CATCH 체커는 `catch(Exception)` 여부만 보므로 명시 catch 일부만 있어도 통과하지만, 신뢰성시험은 **발생 가능 예외의 누락 없는 처리**를 요구한다. 확신할 수 있는 예외형만 명시하고, **확신 없는/미상 예외형은 추측하지 말고 보류(needs_context)** 로 두고 문맥·예외맵 확보 후 수정한다.
 - 빈 catch 금지 → `LogUtil.Error(this, ex.ToString())`로 기록. 각 명시 catch 본문은 LogUtil.Error + **원본 catch 로직(return/rethrow 등) 보존**.
 - 예외 열거가 부족하면 skip이 아니다 → 예외목록/소스를 확보한 뒤 **반드시 수정**(보류+needs_context).
 - 참고: `SafeFileUtil.SafeDelete`가 File 관련 예외를 전부 명시 catch로 잡는 모범 패턴이다.

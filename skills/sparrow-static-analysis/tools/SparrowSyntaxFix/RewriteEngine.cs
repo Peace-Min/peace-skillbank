@@ -28,9 +28,12 @@ namespace SparrowSyntaxFix
         ObjectInitializer = 1 << 7,
         ArrayVarSafe = 1 << 8,
         ArrayVarNarrowing = 1 << 9,
+        ForVar = 1 << 10,
+        FieldSplit = 1 << 11,
+        EmptyStmt = 1 << 12,
         Default = Parens | ObjectVarSafe | ObviousVar | ArrayVarSafe,
         All = NullVar | Parens | ObjectVarSafe | ForeachCast | ObviousVar | ObjectVarNarrowing | LocalConst
-              | ObjectInitializer | ArrayVarSafe | ArrayVarNarrowing,
+              | ObjectInitializer | ArrayVarSafe | ArrayVarNarrowing | ForVar | FieldSplit | EmptyStmt,
     }
 
     // Result of a single-file rewrite: the new full text + per-rule edit counts + whether text changed.
@@ -56,6 +59,9 @@ namespace SparrowSyntaxFix
         public int ObjectInitializerEdits => Get("objectinitializer");
         public int ArrayVarSafeEdits => Get("arrayvar-safe");
         public int ArrayVarNarrowingEdits => Get("arrayvar-narrowing");
+        public int ForVarEdits => Get("forvar");
+        public int FieldSplitEdits => Get("fieldsplit");
+        public int EmptyStmtEdits => Get("emptystmt");
         public bool Changed { get; }
 
         private int Get(string key) => Counts.TryGetValue(key, out int value) ? value : 0;
@@ -72,6 +78,26 @@ namespace SparrowSyntaxFix
             SyntaxNode current = root;
 
             var counts = NewCounts();
+
+            if ((rules & SyntaxRule.ForVar) != 0)
+            {
+                var rw = new ForVarRewriter();
+                current = rw.Visit(current) ?? current;
+                counts["forvar"] = rw.Count;
+            }
+
+            if ((rules & SyntaxRule.FieldSplit) != 0)
+            {
+                current = FieldSplitRewriter.Rewrite(current, source, out int fieldSplitCount);
+                counts["fieldsplit"] = fieldSplitCount;
+            }
+
+            if ((rules & SyntaxRule.EmptyStmt) != 0)
+            {
+                var rw = new EmptyStmtRewriter();
+                current = rw.Visit(current) ?? current;
+                counts["emptystmt"] = rw.Count;
+            }
 
             if ((rules & SyntaxRule.NullVar) != 0)
             {
@@ -162,6 +188,9 @@ namespace SparrowSyntaxFix
                 ["objectinitializer"] = 0,
                 ["arrayvar-safe"] = 0,
                 ["arrayvar-narrowing"] = 0,
+                ["forvar"] = 0,
+                ["fieldsplit"] = 0,
+                ["emptystmt"] = 0,
             };
         }
     }

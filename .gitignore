@@ -50,3 +50,9 @@ skills/sparrow-static-analysis/tools/**/bin/
 skills/sparrow-static-analysis/tools/**/obj/
 *.items/
 fixture.xls
+
+# tests/SparrowExhaustiveXls: commit the generator source (csproj/.cs), never its build outputs. The exhaustive
+# xls coverage test reads the REAL OSTES issues .xls from Downloads and writes its snippets/report to TEMP only.
+tests/**/bin/
+tests/**/obj/
+issues_OSTES_*.xls

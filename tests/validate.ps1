@@ -5,7 +5,8 @@ param(
     [switch]$IncludeSyntaxFixE2E, # opt-in: also build+run the SparrowSyntaxFix rewriter tool (needs .NET SDK + Roslyn restore)
     [switch]$IncludeCommentE2E,   # opt-in: also build+run the SparrowCommentFix tool (needs .NET SDK + Roslyn restore)
     [switch]$IncludeSparrowLoopTests, # opt-in: also run the cross-rule loop/idempotency/compile tests (needs .NET SDK + Roslyn/WPF)
-    [switch]$IncludeSparrowRealPatternTests # opt-in: also run the grounded real-OSTES-pattern pipeline regression (needs .NET SDK + Roslyn)
+    [switch]$IncludeSparrowRealPatternTests, # opt-in: also run the grounded real-OSTES-pattern pipeline regression (needs .NET SDK + Roslyn)
+    [switch]$IncludeSparrowExhaustiveXls # opt-in: exhaustive Track A/B coverage over the REAL OSTES xls (needs .NET SDK + the xls in Downloads; self-skips if absent)
 )
 
 $ErrorActionPreference = "Stop"
@@ -248,6 +249,20 @@ $sparrowRealPattern = Join-Path $RepositoryRoot "tests\sparrow-realpattern-tests
 Assert-Condition (Test-Path -LiteralPath $sparrowRealPattern) "Missing Sparrow real-pattern test script"
 Test-PowerShellSyntax -Path $sparrowRealPattern
 if ($IncludeSparrowRealPatternTests) { & $sparrowRealPattern -RepositoryRoot $RepositoryRoot }
+
+# EXHAUSTIVE Sparrow Track A/B xls coverage: extract the REAL flagged code of EVERY Track A/B finding in the
+# OSTES issues .xls, generate a parseable snippet for each, run the matching tool+rule over all of them, and
+# report per-finding transformed vs not-transformed. Always syntax-check + assert the runner/generator exist;
+# only RUN when opted in. The runner ITSELF self-skips (does not fail) when the .xls is absent from Downloads,
+# so it never breaks a normal gate run and never requires the (uncommitted) xls to be present.
+$sparrowExhaustive = Join-Path $RepositoryRoot "tests\sparrow-exhaustive-xls-test.ps1"
+$sparrowExhaustiveProj = Join-Path $RepositoryRoot "tests\SparrowExhaustiveXls\SparrowExhaustiveXls.csproj"
+$sparrowExhaustiveProgram = Join-Path $RepositoryRoot "tests\SparrowExhaustiveXls\Program.cs"
+foreach ($exhFile in @($sparrowExhaustive, $sparrowExhaustiveProj, $sparrowExhaustiveProgram)) {
+    Assert-Condition (Test-Path -LiteralPath $exhFile) "Missing exhaustive Sparrow xls file: $exhFile"
+}
+Test-PowerShellSyntax -Path $sparrowExhaustive
+if ($IncludeSparrowExhaustiveXls) { & $sparrowExhaustive -RepositoryRoot $RepositoryRoot }
 
 # Track A auto-fix kit (LLM-free): assert the .editorconfig + runner exist and the runner parses.
 # (Run-TrackA.ps1 carries Korean text -> must stay UTF-8-with-BOM or PS 5.1 mis-parses it.)

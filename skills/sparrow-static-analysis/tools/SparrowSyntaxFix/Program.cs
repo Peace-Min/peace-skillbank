@@ -28,6 +28,9 @@ namespace SparrowSyntaxFix
             ("localconst", SyntaxRule.LocalConst),
             ("arrayvar-safe", SyntaxRule.ArrayVarSafe),
             ("arrayvar-narrowing", SyntaxRule.ArrayVarNarrowing),
+            ("forvar", SyntaxRule.ForVar),
+            ("fieldsplit", SyntaxRule.FieldSplit),
+            ("emptystmt", SyntaxRule.EmptyStmt),
         };
 
         private static int Main(string[] args)
@@ -176,6 +179,9 @@ namespace SparrowSyntaxFix
                     case "objectinitializer": rules |= SyntaxRule.ObjectInitializer; break;
                     case "arrayvar-safe": rules |= SyntaxRule.ArrayVarSafe; break;
                     case "arrayvar-narrowing": rules |= SyntaxRule.ArrayVarNarrowing; break;
+                    case "forvar": rules |= SyntaxRule.ForVar; break;
+                    case "fieldsplit": rules |= SyntaxRule.FieldSplit; break;
+                    case "emptystmt": rules |= SyntaxRule.EmptyStmt; break;
                     default: return false;
                 }
             }
@@ -228,7 +234,8 @@ namespace SparrowSyntaxFix
             w.WriteLine("  --rules <list>            comma list of rules or 'all' (default: safe subset)");
             w.WriteLine("                            rules: nullvar(nullcast alias),parens,objectvar-safe,foreachcast,");
             w.WriteLine("                                   obviousvar,objectvar-narrowing,localconst,");
-            w.WriteLine("                                   objectinitializer,arrayvar-safe,arrayvar-narrowing");
+            w.WriteLine("                                   objectinitializer,arrayvar-safe,arrayvar-narrowing,");
+            w.WriteLine("                                   forvar,fieldsplit,emptystmt  (last three: opt-in, not in default)");
             w.WriteLine("  --dry-run                 report per-file/per-rule counts without writing");
             w.WriteLine("exit codes: 0 = success (changed or not), 1 = error, 2 = usage");
             return message == null ? 0 : 2;

@@ -437,6 +437,73 @@ class C {
     $contOpsOverAfter = [System.IO.File]::ReadAllBytes($contOpsOverFile)
     Check "continuation ops over-indented: byte-identical no churn" { Test-BytesEqual $contOpsOverBefore $contOpsOverAfter }
 
+    # --- continuation: METHOD-CHAIN + INITIALIZER extension (per FORMATTING.CONTINUATION_LINE.BAD_INDENTATION) ---
+    # A fluent `.Method()` line at the receiver's indent, and an initializer `{`/elements/`}` at or below the
+    # `new` line, are pulled to opening-indent + 4. Deeper lines are left alone (conservative).
+    $contChainSrc = @'
+class C {
+    void M() {
+        var frames = _seriesIndexByPlayerKey
+        .OrderBy(kv => kv.Value)
+        .ToList();
+        _line.AddPoints(new[]
+        {
+        new Pt(1),
+        new Pt(2)
+        });
+    }
+    object _seriesIndexByPlayerKey; object _line;
+}
+'@
+    $contChainFile = New-Fixture "continuation_chain.cs" $contChainSrc
+    Check "continuation chain: exit 0" { (Invoke-Tool @($contChainFile, "--rules", "continuation")) -eq 0 }
+    $cch = Read-Text $contChainFile
+    Check "continuation chain: .OrderBy pulled to receiver-indent+4" { $cch.Contains("        var frames = _seriesIndexByPlayerKey`r`n            .OrderBy(kv => kv.Value)") -or $cch.Contains("        var frames = _seriesIndexByPlayerKey`n            .OrderBy(kv => kv.Value)") }
+    Check "continuation chain: .ToList pulled to receiver-indent+4" { $cch.Contains("            .ToList();") }
+    Check "continuation chain: initializer brace+elements pulled to new-indent+4" { $cch.Contains("        _line.AddPoints(new[]`r`n            {`r`n            new Pt(1),`r`n            new Pt(2)`r`n            });") -or $cch.Contains("        _line.AddPoints(new[]`n            {`n            new Pt(1),`n            new Pt(2)`n            });") }
+    # idempotency: apply 3 MORE times -> byte-identical after the first application.
+    $cch1 = [System.IO.File]::ReadAllBytes($contChainFile)
+    Invoke-Tool @($contChainFile, "--rules", "continuation") | Out-Null
+    Invoke-Tool @($contChainFile, "--rules", "continuation") | Out-Null
+    Invoke-Tool @($contChainFile, "--rules", "continuation") | Out-Null
+    $cch4 = [System.IO.File]::ReadAllBytes($contChainFile)
+    Check "continuation chain: byte-identical after 3 more runs (idempotent)" { Test-BytesEqual $cch1 $cch4 }
+
+    # initializer whose brace is SHALLOWER than a deeply-indented opening line -> shift to opening-indent + 4.
+    $contInitSrc = @'
+class C {
+    void Outer() {
+        if (true) {
+            if (true) {
+                var dummy = new System.Collections.Generic.List<int>()
+            {
+                1
+            };
+            }
+        }
+    }
+}
+'@
+    $contInitFile = New-Fixture "continuation_init_shallow.cs" $contInitSrc
+    Check "continuation init-shallow: exit 0" { (Invoke-Tool @($contInitFile, "--rules", "continuation")) -eq 0 }
+    $cin = Read-Text $contInitFile
+    Check "continuation init-shallow: shallow brace shifted to opening-indent+4 (20)" { $cin.Contains("                var dummy = new System.Collections.Generic.List<int>()`r`n                    {") -or $cin.Contains("                var dummy = new System.Collections.Generic.List<int>()`n                    {") }
+
+    # conservative: a continuation line already indented deeper than opening+4 (Geometry.cs:171 style) is untouched.
+    $contDeepSrc = @'
+class C {
+    double Geo(double a) {
+        return (System.Math.Cos(a)
+                    * 2.0);
+    }
+}
+'@
+    $contDeepFile = New-Fixture "continuation_deep.cs" $contDeepSrc
+    $contDeepBefore = [System.IO.File]::ReadAllBytes($contDeepFile)
+    Check "continuation deep: exit 0" { (Invoke-Tool @($contDeepFile, "--rules", "continuation")) -eq 0 }
+    $contDeepAfter = [System.IO.File]::ReadAllBytes($contDeepFile)
+    Check "continuation deep: already-deeper line byte-identical (no de-indent)" { Test-BytesEqual $contDeepBefore $contDeepAfter }
+
     # --- layout: linqalign ---
     $linqSrc = @'
 using System.Linq;

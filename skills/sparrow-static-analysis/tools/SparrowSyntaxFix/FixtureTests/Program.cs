@@ -31,6 +31,12 @@ namespace SparrowSyntaxFix.FixtureTests
             ForeachCastNegatives();
             ObviousVarPositives();
             ObviousVarNegatives();
+            ForVarPositives();
+            ForVarNegatives();
+            FieldSplitPositives();
+            FieldSplitNegatives();
+            EmptyStmtPositives();
+            EmptyStmtNegatives();
             LocalConstPositives();
             ParensPositives();
             ParensNegatives();
@@ -336,6 +342,111 @@ namespace SparrowSyntaxFix.FixtureTests
                 SyntaxRule.ObviousVar);
         }
 
+        // ============================ Rule: forvar (opt-in) ============================
+
+        private static void ForVarPositives()
+        {
+            Console.WriteLine("[forvar positive]");
+            // Exact brief fixture (DatabaseQueryService.cs:413): single-declarator obvious int init -> var.
+            ExpectTransform("for-init int literal -> var",
+                "class C\n{\n    void M(int count)\n    {\n        for (int i = 0; i < count; i++)\n        {\n        }\n    }\n}\n",
+                "class C\n{\n    void M(int count)\n    {\n        for (var i = 0; i < count; i++)\n        {\n        }\n    }\n}\n",
+                SyntaxRule.ForVar, false, false, forVar: true);
+
+            // Non-int numeric keeps its element type via a cast (mirrors obviousvar).
+            ExpectTransform("for-init double literal keeps type with cast",
+                "class C\n{\n    void M(int n)\n    {\n        for (double d = 20; d < n; d++)\n        {\n        }\n    }\n}\n",
+                "class C\n{\n    void M(int n)\n    {\n        for (var d = (double)20; d < n; d++)\n        {\n        }\n    }\n}\n",
+                SyntaxRule.ForVar, false, false, forVar: true);
+        }
+
+        private static void ForVarNegatives()
+        {
+            Console.WriteLine("[forvar negative — must stay byte-identical]");
+            // Multi-declarator: `for (int i = 0, count = ...)` -> `var i = 0, count = ...` is CS0819. NEVER touch.
+            ExpectUnchanged("multi-declarator for-init",
+                "class C\n{\n    void M(System.Collections.Generic.List<int> q)\n    {\n        for (int i = 0, count = q.Count; i < count; i++)\n        {\n        }\n    }\n}\n",
+                SyntaxRule.ForVar);
+            // Method-call initializer: narrowing risk -> skip (RewriteInitializer returns null).
+            ExpectUnchanged("method-call for-init",
+                "class C\n{\n    int G() { return 0; }\n    void M(int n)\n    {\n        for (int j = G(); j < n; j++)\n        {\n        }\n    }\n}\n",
+                SyntaxRule.ForVar);
+            // Already var: idempotent no-op.
+            ExpectUnchanged("already-var for-init",
+                "class C\n{\n    void M(int n)\n    {\n        for (var k = 0; k < n; k++)\n        {\n        }\n    }\n}\n",
+                SyntaxRule.ForVar);
+        }
+
+        // ============================ Rule: fieldsplit (opt-in) ============================
+
+        private static void FieldSplitPositives()
+        {
+            Console.WriteLine("[fieldsplit positive]");
+            // Exact brief fixture (ChartControlViewModel.cs:183): 4 declarators -> 4 fields, same indent.
+            ExpectTransform("multi-declarator field split one per line",
+                "class C\n{\n    private double _rawXMin, _rawXMax, _rawYMin, _rawYMax;\n}\n",
+                "class C\n{\n    private double _rawXMin;\n    private double _rawXMax;\n    private double _rawYMin;\n    private double _rawYMax;\n}\n",
+                SyntaxRule.FieldSplit, false, false, fieldSplit: true);
+
+            // Initializers are attributed to their own declarator.
+            ExpectTransform("field split preserves each initializer",
+                "class C\n{\n    public int a = 1, b = 2;\n}\n",
+                "class C\n{\n    public int a = 1;\n    public int b = 2;\n}\n",
+                SyntaxRule.FieldSplit, false, false, fieldSplit: true);
+
+            // A leading comment stays on the FIRST split line, not duplicated.
+            ExpectTransform("field split keeps leading comment on first line",
+                "class C\n{\n    // keep me\n    private int x, y;\n}\n",
+                "class C\n{\n    // keep me\n    private int x;\n    private int y;\n}\n",
+                SyntaxRule.FieldSplit, false, false, fieldSplit: true);
+        }
+
+        private static void FieldSplitNegatives()
+        {
+            Console.WriteLine("[fieldsplit negative — must stay byte-identical]");
+            // Local variable declaration: out of scope (fields only).
+            ExpectUnchanged("local multi-declarator not a field",
+                "class C\n{\n    void M()\n    {\n        int x, y;\n    }\n}\n",
+                SyntaxRule.FieldSplit);
+            // Single declarator: nothing to split.
+            ExpectUnchanged("single-declarator field",
+                "class C\n{\n    private int only;\n}\n",
+                SyntaxRule.FieldSplit);
+            // const field: brief says skip.
+            ExpectUnchanged("const multi-declarator field",
+                "class C\n{\n    private const int A = 1, B = 2;\n}\n",
+                SyntaxRule.FieldSplit);
+        }
+
+        // ============================ Rule: emptystmt (opt-in) ============================
+
+        private static void EmptyStmtPositives()
+        {
+            Console.WriteLine("[emptystmt positive]");
+            // Exact brief fixture (MapView.xaml.cs:1017): `stmt; ;` -> `stmt;`.
+            ExpectTransform("double-semicolon collapses to one",
+                "class C\n{\n    event System.EventHandler E;\n    void H(object s, System.EventArgs e) { }\n    void M()\n    {\n        E += H; ;\n    }\n}\n",
+                "class C\n{\n    event System.EventHandler E;\n    void H(object s, System.EventArgs e) { }\n    void M()\n    {\n        E += H;\n    }\n}\n",
+                SyntaxRule.EmptyStmt, false, false, emptyStmt: true);
+        }
+
+        private static void EmptyStmtNegatives()
+        {
+            Console.WriteLine("[emptystmt negative — must stay byte-identical]");
+            // Empty for-body clause is semantically meaningful (Parent is the ForStatement, not a Block).
+            ExpectUnchanged("for(;;) empty body kept",
+                "class C\n{\n    void M()\n    {\n        for (;;) ;\n    }\n}\n",
+                SyntaxRule.EmptyStmt);
+            // while empty body kept.
+            ExpectUnchanged("while empty body kept",
+                "class C\n{\n    void M(bool c)\n    {\n        while (Poll(c)) ;\n    }\n    bool Poll(bool c) { return false; }\n}\n",
+                SyntaxRule.EmptyStmt);
+            // Labeled empty statement kept (label needs a statement).
+            ExpectUnchanged("labeled empty statement kept",
+                "class C\n{\n    void M()\n    {\n        goto done;\n    done: ;\n    }\n}\n",
+                SyntaxRule.EmptyStmt);
+        }
+
         private static void LocalConstPositives()
         {
             Console.WriteLine("[localconst positive]");
@@ -474,7 +585,10 @@ namespace SparrowSyntaxFix.FixtureTests
                                             bool localConst = false,
                                             bool objectInitializer = false,
                                             bool arraySafe = false,
-                                            bool arrayNarrowing = false)
+                                            bool arrayNarrowing = false,
+                                            bool forVar = false,
+                                            bool fieldSplit = false,
+                                            bool emptyStmt = false)
         {
             RewriteResult r = RewriteEngine.Rewrite(input, rules);
             bool textOk = r.NewText == expected;
@@ -488,6 +602,9 @@ namespace SparrowSyntaxFix.FixtureTests
                            && (r.ObjectInitializerEdits > 0) == objectInitializer
                            && (r.ArrayVarSafeEdits > 0) == arraySafe
                            && (r.ArrayVarNarrowingEdits > 0) == arrayNarrowing
+                           && (r.ForVarEdits > 0) == forVar
+                           && (r.FieldSplitEdits > 0) == fieldSplit
+                           && (r.EmptyStmtEdits > 0) == emptyStmt
                            && r.Changed;
             Report(label, textOk && countOk, textOk ? CountsText(r) : Diff(expected, r.NewText));
         }

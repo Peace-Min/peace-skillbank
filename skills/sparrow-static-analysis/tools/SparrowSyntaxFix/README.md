@@ -74,6 +74,9 @@ The CLI supports these rules:
 | `objectinitializer` | `Foo x = new Foo(); x.A = 1;` ??`var x = new Foo { A = 1 };` for consecutive assignments only | `review-needed` |
 | `arrayvar-safe` | `int[] a = new int[] { 1, 2 };` ??`int[] a = { 1, 2 };` when array types match | normal |
 | `arrayvar-narrowing` | `object[] a = new string[] { "A" };` ??`var a = new[] { "A" };` | `review-needed` |
+| `forvar` | `for (int i = 0; ...)` ??`for (var i = 0; ...)` for a single-declarator, obvious-init for-loop (multi-declarator / method-call init never touched) | `review-needed` (opt-in, not in default set) |
+| `fieldsplit` | `private double a, b, c;` ??one field per line, same indent, initializers/leading comment preserved (fields only) | `review-needed` (opt-in, not in default set) |
+| `emptystmt` | `stmt; ;` ??`stmt;` — removes a redundant empty statement (`for(;;)` / labels / loop-body empties kept) | `review-needed` (opt-in, not in default set) |
 
 `review-needed` rules are still CLI-applied, but must be isolated in their own rule run and commit. Suggested
 commit names:

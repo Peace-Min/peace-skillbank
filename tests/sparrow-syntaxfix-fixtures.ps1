@@ -213,6 +213,78 @@ try {
         [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path -LiteralPath $runner).Path, [ref]$null, [ref]$perr) | Out-Null
         (-not $perr) -or ($perr.Count -eq 0)
     }
+
+    # 6) OPT-IN new rules (forvar / fieldsplit / emptystmt): each applied by name on a dedicated on-disk file,
+    #    with before->after, idempotency, and the key guards. These rules are NOT in the default set.
+    $newDir = Join-Path $work "newrules"
+    New-Item -ItemType Directory -Force -Path $newDir | Out-Null
+    $newLines = @(
+        "class C",
+        "{",
+        "    private double _rawXMin, _rawXMax, _rawYMin, _rawYMax;",
+        "    private const int KA = 1, KB = 2;",
+        "    void M(int count, System.Collections.Generic.List<int> q)",
+        "    {",
+        "        for (int i = 0; i < count; i++) { }",
+        "        for (int a = 0, b = q.Count; a < b; a++) { }",
+        "        for (int j = GetX(); j < count; j++) { }",
+        "        System.EventHandler h = null; h += OnE; ;",
+        "        for (;;) { break; }",
+        "        int local1 = 0, local2 = 0;",
+        "        System.Console.WriteLine(local1 + local2 + KA + KB);",
+        "    }",
+        "    int GetX() { return 0; }",
+        "    void OnE(object s, System.EventArgs e) { }",
+        "}")
+    $newTarget = Join-Path $newDir "NewRules.cs"
+    [System.IO.File]::WriteAllText($newTarget, (($newLines -join $nl) + $nl), $bomEnc)
+
+    # forvar
+    Check "forvar: exit 0" { (Invoke-Tool @($newTarget, "--rules", "forvar")) -eq 0 }
+    $nrv = [System.Text.Encoding]::UTF8.GetString([System.IO.File]::ReadAllBytes($newTarget))
+    Check "forvar: single-declarator int for-init -> var" { $nrv.Contains("for (var i = 0; i < count; i++)") }
+    Check "forvar: multi-declarator for-init untouched (CS0819 guard)" { $nrv.Contains("for (int a = 0, b = q.Count; a < b; a++)") }
+    Check "forvar: method-call for-init untouched" { $nrv.Contains("for (int j = GetX(); j < count; j++)") }
+    Check "forvar: does NOT split fields (opt-in isolation)" { $nrv.Contains("private double _rawXMin, _rawXMax, _rawYMin, _rawYMax;") }
+
+    # fieldsplit
+    Check "fieldsplit: exit 0" { (Invoke-Tool @($newTarget, "--rules", "fieldsplit")) -eq 0 }
+    $nrf = [System.Text.Encoding]::UTF8.GetString([System.IO.File]::ReadAllBytes($newTarget))
+    Check "fieldsplit: 4-way field split same indent" { $nrf.Contains("    private double _rawXMin;`r`n    private double _rawXMax;`r`n    private double _rawYMin;`r`n    private double _rawYMax;") -or $nrf.Contains("    private double _rawXMin;`n    private double _rawXMax;`n    private double _rawYMin;`n    private double _rawYMax;") }
+    Check "fieldsplit: const field untouched" { $nrf.Contains("private const int KA = 1, KB = 2;") }
+    Check "fieldsplit: local multi-declarator untouched (fields only)" { $nrf.Contains("int local1 = 0, local2 = 0;") }
+
+    # emptystmt
+    Check "emptystmt: exit 0" { (Invoke-Tool @($newTarget, "--rules", "emptystmt")) -eq 0 }
+    $nre = [System.Text.Encoding]::UTF8.GetString([System.IO.File]::ReadAllBytes($newTarget))
+    Check "emptystmt: double-semicolon collapsed to one" { $nre.Contains("h += OnE;`r`n") -or $nre.Contains("h += OnE;`n") }
+    Check "emptystmt: no stray double-semicolon remains" { -not $nre.Contains("OnE; ;") }
+    Check "emptystmt: for(;;) empty clauses untouched" { $nre.Contains("for (;;) { break; }") }
+
+    # idempotency: applying all three opt-in rules a second time changes nothing.
+    $newOnce = [System.IO.File]::ReadAllBytes($newTarget)
+    Check "new rules: second forvar,fieldsplit,emptystmt exit 0" { (Invoke-Tool @($newTarget, "--rules", "forvar,fieldsplit,emptystmt")) -eq 0 }
+    $newTwice = [System.IO.File]::ReadAllBytes($newTarget)
+    Check "new rules: byte-identical second run (idempotent)" { @(Compare-Object $newOnce $newTwice -SyncWindow 0).Count -eq 0 }
+
+    # rewritten file with all three opt-in rules applied still compiles.
+    $newProj = Join-Path $newDir "NewRules.csproj"
+    [System.IO.File]::WriteAllText($newProj, $projText.Replace("Sample.cs", "NewRules.cs"), (New-Object System.Text.UTF8Encoding($false)))
+    $newBuildOut = (& $dotnet.Source build $newProj -c Release -v q 2>&1 | Out-String)
+    $newBuildExit = $LASTEXITCODE
+    if ($newBuildExit -ne 0) { Write-Host $newBuildOut }
+    Check "new rules: rewritten project builds" { $newBuildExit -eq 0 }
+
+    # default rule set must NOT include the opt-in rules (isolation): default run leaves all three patterns intact.
+    $defDir = Join-Path $work "defaults"
+    New-Item -ItemType Directory -Force -Path $defDir | Out-Null
+    $defTarget = Join-Path $defDir "Def.cs"
+    [System.IO.File]::WriteAllText($defTarget, (($newLines -join $nl) + $nl), $bomEnc)
+    $null = Invoke-Tool @($defTarget)   # no --rules => default subset
+    $defText = [System.Text.Encoding]::UTF8.GetString([System.IO.File]::ReadAllBytes($defTarget))
+    Check "default set: forvar NOT applied" { $defText.Contains("for (int i = 0; i < count; i++)") }
+    Check "default set: fieldsplit NOT applied" { $defText.Contains("private double _rawXMin, _rawXMax, _rawYMin, _rawYMax;") }
+    Check "default set: emptystmt NOT applied" { $defText.Contains("h += OnE; ;") }
 }
 finally {
     Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue

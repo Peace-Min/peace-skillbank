@@ -823,6 +823,59 @@ namespace SparrowCommentFix
                     ruleCounts["continuation"]++;
                 }
             }
+
+            // Method-chain continuation: a `.Member` whose leading `.` begins its own physical line (fluent style,
+            // e.g. `receiver\n    .OrderBy(...)\n    .ToList()`). The reference (opening-line) indent is the line
+            // where THIS access's receiver begins; the `.` line is pulled to receiver-indent + 4 when it is not
+            // already at least that deep. Same conservative `onlyIfInsufficient` contract as the binary/arg cases,
+            // so already-correct or deeper-than-opening+4 lines (Geometry.cs:171-style) are left byte-identical.
+            foreach (MemberAccessExpressionSyntax member in root.DescendantNodes().OfType<MemberAccessExpressionSyntax>())
+            {
+                if (!member.IsKind(SyntaxKind.SimpleMemberAccessExpression)) continue;
+                int dotStart = member.OperatorToken.SpanStart;
+                int dotLine = LineStart(text, dotStart);
+                int baseLine = LineStart(text, member.Expression.SpanStart);
+                if (dotLine == baseLine) continue;                    // `.` is on the receiver's line -> not a continuation
+                if (!touchedLines.Add(dotLine)) continue;
+                string desired = IndentBefore(text, member.Expression.SpanStart) + "    ";
+                if (TrySetLineIndent(text, dotStart, desired, out Edit edit))
+                {
+                    edits.Add(edit);
+                    ruleCounts["continuation"]++;
+                }
+            }
+
+            // Initializer / collection continuation: the `{`, its element lines, and the closing `}` of an
+            // object/collection/array initializer that spill below the `new`/`= {` opening line. Each such line is
+            // pulled to opening-indent + 4 when it is shallower (`{`(28) under a `new`(32) line -> 36; brace+elements
+            // at the same indent as `new` -> +4). Deeper-indented lines are untouched (onlyIfInsufficient).
+            foreach (InitializerExpressionSyntax initializer in root.DescendantNodes().OfType<InitializerExpressionSyntax>())
+            {
+                SyntaxNode anchorNode = initializer.Parent ?? initializer;
+                int baseLine = LineStart(text, anchorNode.SpanStart);
+                string desired = IndentBefore(text, anchorNode.SpanStart) + "    ";
+
+                ReindentContinuationLine(text, initializer.OpenBraceToken.SpanStart, baseLine, desired, touchedLines, edits, ruleCounts);
+                foreach (ExpressionSyntax element in initializer.Expressions)
+                    ReindentContinuationLine(text, element.SpanStart, baseLine, desired, touchedLines, edits, ruleCounts);
+                ReindentContinuationLine(text, initializer.CloseBraceToken.SpanStart, baseLine, desired, touchedLines, edits, ruleCounts);
+            }
+        }
+
+        // Pull the physical line that `anchor` begins to `desired` indentation, but only when that line differs from
+        // `baseLine` (the construct's opening line), has not already been touched this pass, and is under-indented
+        // (TrySetLineIndent's default onlyIfInsufficient guard). Whitespace-only + idempotent.
+        private static void ReindentContinuationLine(string text, int anchor, int baseLine, string desired,
+            HashSet<int> touchedLines, List<Edit> edits, Dictionary<string, int> ruleCounts)
+        {
+            int line = LineStart(text, anchor);
+            if (line == baseLine) return;
+            if (!touchedLines.Add(line)) return;
+            if (TrySetLineIndent(text, anchor, desired, out Edit edit))
+            {
+                edits.Add(edit);
+                ruleCounts["continuation"]++;
+            }
         }
 
         // Binary operators whose operator-led / operator-trailing continuation lines the `continuation` rule

@@ -29,6 +29,9 @@
     <Compile Include="..\ObviousVarRewriter.cs" Link="engine\ObviousVarRewriter.cs" />
     <Compile Include="..\LocalConstRewriter.cs" Link="engine\LocalConstRewriter.cs" />
     <Compile Include="..\ParensRewriter.cs" Link="engine\ParensRewriter.cs" />
+    <Compile Include="..\ForVarRewriter.cs" Link="engine\ForVarRewriter.cs" />
+    <Compile Include="..\FieldSplitRewriter.cs" Link="engine\FieldSplitRewriter.cs" />
+    <Compile Include="..\EmptyStmtRewriter.cs" Link="engine\EmptyStmtRewriter.cs" />
   </ItemGroup>
 
 </Project>

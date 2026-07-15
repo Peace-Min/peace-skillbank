@@ -26,6 +26,8 @@ param(
     [string]$Severity,
     [int]$Max,
     [string]$PromptPath,
+    [string]$ConventionsPath,
+    [string]$TemplatePath,
 
     # collect
     [string]$VerdictsDir,
@@ -95,6 +97,56 @@ function ConvertTo-CsvField {
     return $s
 }
 
+# project-conventions.md 를 '## <이름>' 섹션 사전으로 파싱. 값 = 헤더 다음~다음 '## '까지 본문(Trim).
+# '### ' 하위헤딩은 섹션 경계가 아님('## ' prefix 아님). H1('# ')은 섹션 밖에서 무시.
+function Get-ConventionSections {
+    param([string]$Text)
+    $norm = $Text -replace "`r`n", "`n"
+    $lines = $norm -split "`n"
+    $sections = [ordered]@{}
+    $current = $null
+    $buffer = New-Object System.Collections.Generic.List[string]
+    foreach ($ln in $lines) {
+        if ($ln.StartsWith('## ')) {
+            if ($null -ne $current) { $sections[$current] = ($buffer -join "`n").Trim() }
+            $current = $ln.Substring(3).Trim()
+            $buffer = New-Object System.Collections.Generic.List[string]
+        }
+        else {
+            if ($null -ne $current) { [void]$buffer.Add($ln) }
+        }
+    }
+    if ($null -ne $current) { $sections[$current] = ($buffer -join "`n").Trim() }
+    return $sections
+}
+
+# 체커 가이드에서 한글명(H1 '# KEY — 이름')과 심각도('**심각도**: 값 |')를 추출.
+function Get-GuideMeta {
+    param([string]$GuideText, [string]$CheckerKey)
+    $norm = $GuideText -replace "`r`n", "`n"
+    $lines = $norm -split "`n"
+    $name = $CheckerKey
+    $sev = ''
+    foreach ($ln in $lines) {
+        if ($name -eq $CheckerKey -and $ln.StartsWith('# ')) {
+            $dash = $ln.IndexOf([char]0x2014)
+            if ($dash -ge 0) { $name = $ln.Substring($dash + 1).Trim() }
+        }
+        if ($sev -eq '') {
+            $sevIdx = $ln.IndexOf('심각도', [System.StringComparison]::Ordinal)
+            if ($sevIdx -ge 0) {
+                $colon = $ln.IndexOf(':', $sevIdx)
+                if ($colon -ge 0) {
+                    $rest = $ln.Substring($colon + 1)
+                    $bar = $rest.IndexOf('|')
+                    if ($bar -ge 0) { $sev = $rest.Substring(0, $bar).Trim() } else { $sev = $rest.Trim() }
+                }
+            }
+        }
+    }
+    return [pscustomobject]@{ Name = $name; Severity = $sev }
+}
+
 # ---------------------------------------------------------------- prepare
 function Invoke-Prepare {
     if (-not $Index) { throw "prepare: -Index <index.csv> 필요" }
@@ -109,6 +161,16 @@ function Invoke-Prepare {
     if (-not $PromptPath) { $PromptPath = Join-Path (Get-ScriptDir) 'triage-prompt.md' }
     if (-not (Test-Path -LiteralPath $PromptPath)) { throw "프롬프트 템플릿 없음: $PromptPath" }
     $promptTemplate = Read-TextNoBom -Path $PromptPath
+
+    # OSTES 프로젝트 정책 소스(공통) + 폴더 지침 템플릿. 기본값은 스크립트 기준 상대경로로 해석.
+    if (-not $ConventionsPath) { $ConventionsPath = Join-Path (Split-Path -Parent (Get-ScriptDir)) 'project-conventions.md' }
+    if (-not (Test-Path -LiteralPath $ConventionsPath)) { throw "프로젝트 규약 문서 없음: $ConventionsPath" }
+    if (-not $TemplatePath) { $TemplatePath = Join-Path (Get-ScriptDir) 'folder-instruction-template.md' }
+    if (-not (Test-Path -LiteralPath $TemplatePath)) { throw "폴더 지침 템플릿 없음: $TemplatePath" }
+    $conventions = Get-ConventionSections -Text (Read-TextNoBom -Path $ConventionsPath)
+    $folderTemplate = Read-TextNoBom -Path $TemplatePath
+    $commonPolicy = if ($conventions.Contains('(공통) 처리 정책')) { [string]$conventions['(공통) 처리 정책'] } else { '' }
+    $generalNote = if ($conventions.Contains('프로젝트 규약')) { [string]$conventions['프로젝트 규약'] } else { '' }
 
     $sevSet = @()
     if ($Severity) { $sevSet = @($Severity.Split(',') | ForEach-Object { $_.Trim() } | Where-Object { $_.Length -gt 0 }) }
@@ -131,6 +193,7 @@ function Invoke-Prepare {
     $requestCount = 0
     $unresolvedCount = 0
     $perChecker = @{}
+    $perCheckerMeta = @{}   # 체커키 → @{ Name; Severity }(가이드에서 1회 추출)
     $ordinal = 0
 
     # 항목 md 파싱을 회피(오차 소지)하기 위해 index.csv 순서를 그대로 안정 정렬로 사용.
@@ -177,6 +240,9 @@ function Invoke-Prepare {
         }
 
         $guideText = Read-TextNoBom -Path $guidePath
+        if (-not $perCheckerMeta.ContainsKey($checkerKey)) {
+            $perCheckerMeta[$checkerKey] = (Get-GuideMeta -GuideText $guideText -CheckerKey $checkerKey)
+        }
         if ($checkerKey -eq 'NULL_RETURN_STD') {
             $contractPath = Join-Path (Split-Path -Parent $GuidesDir) 'dotnet-contracts\null-return-std.md'
             if (Test-Path -LiteralPath $contractPath) {
@@ -188,8 +254,18 @@ function Invoke-Prepare {
         # 자리표시자 치환(리터럴). -replace 는 정규식이라 부작용 위험 → .Replace() 사용.
         $reqText = $promptTemplate.Replace('{{GUIDE}}', $guideText).Replace('{{ITEM}}', $itemText)
 
-        $reqName = ('{0}_{1}.md' -f (Get-SafeName $idPart), (Get-SafeName $checkerKey))
-        $reqPath = Join-Path $reqDir $reqName
+        # OSTES 정책 임베드: 모든 요청에 공통 Policy A 를 붙여 self-contained 로 만든다(frontier-handoff 견고).
+        $reqText = $reqText + "`n`n---`n`n## 처리 정책 (이 프로젝트)`n`n" + $commonPolicy + "`n"
+        # 체커별 섹션이 있으면(OVERLY_BROAD_CATCH/EMPTY_CATCH_BLOCK/LEAK.SYSTEM_INFORMATION/TOCTOU_RACE_CONDITION) 추가로 붙인다.
+        if ($conventions.Contains($checkerKey)) {
+            $reqText = $reqText + "`n---`n`n## " + $checkerKey + " — 프로젝트 의무`n`n" + [string]$conventions[$checkerKey] + "`n"
+        }
+
+        $safeChecker = Get-SafeName $checkerKey
+        $reqName = ('{0}_{1}.md' -f (Get-SafeName $idPart), $safeChecker)
+        $subDir = Join-Path $reqDir $safeChecker
+        [void](New-Item -ItemType Directory -Force -Path $subDir)
+        $reqPath = Join-Path $subDir $reqName
         Write-Utf8Lf -Path $reqPath -Content $reqText
         $requestCount++
         if ($perChecker.ContainsKey($checkerKey)) { $perChecker[$checkerKey]++ } else { $perChecker[$checkerKey] = 1 }
@@ -197,11 +273,26 @@ function Invoke-Prepare {
         $worklist.Add((@(
                     (ConvertTo-CsvField $idPart), (ConvertTo-CsvField $checkerKey), (ConvertTo-CsvField $sev),
                     (ConvertTo-CsvField $file), (ConvertTo-CsvField $line),
-                    (ConvertTo-CsvField ('requests/' + $reqName)),
+                    (ConvertTo-CsvField ('requests/' + $safeChecker + '/' + $reqName)),
                     (ConvertTo-CsvField $guidePath), 'TODO'
                 ) -join ','))
     }
     $ErrorActionPreference = 'Stop'
+
+    # 체커별 _작업지침.md (요청 ≥1건 받은 폴더에만). 결정론: perChecker 카운트 + 가이드 메타 + 규약 섹션.
+    foreach ($ck in ($perChecker.Keys | Sort-Object)) {
+        $safeChecker = Get-SafeName $ck
+        $meta = $perCheckerMeta[$ck]
+        $mandate = if ($conventions.Contains($ck)) { [string]$conventions[$ck] } else { $generalNote }
+        $instr = $folderTemplate.
+            Replace('{{CHECKER_KEY}}', $ck).
+            Replace('{{CHECKER_NAME}}', [string]$meta.Name).
+            Replace('{{COUNT}}', [string]$perChecker[$ck]).
+            Replace('{{SEVERITY}}', [string]$meta.Severity).
+            Replace('{{COMMON_POLICY}}', $commonPolicy).
+            Replace('{{CHECKER_MANDATE}}', $mandate)
+        Write-Utf8Lf -Path (Join-Path (Join-Path $reqDir $safeChecker) '_작업지침.md') -Content $instr
+    }
 
     Write-Utf8Lf -Path (Join-Path $Out 'worklist.csv') -Content (($worklist -join "`n") + "`n")
     Write-Utf8Lf -Path (Join-Path $Out 'unresolved.csv') -Content (($unresolved -join "`n") + "`n")
@@ -230,7 +321,7 @@ function Test-Verdict {
         if (-not ($v.PSObject.Properties.Name -contains $k)) { return "필수 키 없음: $k" }
     }
     $verdict = [string]$v.verdict
-    if (@('진성', '위양성', '보류') -notcontains $verdict) { return "verdict 값 오류: '$verdict'" }
+    if (@('진성', '보류') -notcontains $verdict) { return "verdict 값 오류: '$verdict'" }
     foreach ($boolKey in @('needs_context', 'needs_frontier')) {
         if ($v.PSObject.Properties.Name -contains $boolKey) {
             if (-not ($v.$boolKey -is [bool])) { return "$boolKey 값은 boolean이어야 함" }
@@ -240,7 +331,7 @@ function Test-Verdict {
     $needsFrontier = ($v.PSObject.Properties.Name -contains 'needs_frontier' -and $v.needs_frontier)
     if ($needsContext -and $needsFrontier) { return 'needs_context와 needs_frontier를 동시에 true로 둘 수 없음' }
     if ($verdict -ne '보류' -and ($needsContext -or $needsFrontier)) {
-        return '진성/위양성 verdict에는 needs_context/needs_frontier=true를 사용할 수 없음'
+        return '진성 verdict에는 needs_context/needs_frontier=true를 사용할 수 없음'
     }
 
     if ($verdict -eq '진성') {
@@ -250,9 +341,6 @@ function Test-Verdict {
         if ([string]::IsNullOrWhiteSpace($before) -or [string]::IsNullOrWhiteSpace($after)) {
             return '진성인데 fix.before/after 비어있음'
         }
-    }
-    elseif ($verdict -eq '위양성') {
-        if ([string]::IsNullOrWhiteSpace([string]$v.false_positive_reason)) { return '위양성인데 false_positive_reason 없음' }
     }
     elseif ($verdict -eq '보류') {
         if ([string]::IsNullOrWhiteSpace([string]$v.hold_reason)) { return '보류인데 hold_reason 없음' }
@@ -280,13 +368,14 @@ function Invoke-Collect {
     if (Test-Path -LiteralPath $byCheckerDir) { Remove-Item -LiteralPath $byCheckerDir -Recurse -Force }
     [void](New-Item -ItemType Directory -Force -Path $byCheckerDir)
 
-    $files = @(Get-ChildItem -LiteralPath $VerdictsDir -Filter '*.json' -File | Sort-Object Name)
+    # verdicts 는 이제 flat 또는 verdicts\<체커키>\ 하위에 있을 수 있으므로 재귀 스캔(결정론: FullName 정렬).
+    $files = @(Get-ChildItem -LiteralPath $VerdictsDir -Filter '*.json' -File -Recurse | Sort-Object FullName)
 
     $valid = New-Object System.Collections.Generic.List[object]
     $invalid = New-Object System.Collections.Generic.List[string]
     $invalid.Add('verdict_file,사유')
 
-    $cntJin = 0; $cntWi = 0; $cntBo = 0; $cntBad = 0
+    $cntJin = 0; $cntBo = 0; $cntBad = 0
 
     $ErrorActionPreference = 'Continue'
     foreach ($f in $files) {
@@ -302,7 +391,6 @@ function Invoke-Collect {
         $valid.Add($obj)
         switch ([string]$obj.verdict) {
             '진성' { $cntJin++ }
-            '위양성' { $cntWi++ }
             '보류' { $cntBo++ }
         }
     }
@@ -322,8 +410,7 @@ function Invoke-Collect {
         $nc = if ($v.PSObject.Properties.Name -contains 'needs_context' -and $v.needs_context) { 'true' } else { 'false' }
         $mc = if ($v.PSObject.Properties.Name -contains 'missing_context' -and $null -ne $v.missing_context) { (@($v.missing_context) -join '; ') } else { '' }
         $nf = if ($v.PSObject.Properties.Name -contains 'needs_frontier' -and $v.needs_frontier) { 'true' } else { 'false' }
-        $summary = if ([string]$v.verdict -eq '위양성') { [string]$v.false_positive_reason }
-        elseif ([string]$v.verdict -eq '보류') { [string]$v.hold_reason }
+        $summary = if ([string]$v.verdict -eq '보류') { [string]$v.hold_reason }
         else { [string]$v.rationale }
         $ledger.Add((@(
                     (ConvertTo-CsvField ([string]$v.id)), (ConvertTo-CsvField ([string]$v.checker)),
@@ -341,7 +428,6 @@ function Invoke-Collect {
     foreach ($g in $groups) {
         $checkerKey = $g.Name
         $jin = @($g.Group | Where-Object { [string]$_.verdict -eq '진성' })
-        $wi = @($g.Group | Where-Object { [string]$_.verdict -eq '위양성' })
         $bo = @($g.Group | Where-Object { [string]$_.verdict -eq '보류' })
 
         $sb = New-Object System.Text.StringBuilder
@@ -354,12 +440,7 @@ function Invoke-Collect {
             if ($lines) { [void]$sb.Append(" (수정 라인 $lines)") }
             [void]$sb.Append(" — " + (ConvertTo-Csv1Line ([string]$v.rationale)) + "`n")
         }
-        [void]$sb.Append("`n## 위양성 (사유서)`n`n")
-        if ($wi.Count -eq 0) { [void]$sb.Append("- (없음)`n") }
-        foreach ($v in $wi) {
-            [void]$sb.Append(("- [{0}] {1}:{2} — {3}`n" -f [string]$v.id, [string]$v.file, [string]$v.line, (ConvertTo-Csv1Line ([string]$v.false_positive_reason))))
-        }
-        [void]$sb.Append("`n## 보류 (문맥 보강 또는 frontier 검토 후보)`n`n")
+        [void]$sb.Append("`n## 보류 (문맥 확보 후 수정 — needs_context 또는 frontier 검토 후보)`n`n")
         if ($bo.Count -eq 0) { [void]$sb.Append("- (없음)`n") }
         foreach ($v in $bo) {
             $nc = if ($v.PSObject.Properties.Name -contains 'needs_context' -and $v.needs_context) { 'true' } else { 'false' }
@@ -372,7 +453,6 @@ function Invoke-Collect {
 
     Write-Host "=== collect 요약 ==="
     Write-Host ("  진성 : {0}" -f $cntJin)
-    Write-Host ("  위양성 : {0}" -f $cntWi)
     Write-Host ("  보류 : {0}" -f $cntBo)
     Write-Host ("  무효 : {0}" -f $cntBad)
     Write-Host ("  원장 : {0}" -f (Join-Path (Resolve-Path -LiteralPath $Out).Path 'triage-ledger.csv'))

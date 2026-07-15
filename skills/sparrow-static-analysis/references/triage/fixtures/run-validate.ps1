@@ -43,19 +43,28 @@ Assert (Test-Path -LiteralPath $index) "fixtures/index.csv 존재"
 Write-Host ""
 Write-Host "[prepare]"
 & $runTriage prepare -Index $index -ItemsDir $items -GuidesDir $guidesDir -Out $out -PromptPath $promptPath | Out-Null
-$reqFwd = Join-Path $out 'requests\5001_FORWARD_NULL.md'
-$reqLeak = Join-Path $out 'requests\5002_RESOURCE_LEAK.md'
-Assert (Test-Path -LiteralPath $reqFwd) "요청 생성: 5001_FORWARD_NULL.md"
-Assert (Test-Path -LiteralPath $reqLeak) "요청 생성: 5002_RESOURCE_LEAK.md"
+$reqFwd = Join-Path $out 'requests\FORWARD_NULL\5001_FORWARD_NULL.md'
+$reqLeak = Join-Path $out 'requests\RESOURCE_LEAK\5002_RESOURCE_LEAK.md'
+Assert (Test-Path -LiteralPath $reqFwd) "요청 생성: FORWARD_NULL\5001_FORWARD_NULL.md"
+Assert (Test-Path -LiteralPath $reqLeak) "요청 생성: RESOURCE_LEAK\5002_RESOURCE_LEAK.md"
 
 $fwdText = ReadAll $reqFwd
 Assert ($fwdText -match 'CWE-476') "요청에 가이드 병합됨 (CWE-476)"
 Assert ($fwdText -match 'FirstOrDefault') "요청에 항목 소스 병합됨 (FirstOrDefault)"
 Assert (($fwdText -notmatch '\{\{GUIDE\}\}') -and ($fwdText -notmatch '\{\{ITEM\}\}')) "자리표시자 모두 치환됨"
+Assert ($fwdText -match '## 처리 정책 \(이 프로젝트\)') "요청에 공통 처리 정책(Policy A) 임베드됨"
+Assert ($fwdText -match '전건') "임베드 정책에 '전건 수정' 정책 포함"
 
 $leakText = ReadAll $reqLeak
 Assert ($leakText -match 'CWE-772') "RESOURCE_LEAK 요청에 가이드 병합 (CWE-772)"
 Assert ($leakText -match 'SqlConnection') "RESOURCE_LEAK 요청에 항목 소스 병합"
+
+# 체커별 _작업지침.md
+$instrFwd = Join-Path $out 'requests\FORWARD_NULL\_작업지침.md'
+$instrLeak = Join-Path $out 'requests\RESOURCE_LEAK\_작업지침.md'
+Assert (Test-Path -LiteralPath $instrFwd) "작업지침 생성: FORWARD_NULL\_작업지침.md"
+Assert (Test-Path -LiteralPath $instrLeak) "작업지침 생성: RESOURCE_LEAK\_작업지침.md"
+Assert ((ReadAll $instrFwd) -match '전건') "작업지침에 공통 정책 렌더됨"
 
 $wlLines = DataLines (ReadAll (Join-Path $out 'worklist.csv'))
 Assert (($wlLines | Where-Object { $_ -match ',TODO$' }).Count -eq 2) "worklist TODO 2건"
@@ -67,23 +76,23 @@ Write-Host ""
 Write-Host "[collect]"
 & $runTriage collect -VerdictsDir $verdicts -Worklist (Join-Path $out 'worklist.csv') -Out $out | Out-Null
 $ledger = ReadAll (Join-Path $out 'triage-ledger.csv')
-Assert ((DataLines $ledger).Count -eq 3) "원장 = 헤더 + 유효 2행 (진성1/위양성1)"
+Assert ((DataLines $ledger).Count -eq 3) "원장 = 헤더 + 유효 2행 (진성1/보류1)"
 Assert (($ledger -match 'FORWARD_NULL') -and ($ledger -match '진성')) "원장에 진성 FORWARD_NULL"
-Assert (($ledger -match 'RESOURCE_LEAK') -and ($ledger -match '위양성')) "원장에 위양성 RESOURCE_LEAK"
+Assert (($ledger -match 'RESOURCE_LEAK') -and ($ledger -match '보류')) "원장에 보류 RESOURCE_LEAK"
 
 $invalid = ReadAll (Join-Path $out 'invalid.csv')
-Assert ((DataLines $invalid).Count -eq 3) "invalid = 헤더 + 무효 2행 (5003-bad, 5004-bad-context)"
+Assert ((DataLines $invalid).Count -eq 3) "invalid = 헤더 + 무효 2행 (5003-bad, 5004-bad-enum)"
 Assert ($invalid -match '5003-bad\.json') "무효 목록에 5003-bad.json"
 Assert ($invalid -match 'fix') "무효 사유가 fix 관련(진성인데 fix 비어있음)"
-Assert ($invalid -match '5004-bad-context\.json') "무효 목록에 5004-bad-context.json"
-Assert ($invalid -match 'needs_context') "무효 사유가 needs_context 모순 관련"
+Assert ($invalid -match '5004-bad-enum\.json') "무효 목록에 5004-bad-enum.json (폐기된 enum 값 거부)"
+Assert ($invalid -match 'verdict 값 오류') "무효 사유가 verdict enum 위반 — 폐기된 false-positive enum 값을 collect 가 거부"
 
 $bcFwdPath = Join-Path $out 'by-checker\FORWARD_NULL.md'
 Assert (Test-Path -LiteralPath $bcFwdPath) "by-checker/FORWARD_NULL.md 생성"
 $bcFwd = ReadAll $bcFwdPath
 Assert (($bcFwd -match '## 진성') -and ($bcFwd -match '5001')) "by-checker에 진성 5001 커밋후보 목록"
 $bcLeak = ReadAll (Join-Path $out 'by-checker\RESOURCE_LEAK.md')
-Assert (($bcLeak -match '## 위양성') -and ($bcLeak -match '5002')) "by-checker에 위양성 5002 목록"
+Assert (($bcLeak -match '## 보류') -and ($bcLeak -match '5002')) "by-checker에 보류 5002 목록"
 
 # --- 3) 멱등성
 Write-Host ""

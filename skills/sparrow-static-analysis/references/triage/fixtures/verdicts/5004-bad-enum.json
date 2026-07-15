@@ -1,0 +1,11 @@
+{
+  "id": "5004", "checker": "RESOURCE_LEAK", "file": "ConnFactory.cs", "line": "24",
+  "verdict": "위양성",
+  "rationale": "enum 거부 검증용 픽스처: 위양성은 이 프로젝트에서 폐기된 verdict 값이므로 collect 가 invalid.csv 로 거부해야 한다(전건 수정 — false-positive 스킵 없음).",
+  "fix": { "lines": "", "before": "", "after": "" },
+  "hold_reason": "",
+  "needs_context": false,
+  "missing_context": [],
+  "needs_frontier": false,
+  "cwe": "CWE-772", "weapon_item": "미매핑(187 추출 후 기입)"
+}

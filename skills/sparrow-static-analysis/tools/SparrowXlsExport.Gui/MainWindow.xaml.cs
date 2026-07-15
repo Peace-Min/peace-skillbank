@@ -148,6 +148,8 @@ namespace SparrowXlsExport.Gui
                         ItemsDir = Path.Combine(parse.OutputDir, "items"),
                         GuidesDir = guidesDir,
                         PromptPath = promptPath,
+                        ConventionsPath = Path.Combine(referencesRoot, "project-conventions.md"),
+                        TemplatePath = Path.Combine(referencesRoot, "triage", "folder-instruction-template.md"),
                         OutDir = parse.OutputDir,
                     };
                     TriagePreparer.Prepare(prepOpts, log);

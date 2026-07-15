@@ -66,7 +66,7 @@ Run-SparrowSyntaxFix + SparrowCommentFix 적용 후) · **대조 도구**: Sparr
    총계 비교가 오해를 부름.
 4. **[중] 미커버 결정론 체커 추가**: BETWEEN_MEMBER 빈줄/USE_ONE_STATEMENT/CONTINUATION_LINE/BLOCK_OF_ASTERISK
    — Rule 원문 확보됨, Roslyn/포맷 규칙으로 구현.
-5. **[중] LOWERCASE_FIRST_LETTER 방침 결정**: 한글주석 다수 → 결정론 불가분은 위양성 사유서 또는 보류로.
+5. **[중] LOWERCASE_FIRST_LETTER 방침 결정**: 한글주석 다수 → 결정론 불가분은 보류(문맥 확보 후 수정)로.
 
 ## 참고
 - Sparrow 공식 Rule 원문: [`sparrow-official-rules/`](sparrow-official-rules/)

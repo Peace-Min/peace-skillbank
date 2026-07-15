@@ -7,7 +7,6 @@
     "before": "var node = list.FirstOrDefault(n => n.Id == id);\nProcess(node.Value);",
     "after": "var node = list.FirstOrDefault(n => n.Id == id);\nif (node == null) return;\nProcess(node.Value);"
   },
-  "false_positive_reason": "",
   "hold_reason": "",
   "needs_context": false,
   "missing_context": [],

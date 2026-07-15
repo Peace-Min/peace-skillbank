@@ -17,11 +17,12 @@
 - 생성부터 마지막 사용까지 사이에 **예외 발생 가능 호출**이 있는데 `using`/`try-finally` 로 감싸이지 않음 → 예외 시 Dispose 누락.
 - 또는 조기 `return`/`break` 경로에서 Dispose 를 건너뜀.
 
-## 흔한 위양성 패턴
-- **소유권 이전**: 만든 자원을 필드에 저장하거나 호출측에 반환/전달하여 **해제 책임이 이 스코프에 없음**(예: `return reader;`, DI 컨테이너·팩토리 반환) → 여기서 Dispose 하면 오히려 버그. 위양성 사유서.
-- 이미 `using` 바깥의 상위 `try-finally`나 소유 객체(`Component.components`)가 해제를 보장.
-- 프레임워크가 소유하는 스트림(예: `HttpContext.Response.OutputStream`) — 닫으면 안 됨.
-- **주의**: `StreamReader`/`StreamWriter` 를 닫으면 내부 Stream 도 닫힘 → 이중 해제/소유 혼동에 유의.
+## 이렇게 보여도 넘기지 말 것
+아래처럼 "여기서 해제하면 안 됨"으로 보여도 **스킵하지 말고**, 소유권 계약을 확인해 처리한다(전건 수정).
+- **소유권 이전처럼 보이는 경우**: 만든 자원을 필드에 저장하거나 호출측에 반환/전달하여 **해제 책임이 이 스코프에 없어 보임**(예: `return reader;`, DI 컨테이너·팩토리 반환). 여기서 Dispose 하면 오히려 버그이므로, 호출자/필드 소유자가 실제로 해제하는지 확인한다. 확인되면 `verdict=보류` + `needs_context=true`(missing_context에 "호출자/소유자 Dispose 계약")로 두고, 소유자 측에서 Dispose 패턴을 갖추도록 수정한다. 근거 없이 스킵하지 않는다.
+- 이미 `using` 바깥의 상위 `try-finally`나 소유 객체(`Component.components`)가 해제를 보장하는 것처럼 보이면 — 그 보장 코드가 실제로 있는지 확인하고, 없으면 `using`/`try-finally`로 감싼다.
+- 프레임워크가 소유하는 스트림(예: `HttpContext.Response.OutputStream`)은 닫으면 안 되므로, 이 경우 Dispose 를 추가하지 말고 소유 관계를 근거로 남긴다(스킵이 아니라 판정 근거 기록).
+- **주의**: `StreamReader`/`StreamWriter` 를 닫으면 내부 Stream 도 닫힘 → 이중 해제/소유 혼동에 유의해 수정한다.
 
 
 ## LLM 판단에 필요한 필수 문맥
@@ -78,5 +79,4 @@ using (var cmd = new SqlCommand(sql, conn))
 
 ## 기본 처리 분류
 - [ ] 진성 → 수정 (using / try-finally / Dispose 패턴)
-- [ ] 위양성 → 사유서 (소유권 이전·프레임워크 소유 근거)
-- [ ] 보류 → 사유 (소유권 흐름 판단 불가 시; frontier-handoff)
+- [ ] 보류 → 문맥 확보 후 수정 (소유권 흐름 판단 불가 시 needs_context; 확보 후 반드시 수정; frontier-handoff)

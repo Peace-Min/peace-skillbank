@@ -1,7 +1,7 @@
 {
   "id": "5003", "checker": "FORWARD_NULL", "file": "Bar.cs", "line": "10",
-  "verdict": "진성",
-  "rationale": "가드 없이 역참조로 보이나 수정 코드를 채우지 않은 형식 위반 케이스(진성인데 fix 비어있음).",
+  "verdict": "수정",
+  "rationale": "가드 없이 역참조로 보이나 수정 코드를 채우지 않은 형식 위반 케이스(수정인데 fix 비어있음).",
   "fix": { "lines": "", "before": "", "after": "" },
   "hold_reason": "",
   "needs_context": false,

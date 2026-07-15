@@ -1,7 +1,7 @@
 {
   "id": "5004", "checker": "RESOURCE_LEAK", "file": "ConnFactory.cs", "line": "24",
   "verdict": "INVALID_VALUE",
-  "rationale": "enum 거부 검증용 픽스처: verdict 는 진성|보류 2종뿐이므로 그 밖의 값은 collect 가 invalid.csv 로 거부해야 한다(전건 수정 — 스킵 없음).",
+  "rationale": "enum 거부 검증용 픽스처: verdict 는 수정|보류 2종뿐이므로 그 밖의 값은 collect 가 invalid.csv 로 거부해야 한다(전건 수정 — 스킵 없음).",
   "fix": { "lines": "", "before": "", "after": "" },
   "hold_reason": "",
   "needs_context": false,

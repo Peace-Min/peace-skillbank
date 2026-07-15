@@ -76,21 +76,21 @@ Write-Host ""
 Write-Host "[collect]"
 & $runTriage collect -VerdictsDir $verdicts -Worklist (Join-Path $out 'worklist.csv') -Out $out | Out-Null
 $ledger = ReadAll (Join-Path $out 'triage-ledger.csv')
-Assert ((DataLines $ledger).Count -eq 3) "원장 = 헤더 + 유효 2행 (진성1/보류1)"
-Assert (($ledger -match 'FORWARD_NULL') -and ($ledger -match '진성')) "원장에 진성 FORWARD_NULL"
+Assert ((DataLines $ledger).Count -eq 3) "원장 = 헤더 + 유효 2행 (수정1/보류1)"
+Assert (($ledger -match 'FORWARD_NULL') -and ($ledger -match '수정')) "원장에 수정 FORWARD_NULL"
 Assert (($ledger -match 'RESOURCE_LEAK') -and ($ledger -match '보류')) "원장에 보류 RESOURCE_LEAK"
 
 $invalid = ReadAll (Join-Path $out 'invalid.csv')
 Assert ((DataLines $invalid).Count -eq 3) "invalid = 헤더 + 무효 2행 (5003-bad, 5004-bad-enum)"
 Assert ($invalid -match '5003-bad\.json') "무효 목록에 5003-bad.json"
-Assert ($invalid -match 'fix') "무효 사유가 fix 관련(진성인데 fix 비어있음)"
+Assert ($invalid -match 'fix') "무효 사유가 fix 관련(수정인데 fix 비어있음)"
 Assert ($invalid -match '5004-bad-enum\.json') "무효 목록에 5004-bad-enum.json (폐기된 enum 값 거부)"
 Assert ($invalid -match 'verdict 값 오류') "무효 사유가 verdict enum 위반 — 폐기된 false-positive enum 값을 collect 가 거부"
 
 $bcFwdPath = Join-Path $out 'by-checker\FORWARD_NULL.md'
 Assert (Test-Path -LiteralPath $bcFwdPath) "by-checker/FORWARD_NULL.md 생성"
 $bcFwd = ReadAll $bcFwdPath
-Assert (($bcFwd -match '## 진성') -and ($bcFwd -match '5001')) "by-checker에 진성 5001 커밋후보 목록"
+Assert (($bcFwd -match '## 수정') -and ($bcFwd -match '5001')) "by-checker에 수정 5001 커밋후보 목록"
 $bcLeak = ReadAll (Join-Path $out 'by-checker\RESOURCE_LEAK.md')
 Assert (($bcLeak -match '## 보류') -and ($bcLeak -match '5002')) "by-checker에 보류 5002 목록"
 

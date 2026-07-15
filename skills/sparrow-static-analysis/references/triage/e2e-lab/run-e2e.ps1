@@ -151,7 +151,7 @@ Check "B: unresolved.csv empty (header only)" ($unrLines.Count -eq 1) "lines=$($
 
 # ============================================================ C. 판정 (triage model = 나)
 # 각 requests/*.md 를 triage-prompt 규칙대로 판정한 결과 verdict JSON.
-# 전건 수정 정책(false-positive 스킵 없음): 4 진성(FORWARD_NULL/RESOURCE_LEAK/EMPTY_CATCH_BLOCK/NULL_RETURN_STD)
+# 전건 수정 정책(false-positive 스킵 없음): 4 수정(FORWARD_NULL/RESOURCE_LEAK/EMPTY_CATCH_BLOCK/NULL_RETURN_STD)
 # + 1 보류(OVERLY_BROAD_CATCH — 문맥 부족으로 지금 못 고침, needs_context; 확보 후 수정 대기).
 # fix.before 는 SampleApp 소스의 정확한 substring(LF). fix.after 는 가이드 수정패턴 준수 C# 7.3.
 Write-Host "`n==== C. 판정 (verdict JSON 작성 = triage 모델) ===="
@@ -201,22 +201,22 @@ $nrBefore  = '            return Activator.CreateInstance(t);'
 $nrAfter   = (@('            if (t == null) return null;','            return Activator.CreateInstance(t);') -join "`n")
 
 $verdicts = @(
-    (New-Verdict 9001 'FORWARD_NULL' 'NullDeref.cs' 11 '진성' `
-        'FirstOrDefault 는 널 반환 가능 API이며(가이드 진성 판별 (2)), 결과 node 를 널 검사 없이 .Value 로 역참조한다. 역참조 전 non-null 확정 대입/검사 없음.' `
+    (New-Verdict 9001 'FORWARD_NULL' 'NullDeref.cs' 11 '수정' `
+        'FirstOrDefault 는 널 반환 가능 API이며(가이드 결함 판별 (2)), 결과 node 를 널 검사 없이 .Value 로 역참조한다. 역참조 전 non-null 확정 대입/검사 없음.' `
         '11' $fnBefore $fnAfter '' $false @() $false 'CWE-476'),
-    (New-Verdict 9002 'RESOURCE_LEAK' 'LeakFile.cs' 9 '진성' `
-        'new FileStream 으로 IDisposable 을 지역 소유하고, fs.Read(예외 가능) 뒤 fs.Close() 로만 해제해 예외 시 Dispose 누락(가이드 진성 판별). using 블록으로 감싼다.' `
+    (New-Verdict 9002 'RESOURCE_LEAK' 'LeakFile.cs' 9 '수정' `
+        'new FileStream 으로 IDisposable 을 지역 소유하고, fs.Read(예외 가능) 뒤 fs.Close() 로만 해제해 예외 시 Dispose 누락(가이드 결함 판별). using 블록으로 감싼다.' `
         '9-13' $rlBefore $rlAfter '' $false @() $false 'CWE-772'),
-    (New-Verdict 9003 'EMPTY_CATCH_BLOCK' 'SwallowEx.cs' 13 '진성' `
-        'catch { } 본문이 비어 예외를 조용히 삼킴(로깅·복구·전파 전무, 가이드 진성 판별). 좁은 처리+로깅 후 throw; 로 전파.' `
+    (New-Verdict 9003 'EMPTY_CATCH_BLOCK' 'SwallowEx.cs' 13 '수정' `
+        'catch { } 본문이 비어 예외를 조용히 삼킴(로깅·복구·전파 전무, 가이드 결함 판별). 좁은 처리+로깅 후 throw; 로 전파.' `
         '13' $ecBefore $ecAfter '' $false @() $false 'CWE-390'),
     (New-Verdict 9004 'OVERLY_BROAD_CATCH' 'BroadCatch.cs' 13 '보류' `
-        'catch (Exception ex) 가 광역 포착이라 진성 후보이나, 전건 수정 정책상 예외형별 명시 catch 로 고치려면 try 본문 각 API의 문서화된 예외형 목록(문맥)이 필요하다. 지금은 못 고치므로 보류(스킵 아님).' `
+        'catch (Exception ex) 가 광역 포착이라 결함 후보이나, 전건 수정 정책상 예외형별 명시 catch 로 고치려면 try 본문 각 API의 문서화된 예외형 목록(문맥)이 필요하다. 지금은 못 고치므로 보류(스킵 아님).' `
         '' '' '' `
         'catch (Exception ex) 를 예외형별 명시 catch 로 좁혀 수정해야 하나, BroadCatch.cs try 본문에서 호출하는 API들의 문서화된 예외형 목록이 없어 지금은 안전히 좁힐 수 없다. 목록 확보 후 반드시 명시 catch 로 수정한다.' `
         $true @('BroadCatch.cs try 본문에서 호출하는 API들의 문서화된 예외형 목록') $false 'CWE-396'),
-    (New-Verdict 9005 'NULL_RETURN_STD' 'BclNull.cs' 10 '진성' `
-        'Type.GetType(name) 은 형식 미발견 시 null 반환하는 BCL 계약 메서드(가이드 진성 판별 예시). 반환 t 를 널 검사 없이 Activator.CreateInstance(t) 로 역참조. 지역변수 널 검사 추가.' `
+    (New-Verdict 9005 'NULL_RETURN_STD' 'BclNull.cs' 10 '수정' `
+        'Type.GetType(name) 은 형식 미발견 시 null 반환하는 BCL 계약 메서드(가이드 결함 판별 예시). 반환 t 를 널 검사 없이 Activator.CreateInstance(t) 로 역참조. 지역변수 널 검사 추가.' `
         '10' $nrBefore $nrAfter '' $false @() $false 'CWE-476')
 )
 $utf8 = New-Object System.Text.UTF8Encoding($false)
@@ -235,9 +235,9 @@ $ledger = Join-Path $triage 'triage-ledger.csv'
 $ledgerLines = @()
 if (Test-Path -LiteralPath $ledger) { $ledgerLines = @((Read-TextNoBom $ledger) -split "`n" | Where-Object { $_.Trim().Length -gt 0 }) }
 Check "D: ledger has 5 rows"       (($ledgerLines.Count - 1) -eq 5) "rows=$($ledgerLines.Count - 1)"
-$jin = @($ledgerLines | Where-Object { $_ -match ',진성,' }).Count
+$jin = @($ledgerLines | Where-Object { $_ -match ',수정,' }).Count
 $bo  = @($ledgerLines | Where-Object { $_ -match ',보류,' }).Count
-Check "D: 4 진성"                  ($jin -eq 4) "진성=$jin"
+Check "D: 4 수정"                  ($jin -eq 4) "수정=$jin"
 Check "D: 1 보류"                  ($bo -eq 1) "보류=$bo"
 $invalid = Join-Path $triage 'invalid.csv'
 $invLines = @((Read-TextNoBom $invalid) -split "`n" | Where-Object { $_.Trim().Length -gt 0 })
@@ -257,7 +257,7 @@ foreach ($d in @('bin','obj')) { $p = Join-Path $fixedApp $d; if (Test-Path -Lit
 $applied = 0
 foreach ($vf in (Get-ChildItem -LiteralPath $verdictsDir -Filter *.json -File | Sort-Object Name)) {
     $v = Read-TextNoBom $vf.FullName | ConvertFrom-Json
-    if ([string]$v.verdict -ne '진성') { continue }
+    if ([string]$v.verdict -ne '수정') { continue }
     $target = Join-Path $fixedApp ([string]$v.file)
     $before = [string]$v.fix.before
     $after  = [string]$v.fix.after

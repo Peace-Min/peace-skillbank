@@ -14,9 +14,9 @@
 - CWE: 스타일 항목이라 직접 매핑 없음(광의 **CWE-1078** 계열, Inappropriate Source Code Style/Formatting).
 - 무기체계 보안약점 점검 목록: **187 항목 100% 적용**; 개별 항목번호는 Sparrow 체커↔표준 매핑 추출 후 기입(대기).
 
-## 진성 판별 기준
+## 결함 판별 기준
 - 지역 변수 선언이 명시 타입이고, 우변만으로 타입이 자명하다(문자열/숫자 리터럴, `new T()`, `(T)expr`, `Convert.ToXxx`, 명시 반환형 메서드 등).
-- 예: `string var1 = "...";`, `int var2 = 27;`, `Int32 var3 = Convert.ToInt32(Console.ReadLine());` — 모두 진성.
+- 예: `string var1 = "...";`, `int var2 = 27;`, `Int32 var3 = Convert.ToInt32(Console.ReadLine());` — 모두 결함.
 - 필드·프로퍼티·상수(`const`)·메서드 파라미터는 대상이 아니다(지역 변수 선언만).
 
 ## 이렇게 보여도 넘기지 말 것
@@ -44,5 +44,5 @@ var var3 = Convert.ToInt32(Console.ReadLine());
 - 신규 검출 0 — 특히 타입 변경으로 인한 오버로드 해석 변화·의도치 않은 암시적 변환이 발생하지 않았는지 확인.
 
 ## 기본 처리 분류
-- [ ] 진성 → 수정 (명시 타입 → var)
+- [ ] 수정 → 검출 라인을 위 패턴으로 고침 (명시 타입 → var)
 - [ ] 보류 → 문맥 확보 후 수정 (우변 타입 유추 가능성 판단 불가 시 needs_context; 확보 후 반드시 수정)

@@ -73,9 +73,9 @@ Required workflow:
 7. Use `needs_frontier = true` only when enough context is present but the local model still cannot make a reliable decision.
 8. Do not auto-edit Track C target source code. Provide verdict JSON and fix guidance only.
 
-Track C verdicts must classify each item as either `진성` or `보류` (this project fixes every finding — there is no false-positive skip):
+Track C verdicts must classify each item as either `수정` or `보류` (this project fixes every finding — there is no false-positive skip):
 
-- `진성`: true positive; include concrete `fix.before` and `fix.after` guidance using C# 7.3-compatible syntax.
+- `수정`: fix the detected line; include concrete `fix.before` and `fix.after` guidance using C# 7.3-compatible syntax.
 - `보류`: cannot fix yet (missing source/exception-list context); set `needs_context = true` + `missing_context`, or `needs_frontier = true` when enough context is present but the local model cannot decide. 보류 is NOT a skip — it is a pending state that MUST be fixed once the context is obtained.
 
 전건 수정 정책: every Sparrow finding is fixed. Do not drop items as false positives.

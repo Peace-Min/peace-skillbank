@@ -11,7 +11,7 @@
 - 무기체계 보안약점 점검 목록: **187 항목 100% 적용(설정 확정)**; 개별 항목번호는 Sparrow 체커↔표준 매핑 추출 후 기입(대기) — 단 관례/유지보수 개선 계열이라 실매핑 대상이 아닐 수 있음
 - .NET Framework Design Guideline: IDisposable 자원은 `try/finally` 대신 `using` 권장
 
-## 진성 판별 기준
+## 결함 판별 기준
 - `finally` 본문이 **자원 해제 호출로만** 구성(`Dispose()`/`Close()` 및 null 가드 정도).
 - 대상 자원이 해당 `try` 스코프에서 **획득·소유·소비 후 종료**된다(소유권이 스코프 내에 있음).
 
@@ -68,5 +68,5 @@ using (var conn = new SqlConnection(cs))
 - 신규 검출 0 — 치환으로 RESOURCE_LEAK/이중해제 회귀 없음.
 
 ## 기본 처리 분류
-- [ ] 진성 → 수정 (using 치환)
+- [ ] 수정 → 검출 라인을 위 패턴으로 고침 (using 치환)
 - [ ] 보류 → 문맥 확보 후 수정 (소유권 흐름 판단 필요 시 needs_context; 확보 후 반드시 수정; frontier-handoff)

@@ -698,6 +698,63 @@ class C {
     $capNegAfter = [System.IO.File]::ReadAllBytes($capNegFile)
     Check "capitalize negative: /// /** Korean no-letter already-cap all byte-identical" { Test-BytesEqual $capNegBefore $capNegAfter }
 
+    # --- rule: blockpromote (OPT-IN, UNVERIFIED: inline single-line /* */ -> // line above the enclosing stmt) ---
+    # Generalizes `trailing` from `//` to embedded `/* */`. Two shapes: a mid-condition block inside an `if`, and a
+    # catch-body block (Korean). Assert the promoted // line lands above the enclosing statement with a blank line,
+    # the inline block is removed + residual code collapsed, and it is idempotent.
+    $blockPromoteSrc = @'
+class C {
+    void M(bool cond) {
+        if (/* Att.IsSingleInput&&*/ (cond))
+        {
+        }
+    }
+}
+'@
+    $blockPromoteFile = New-Fixture "blockpromote.cs" $blockPromoteSrc
+    Check "blockpromote: exit 0" { (Invoke-Tool @($blockPromoteFile, "--rules", "blockpromote")) -eq 0 }
+    $bp = Read-Text $blockPromoteFile
+    Check "blockpromote: promoted // line above the if, blank line before" { $bp.Contains("`r`n`r`n        // Att.IsSingleInput&&.`r`n        if ((cond))") -or $bp.Contains("`n`n        // Att.IsSingleInput&&.`n        if ((cond))") }
+    Check "blockpromote: inline block removed + whitespace collapsed (( (cond) -> ((cond))" { $bp.Contains("if ((cond))") -and (-not $bp.Contains("/*")) }
+    # idempotency: the promoted // line is own-line now -> a second run is byte-identical.
+    $bp1 = [System.IO.File]::ReadAllBytes($blockPromoteFile)
+    Check "blockpromote: second run exit 0" { (Invoke-Tool @($blockPromoteFile, "--rules", "blockpromote")) -eq 0 }
+    $bp2 = [System.IO.File]::ReadAllBytes($blockPromoteFile)
+    Check "blockpromote: second run byte-identical (idempotent)" { Test-BytesEqual $bp1 $bp2 }
+
+    # blockpromote catch-body (Korean content preserved through the lift-out).
+    $blockPromoteCatchSrc = @'
+using System;
+class C {
+    void M() {
+        try { M2(); }
+        catch (Exception) { /* 무시 (Cancellation 등) */ }
+    }
+    void M2() { }
+}
+'@
+    $blockPromoteCatchFile = New-Fixture "blockpromote_catch.cs" $blockPromoteCatchSrc
+    Check "blockpromote catch: exit 0" { (Invoke-Tool @($blockPromoteCatchFile, "--rules", "blockpromote")) -eq 0 }
+    $bpc = Read-Text $blockPromoteCatchFile
+    Check "blockpromote catch: promoted // line above catch (Korean kept)" { $bpc.Contains("// 무시 (Cancellation 등).") }
+    Check "blockpromote catch: catch body emptied + block removed" { $bpc.Contains("catch (Exception) { }") -and (-not $bpc.Contains("/*")) }
+
+    # blockpromote NEGATIVE: an already-own-line /* */ (and a // line) are NOT inline -> byte-identical.
+    $blockPromoteNegSrc = @'
+class C {
+    void M() {
+        /* standalone block comment */
+        // standalone line comment
+        int a = 0;
+    }
+}
+'@
+    $blockPromoteNegFile = New-Fixture "blockpromote_negative.cs" $blockPromoteNegSrc
+    $bpnBefore = [System.IO.File]::ReadAllBytes($blockPromoteNegFile)
+    Check "blockpromote negative: exit 0" { (Invoke-Tool @($blockPromoteNegFile, "--rules", "blockpromote")) -eq 0 }
+    $bpnAfter = [System.IO.File]::ReadAllBytes($blockPromoteNegFile)
+    Check "blockpromote negative: own-line comments byte-identical" { Test-BytesEqual $bpnBefore $bpnAfter }
+
     # --- SAFETY: `//` inside string literals is never a comment -> --rules all leaves the file byte-identical ---
     $safeSrc = @'
 class C {
@@ -780,6 +837,7 @@ items/1.md,101,FORMATTING.COMMENT.MISSING_SPACE_AFTER_DELIMITER,"낮음,높음",
 
     # --- capitalize is now ACTIVE -> exit 0; blankline/asterisk stay removed/deferred -> exit 2 ---
     Check "capitalize rule -> exit 0 (re-enabled)" { (Invoke-Tool @($spaceFile, "--rules", "capitalize")) -eq 0 }
+    Check "blockpromote rule -> exit 0 (opt-in registered key)" { (Invoke-Tool @($spaceFile, "--rules", "blockpromote")) -eq 0 }
     Check "blankline rule -> exit 2 (removed)" { (Invoke-Tool @($spaceFile, "--rules", "blankline")) -eq 2 }
     Check "asterisk rule -> exit 2 (deferred)" { (Invoke-Tool @($spaceFile, "--rules", "asterisk")) -eq 2 }
     Check "unknown rule -> exit 2" { (Invoke-Tool @($spaceFile, "--rules", "bogus")) -eq 2 }

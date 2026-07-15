@@ -31,7 +31,7 @@
 #>
 param(
     [string]$Solution,      # .sln / .csproj / 폴더 경로 (소스 루트)
-    [ValidateSet('flatten', 'trailing', 'space', 'period', 'capitalize', 'memberblank', 'onestatement', 'onedeclaration', 'continuation', 'linqalign')]
+    [ValidateSet('flatten', 'trailing', 'space', 'period', 'capitalize', 'memberblank', 'onestatement', 'onedeclaration', 'continuation', 'linqalign', 'blockpromote')]
     [string[]]$Rules = @('trailing', 'space', 'period', 'capitalize'),
     [switch]$Commit,
     [switch]$DryRun,

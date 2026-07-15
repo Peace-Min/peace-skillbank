@@ -7,6 +7,10 @@
 // issues_OSTES_6827.xls / 6855.xls, plus the checker descriptions):
 //   flatten  (Doxygen/block comment -> line comments for simple @brief/@param/@returns blocks)
 //   trailing (inline `code; //comment` -> preceding normalized line comment)
+//   blockpromote (OPT-IN, UNVERIFIED: inline single-line `/* ... */` block comment -> lifted OUT to its own
+//               `//` line above the enclosing statement, with a blank line before, and the residual code line
+//               cleaned. Generalizes `trailing` from `//` to embedded `/* */`. Not in the runner's default rule
+//               set; must be selected explicitly with `--rules blockpromote`. See TryPromoteInlineBlockComment.)
 //   space    (FORMATTING.COMMENT.MISSING_SPACE_AFTER_DELIMITER, "//와 주석 사이 공백")
 //   period   (FORMATTING.COMMENT.MISSING_PERIOD, "주석 문장 끝 종결부호")
 //   capitalize (FORMATTING.COMMENT.LOWERCASE_FIRST_LETTER, "주석 첫 글자 대문자")
@@ -68,7 +72,7 @@ namespace SparrowCommentFix
         // Canonical order the active text rules are applied in (selection order is irrelevant; application is fixed).
         private static readonly string[] AllRuleKeys =
         {
-            "flatten", "trailing", "space", "period", "capitalize",
+            "flatten", "trailing", "blockpromote", "space", "period", "capitalize",
             "memberblank", "onestatement", "onedeclaration", "continuation", "linqalign"
         };
 
@@ -270,6 +274,15 @@ namespace SparrowCommentFix
                     continue;
                 }
 
+                if (enabled.Contains("blockpromote") && IsBlock(cur)
+                    && TryPromoteInlineBlockComment(text, t, cur, out Edit promoteInsert, out Edit promoteRemove))
+                {
+                    stagedCounts["blockpromote"]++;
+                    edits.Add(promoteInsert);
+                    edits.Add(promoteRemove);
+                    continue;
+                }
+
                 if (enabled.Contains("space"))
                 {
                     string next = RewriteSpace(cur);
@@ -401,6 +414,94 @@ namespace SparrowCommentFix
             string replacement = indent + "// " + content + nl + code;
             edit = new Edit(lineStart, trivia.Span.End - lineStart, replacement);
             return true;
+        }
+
+        // MISSING_BLANK_LINE_BEFORE_COMMENT for an INLINE single-line `/* ... */` block comment embedded in a code
+        // line (OPT-IN `blockpromote`, generalizing `trailing` from `//` to `/* */`). An inline mid-line comment
+        // cannot get a "blank line before" in place, so the resolution is to LIFT it OUT to its own `//` line
+        // ABOVE the enclosing statement (with one blank line before), and clean the residual code line. Produces
+        // TWO edits: `insert` (the promoted `// ...` line + blank, at the enclosing statement's line start) and
+        // `remove` (delete the inline `/* ... */` and collapse the leftover doubled whitespace so the code parses).
+        //
+        // SKIP (return false -> the comment is left byte-identical) when the transform can't be done cleanly:
+        //   - the block comment spans multiple physical lines (only single-line `/* ... */` is promotable);
+        //   - it is a `/**` Doxygen/doc block (flatten's domain);
+        //   - it is ALREADY alone on its own line (not inline) -> nothing to lift, and this guarantees idempotency;
+        //   - the inner text is empty after trimming;
+        //   - no enclosing statement/member can be determined for placement;
+        //   - the enclosing statement does not begin its own line (promotion target would be ambiguous).
+        private static bool TryPromoteInlineBlockComment(string source, SyntaxTrivia trivia, string text,
+                                                         out Edit insert, out Edit remove)
+        {
+            insert = default;
+            remove = default;
+            if (!IsBlock(text)) return false;
+            if (text.StartsWith("/**", StringComparison.Ordinal)) return false;   // doc block -> flatten's domain
+            // Single physical line only: a multi-line `/* ... */` cannot be lifted to a single `//` line.
+            if (text.IndexOf('\n') >= 0 || text.IndexOf('\r') >= 0) return false;
+            // INLINE only: a block comment already standalone on its own line is NOT a target (keeps idempotency).
+            if (IsStandaloneTriviaLine(source, trivia.SpanStart, trivia.Span.End)) return false;
+
+            string inner = text.Substring(2, text.Length - 4).Trim();
+            if (inner.Length == 0) return false;
+
+            // Enclosing statement (preferred) or member declaration (fields live outside any StatementSyntax).
+            SyntaxNode? parent = trivia.Token.Parent;
+            if (parent == null) return false;
+            SyntaxNode? anchor = parent.FirstAncestorOrSelf<StatementSyntax>();
+            if (anchor == null) anchor = parent.FirstAncestorOrSelf<MemberDeclarationSyntax>();
+            if (anchor == null) return false;
+
+            // The placement target is the enclosing statement/clause as it VISUALLY begins a line. The nearest
+            // StatementSyntax can be an inner block whose `{` shares a line with its clause header (e.g. a comment
+            // inside `catch (Exception) { /* .. */ }` -> nearest statement is the empty block, but the visual line
+            // start is the `catch`). Climb to the nearest ancestor whose first token begins its own physical line.
+            SyntaxNode? node = anchor;
+            while (node != null)
+            {
+                int ls = LineStart(source, node.SpanStart);
+                if (source.Substring(ls, node.SpanStart - ls).Trim().Length == 0) break;
+                node = node.Parent;
+            }
+            if (node == null) return false;   // no enclosing construct begins its own line -> ambiguous, skip
+            anchor = node;
+            int anchorLineStart = LineStart(source, anchor.SpanStart);
+
+            string indent = IndentBefore(source, anchor.SpanStart);
+            string nl = DetectNewline(source);
+
+            // Promoted comment text: `// <inner>` with the existing delimiter-space + terminal-period logic.
+            string promoted = RewritePeriod(RewriteSpace("// " + inner));
+
+            // insert: one blank line (unless the line above is already blank) + the promoted `//` line, ABOVE the
+            // enclosing statement's first line.
+            string leadingBlank = PrecededByBlankLine(source, anchorLineStart) ? "" : nl;
+            insert = new Edit(anchorLineStart, 0, leadingBlank + indent + promoted + nl);
+
+            // remove: delete the inline `/* ... */` and collapse ONE unit of the leftover doubled whitespace so the
+            // residual code is clean (`( (cond)`->`((cond)`, `conn )`->`conn)`, `{  }`->`{ }`, `; /*..*/`->`;`).
+            int rmStart = trivia.SpanStart;
+            int rmEnd = trivia.Span.End;
+            bool spaceBefore = rmStart > anchorLineStart && (source[rmStart - 1] == ' ' || source[rmStart - 1] == '\t');
+            bool spaceAfter = rmEnd < source.Length && (source[rmEnd] == ' ' || source[rmEnd] == '\t');
+            if (spaceBefore) rmStart--;               // drop the leading space (covers before&after and before-only)
+            else if (spaceAfter) rmEnd++;             // no leading space -> drop the trailing space instead
+            remove = new Edit(rmStart, rmEnd - rmStart, "");
+            return true;
+        }
+
+        // True when the physical line ending immediately before `lineStart` is blank (empty or whitespace-only), or
+        // `lineStart` is the very start of the file (nothing above). Used so `blockpromote` never stacks a second
+        // blank line above the comment it lifts out.
+        private static bool PrecededByBlankLine(string text, int lineStart)
+        {
+            if (lineStart <= 0) return true;
+            int j = lineStart - 1;                    // last char before our line = the previous line's terminator
+            if (j >= 0 && text[j] == '\n') j--;
+            if (j >= 0 && text[j] == '\r') j--;
+            if (j < 0) return true;                   // previous line was empty at the very start of the file
+            int prevStart = LineStart(text, j);
+            return text.Substring(prevStart, j - prevStart + 1).Trim().Length == 0;
         }
 
         // FORMATTING.COMMENT.MISSING_SPACE_AFTER_DELIMITER: `//x`->`// x`, `///x`->`/// x`, `/*x*/`->`/* x*/`.
@@ -1453,7 +1554,7 @@ namespace SparrowCommentFix
         // checker key they saw in Sparrow is rejected.
         private static string InvalidRuleMessage(string token)
         {
-            return "unknown or inactive rule '" + token + "'. valid rules: flatten, trailing, space, period, capitalize, memberblank, onestatement, onedeclaration, continuation, linqalign, all.\n"
+            return "unknown or inactive rule '" + token + "'. valid rules: flatten, trailing, blockpromote, space, period, capitalize, memberblank, onestatement, onedeclaration, continuation, linqalign, all.\n"
                  + "  not active (removed/deferred per real-data analysis; re-addable as a small diff):\n"
                  + "  - asterisk: replaced by flatten for block comments\n"
                  + "  - blankline: replaced by trailing for inline comments";
@@ -1463,7 +1564,7 @@ namespace SparrowCommentFix
         {
             Console.Error.WriteLine("error: " + message);
             Console.Error.WriteLine("usage: SparrowCommentFix <file.cs> [<file2.cs> ...] [--files-from index.csv] "
-                                    + "[--root DIR] --rules <flatten,trailing,space,period,capitalize,memberblank,onestatement,onedeclaration,continuation,linqalign|all> [--dry-run] [--include-generated]");
+                                    + "[--root DIR] --rules <flatten,trailing,blockpromote,space,period,capitalize,memberblank,onestatement,onedeclaration,continuation,linqalign|all> [--dry-run] [--include-generated]");
             return 2;   // usage / validation error
         }
     }

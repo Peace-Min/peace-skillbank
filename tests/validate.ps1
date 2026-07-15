@@ -9,6 +9,7 @@ param(
     [switch]$IncludeSparrowRealXlsC3Tests, # opt-in: also run the real-xls C3 detect+fix regression (verbatim xls code; needs .NET SDK + Roslyn)
     [switch]$IncludeSparrowRealXlsForHoistTests, # opt-in: also run the real-xls forhoist detect+fix regression (verbatim xls code; needs .NET SDK + Roslyn)
     [switch]$IncludeSparrowRealXlsContinuationDeepTests, # opt-in: also run the real-xls deep-continuation normalize regression (verbatim xls code; needs .NET SDK + Roslyn)
+    [switch]$IncludeSparrowRealXlsBlockPromoteTests, # opt-in: also run the real-xls blockpromote detect+fix regression (inline /* */ -> // above stmt; needs .NET SDK + Roslyn)
     [switch]$IncludeSparrowExhaustiveXls # opt-in: exhaustive Track A/B coverage over the REAL OSTES xls (needs .NET SDK + the xls in Downloads; self-skips if absent)
 )
 
@@ -279,6 +280,17 @@ $sparrowRealXlsContDeep = Join-Path $RepositoryRoot "tests\sparrow-realxls-conti
 Assert-Condition (Test-Path -LiteralPath $sparrowRealXlsContDeep) "Missing Sparrow real-xls continuation-deep test script"
 Test-PowerShellSyntax -Path $sparrowRealXlsContDeep
 if ($IncludeSparrowRealXlsContinuationDeepTests) { & $sparrowRealXlsContDeep -RepositoryRoot $RepositoryRoot }
+
+# Sparrow real-xls blockpromote regression: fixtures embed the four INLINE `/* */` shapes from the xls
+# (CPlayerObjectInfo/SimulationController/MapConst/SQLiteDataManager) for the OPT-IN `blockpromote` rule, which
+# lifts an inline single-line block comment OUT to its own `//` line above the enclosing statement; assert BOTH
+# detection (rule fires -> positive edit count) AND remediation (promoted // line above + inline block removed +
+# residual parses clean + idempotent), plus an own-line negative and an opt-in-isolation check (default rule set
+# does NOT promote). Always syntax-check + assert existence; only RUN when opted in.
+$sparrowRealXlsBlockPromote = Join-Path $RepositoryRoot "tests\sparrow-realxls-blockpromote-tests.ps1"
+Assert-Condition (Test-Path -LiteralPath $sparrowRealXlsBlockPromote) "Missing Sparrow real-xls blockpromote test script"
+Test-PowerShellSyntax -Path $sparrowRealXlsBlockPromote
+if ($IncludeSparrowRealXlsBlockPromoteTests) { & $sparrowRealXlsBlockPromote -RepositoryRoot $RepositoryRoot }
 
 # EXHAUSTIVE Sparrow Track A/B xls coverage: extract the REAL flagged code of EVERY Track A/B finding in the
 # OSTES issues .xls, generate a parseable snippet for each, run the matching tool+rule over all of them, and

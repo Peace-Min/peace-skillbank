@@ -233,14 +233,19 @@ namespace SparrowSyntaxFix.FixtureTests
                 "class C\n{\n    void M()\n    {\n        XmlNodeList clsNodes = GetNodes();\n        foreach (XmlNode node in clsNodes)\n        {\n            _ = node.Name;\n        }\n    }\n}\n",
                 "class C\n{\n    void M()\n    {\n        XmlNodeList clsNodes = GetNodes();\n        foreach (var node in System.Linq.Enumerable.Cast<XmlNode>(clsNodes))\n        {\n            _ = node.Name;\n        }\n    }\n}\n",
                 SyntaxRule.ForeachCast, false, false, foreachCast: true);
+
+            // Real OSTES pattern: collection is a member access (x.ChildNodes), not a locally-declared
+            // XmlNodeList. The original foreach already casts each element to XmlNode, so Cast<XmlNode>(expr)
+            // is semantics-equivalent for any collection expression.
+            ExpectTransform("member-access / bare collection also converts",
+                "class C\n{\n    void M(System.Xml.XmlNode root)\n    {\n        foreach (XmlNode node in root.ChildNodes)\n        {\n            _ = node.Name;\n        }\n    }\n}\n",
+                "class C\n{\n    void M(System.Xml.XmlNode root)\n    {\n        foreach (var node in System.Linq.Enumerable.Cast<XmlNode>(root.ChildNodes))\n        {\n            _ = node.Name;\n        }\n    }\n}\n",
+                SyntaxRule.ForeachCast, false, false, foreachCast: true);
         }
 
         private static void ForeachCastNegatives()
         {
             Console.WriteLine("[foreachcast negative]");
-            ExpectUnchanged("unknown collection expression skipped",
-                "class C\n{\n    void M()\n    {\n        foreach (XmlNode node in clsNodes)\n        {\n            _ = node.Name;\n        }\n    }\n}\n",
-                SyntaxRule.ForeachCast);
             ExpectUnchanged("pattern enumerator skipped",
                 "class C\n{\n    void M()\n    {\n        PatternOnly xs = GetPatternOnly();\n        foreach (Foo node in xs)\n        {\n            _ = node;\n        }\n    }\n}\n",
                 SyntaxRule.ForeachCast);

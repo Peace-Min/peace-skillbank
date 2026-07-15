@@ -41,23 +41,14 @@ namespace SparrowSyntaxFix
         {
             if (!VarRewriteHelpers.TypeMatchesAny(node.Type, "XmlNode", "System.Xml.XmlNode")) return false;
             if (HasUserDefinedXmlNodeNames(node)) return false;
-            if (node.Expression is not IdentifierNameSyntax id) return false;
-            string collectionName = id.Identifier.ValueText;
-            BlockSyntax? block = node.Parent as BlockSyntax;
-            if (block == null) return false;
-
-            foreach (StatementSyntax statement in block.Statements)
-            {
-                if (statement.SpanStart >= node.SpanStart) break;
-                if (statement is not LocalDeclarationStatementSyntax local) continue;
-                if (!VarRewriteHelpers.TypeMatchesAny(local.Declaration.Type, "XmlNodeList", "System.Xml.XmlNodeList"))
-                    continue;
-                foreach (VariableDeclaratorSyntax variable in local.Declaration.Variables)
-                {
-                    if (variable.Identifier.ValueText == collectionName) return true;
-                }
-            }
-            return false;
+            // The original `foreach (XmlNode x in <expr>)` already casts each element to XmlNode per
+            // iteration, so `Enumerable.Cast<XmlNode>(<expr>)` is semantics-equivalent for ANY collection
+            // expression — identifier, member access (`node.ChildNodes`), invocation, field, parameter.
+            // (The prior guard required <expr> to be a locally-declared XmlNodeList identifier, which
+            // missed the dominant real pattern `foreach (XmlNode c in x.ChildNodes)` -> 0 conversions.)
+            // We only require a non-null collection expression; safety is preserved because element access
+            // is unchanged. review-needed + build-gate covers the rare non-IEnumerable-foreachable case.
+            return node.Expression != null;
         }
 
         private static bool HasUserDefinedXmlNodeNames(SyntaxNode node)

@@ -8,6 +8,7 @@
       .\Run-TrackA.ps1                                                # 경로 입력 후 적용. -Commit/-DryRun 없으면 커밋 여부를 물음
       .\Run-TrackA.ps1 -Solution C:\Work\OSTES\OSTES.sln              # 경로를 미리 줘도 됨
       .\Run-TrackA.ps1 -Solution ...\OSTES.sln -Commit               # 규칙군마다 git 커밋(안 물어봄)
+      .\Run-TrackA.ps1 -Solution ...\OSTES.sln -NoCommit             # 파일만 수정, 커밋 안 함(안 물어봄)
       .\Run-TrackA.ps1 -Solution ...\OSTES.sln -DryRun               # 변경 안 함, 무엇이 바뀔지만 보고
       .\Run-TrackA.ps1 -Solution ...\OSTES.sln -Rules var,parens     # 일부 규칙군만
 #>
@@ -16,6 +17,7 @@ param(
     [string]$EditorConfig,
     [string[]]$Rules = @('var', 'parens', 'initializer'),
     [switch]$Commit,
+    [switch]$NoCommit,
     [switch]$DryRun,
     [string]$Severity = 'info',
     [ValidateSet('quiet', 'minimal', 'normal', 'detailed', 'diagnostic')][string]$Verbosity = 'diagnostic',
@@ -86,7 +88,7 @@ $targetCfg = Join-Path $slnDir ".editorconfig"
 if (-not $LogDir) { $LogDir = (Get-Location).Path }
 $stamp = (Get-Date).ToString('yyyyMMdd-HHmmss')
 $logPath = Join-Path $LogDir ("Run-TrackA.$stamp.log")
-"Run-TrackA | solution=$slnFull | rules=$($Rules -join ',') | dryrun=$([bool]$DryRun) | commit=$([bool]$Commit) | time=$stamp" | Out-File -LiteralPath $logPath -Encoding utf8
+"Run-TrackA | solution=$slnFull | rules=$($Rules -join ',') | dryrun=$([bool]$DryRun) | commit=$([bool]$Commit) | nocommit=$([bool]$NoCommit) | time=$stamp" | Out-File -LiteralPath $logPath -Encoding utf8
 Write-Host "실행 로그(전체 진단): $logPath"
 
 # 작업트리 오염 경고(자동수정 diff 격리를 위해)
@@ -140,7 +142,7 @@ else {
 }
 
 # 1b) -Commit/-DryRun 둘 다 없으면 물어봄(플래그 빼먹는 실수 방지). 비대화형(CI/파이프)은 안 물어보고 커밋 안 함.
-if (-not $Commit -and -not $DryRun) {
+if (-not $Commit -and -not $DryRun -and -not $NoCommit) {
     if ([Environment]::UserInteractive) {
         $ans = Read-Host "규칙별로 커밋할까요? (Y=규칙별 자동 커밋 / N=파일만 수정, 커밋 안 함)"
         if ($ans -match '^\s*(y|yes|예|ㅛ)\s*$') { $Commit = $true; Write-Host "-> 규칙별 커밋 진행" }
@@ -149,6 +151,9 @@ if (-not $Commit -and -not $DryRun) {
     else {
         Write-Host "(비대화형: -Commit 미지정 -> 커밋 안 함)"
     }
+}
+elseif ($NoCommit) {
+    Write-Host "-> 파일만 수정(커밋 안 함). (-NoCommit)"
 }
 
 # 2) 규칙군별 dotnet format — 전체 출력은 로그로, 콘솔엔 요약만
@@ -193,6 +198,7 @@ foreach ($r in $Rules) {
             'failed'    { Write-Warning "  커밋 실패(git 락 5회 재시도 후에도) - 파일 수정은 유지됨. 나중에 수동 커밋 가능." }
         }
     }
+    elseif ($NoCommit) { Write-Host "  커밋    : -NoCommit -> 커밋 안 함 (파일만 수정됨)" }
     else { Write-Host "  커밋    : -Commit 미지정 -> 커밋 안 함 (파일만 수정됨; 커밋하려면 -Commit)" }
 }
 

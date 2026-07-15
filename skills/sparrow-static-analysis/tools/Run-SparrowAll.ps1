@@ -11,6 +11,7 @@
 
     사용:
       .\Run-SparrowAll.ps1 -Solution ...\OSTES.sln -Commit     # A→B 전 규칙, 규칙별 자동 커밋
+      .\Run-SparrowAll.ps1 -Solution ...\OSTES.sln -NoCommit   # A→B 전 규칙, 파일만 수정
       .\Run-SparrowAll.ps1 -Solution ...\src -DryRun            # 변경 미리보기(파일 안 건드림)
       .\Run-SparrowAll.ps1 -Solution ...\src                    # 적용만(커밋 여부는 각 러너가 물음)
       # 규칙 좁히기:
@@ -19,6 +20,7 @@
 param(
     [string]$Solution,
     [switch]$Commit,
+    [switch]$NoCommit,
     [switch]$DryRun,
     # Track A(SparrowSyntaxFix) 규칙 — 안전 기본(obviousvar/objectvar-safe/parens/foreachcast) + opt-in(forvar/fieldsplit/emptystmt/forhoist)
     [string]$SyntaxRules = 'obviousvar,objectvar-safe,parens,foreachcast,forvar,fieldsplit,emptystmt,forhoist',
@@ -59,6 +61,7 @@ foreach ($p in @($syntaxRunner, $commentRunner)) {
 # -Commit / -DryRun 만 서브러너로 전달(둘 다 없으면 각 러너가 커밋 여부를 물음).
 $pass = @{}
 if ($Commit) { $pass['Commit'] = $true }
+if ($NoCommit) { $pass['NoCommit'] = $true }
 if ($DryRun) { $pass['DryRun'] = $true }
 
 $syntaxList  = @($SyntaxRules  -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })

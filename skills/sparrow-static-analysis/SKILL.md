@@ -17,10 +17,13 @@ Track A and Track B are deterministic tooling tracks. Track C is not an autofix 
 
 For normal one-shot local execution, prefer the `.cmd` launchers next to the PowerShell scripts:
 
+- `tools/Run-SparrowRunnerGui.cmd` for the integrated Track A/B WPF wrapper.
 - `references/Run-TrackA.cmd`
 - `tools/SparrowSyntaxFix/Run-SparrowSyntaxFix.cmd`
 - `tools/SparrowCommentFix/Run-SparrowCommentFix.cmd`
 - `tools/Run-SparrowAll.cmd`
+
+The WPF wrapper is a GUI shell over the existing CLI scripts. It lets the user choose a solution/project/folder, select Track A/B rules with checkboxes, choose commit/dry-run behavior, and view live logs. Keep rewrite logic in the CLI scripts; future rule improvements should update the CLI first and the GUI should only expose/select those options.
 
 The `.cmd` launchers call the matching `.ps1` with `powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -NoExit -File ...`.
 This preserves the existing prompt flow (solution path, optional rules, commit choice) while preventing a newly opened PowerShell window from closing before the user can read errors or completion output.

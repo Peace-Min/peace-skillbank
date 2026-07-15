@@ -19,6 +19,7 @@
     사용:
       .\Run-SparrowCommentFix.ps1 -Solution C:\Work\OSTES\OSTES.sln          # 적용. flatten/layout 포함 여부와 커밋 여부를 물음
       .\Run-SparrowCommentFix.ps1 -Solution ...\OSTES.sln -Commit            # 규칙별 git 커밋(안 물어봄)
+      .\Run-SparrowCommentFix.ps1 -Solution ...\OSTES.sln -NoCommit          # 파일만 수정, 커밋 안 함(안 물어봄)
       .\Run-SparrowCommentFix.ps1 -Solution C:\Work\OSTES -DryRun            # 변경 안 함, 무엇이 바뀔지만 보고
       .\Run-SparrowCommentFix.ps1 -Solution ...\OSTES.sln -Rules period      # 일부 규칙만
       .\Run-SparrowCommentFix.ps1 -Solution ...\OSTES.sln -FilesFrom index.csv   # (정밀) 자동 글롭 대신 준 CSV 사용(SparrowXlsExport 산출)
@@ -33,6 +34,7 @@ param(
     [string]$Solution,      # .sln / .csproj / 폴더 경로 (소스 루트)
     [string[]]$Rules = @('trailing', 'space', 'period', 'capitalize'),
     [switch]$Commit,
+    [switch]$NoCommit,
     [switch]$DryRun,
     [string]$FilesFrom,          # (정밀) 이미 있는 index.csv를 주면 자동 글롭 대신 그걸 사용
     [switch]$IncludeGenerated,   # 기본 off: 생성/백업 파일 제외. on이면 전부 포함
@@ -138,7 +140,7 @@ $root = if (Test-Path -LiteralPath $slnFull -PathType Leaf) { Split-Path -Parent
 if (-not $LogDir) { $LogDir = (Get-Location).Path }
 $stamp = (Get-Date).ToString('yyyyMMdd-HHmmss')
 $logPath = Join-Path $LogDir ("Run-SparrowCommentFix.$stamp.log")
-"Run-SparrowCommentFix | root=$root | rules=$($Rules -join ',') | dryrun=$([bool]$DryRun) | includeGenerated=$([bool]$IncludeGenerated) | time=$stamp" | Out-File -LiteralPath $logPath -Encoding utf8
+"Run-SparrowCommentFix | root=$root | rules=$($Rules -join ',') | dryrun=$([bool]$DryRun) | commit=$([bool]$Commit) | nocommit=$([bool]$NoCommit) | includeGenerated=$([bool]$IncludeGenerated) | time=$stamp" | Out-File -LiteralPath $logPath -Encoding utf8
 Write-Host "실행 로그(전체): $logPath"
 Write-Host "소스 루트      : $root"
 
@@ -233,7 +235,7 @@ function Invoke-GitCommitStep {
 }
 
 # 1b) -Commit/-DryRun 둘 다 없으면 물어봄(플래그 빼먹는 실수 방지). 비대화형은 안 물어보고 커밋 안 함.
-if (-not $Commit -and -not $DryRun) {
+if (-not $Commit -and -not $DryRun -and -not $NoCommit) {
     if ([Environment]::UserInteractive) {
         $ans = Read-Host "규칙별로 커밋할까요? (Y=규칙별 자동 커밋 / N=파일만 수정, 커밋 안 함)"
         if ($ans -match '^\s*(y|yes|예|ㅛ)\s*$') { $Commit = $true; Write-Host "-> 규칙별 커밋 진행" }
@@ -242,6 +244,9 @@ if (-not $Commit -and -not $DryRun) {
     else {
         Write-Host "(비대화형: -Commit 미지정 -> 커밋 안 함)"
     }
+}
+elseif ($NoCommit) {
+    Write-Host "-> 파일만 수정(커밋 안 함). (-NoCommit)"
 }
 
 # 2) 대상 .cs 파일 목록 구성.
@@ -355,6 +360,7 @@ try {
                 'failed'    { Write-Warning "  커밋 실패(git 락 5회 재시도 후에도) - 파일 수정은 유지됨. 나중에 수동 커밋 가능." }
             }
         }
+        elseif ($NoCommit) { Write-Host "  커밋      : -NoCommit -> 커밋 안 함 (파일만 수정됨)" }
         else { Write-Host "  커밋      : -Commit 미지정 -> 커밋 안 함 (파일만 수정됨)" }
     }
     $ErrorActionPreference = 'Stop'

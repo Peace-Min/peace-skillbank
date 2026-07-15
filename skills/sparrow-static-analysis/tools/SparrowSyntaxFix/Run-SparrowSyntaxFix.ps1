@@ -22,6 +22,7 @@
       .\Run-SparrowSyntaxFix.ps1                                                # ← 이게 원큐. 경로/검토필요 규칙/커밋 Y/N
       .\Run-SparrowSyntaxFix.ps1 -Solution C:\Work\OSTES\OSTES.sln              # 경로를 미리 줘도 됨(커밋 여부는 물음)
       .\Run-SparrowSyntaxFix.ps1 -Solution ...\OSTES.sln -Commit                # 안 물어보고 규칙별 자동 커밋
+      .\Run-SparrowSyntaxFix.ps1 -Solution ...\OSTES.sln -NoCommit              # 파일만 수정, 커밋 안 함(안 물어봄)
       .\Run-SparrowSyntaxFix.ps1 -Solution ...\OSTES.sln -DryRun                # 변경 안 함, 무엇이 바뀔지만 보고
       .\Run-SparrowSyntaxFix.ps1 -Solution ...\OSTES.sln -Rules objectvar-safe,foreachcast # 일부 규칙만
       .\Run-SparrowSyntaxFix.ps1 -Solution ...\OSTES.sln -FilesFrom index.csv   # (정밀) 검출된 파일만 (SparrowXlsExport 산출)
@@ -35,6 +36,7 @@ param(
     [string]$Solution,
     [string[]]$Rules = @('objectvar-safe', 'obviousvar', 'arrayvar-safe', 'parens'),
     [switch]$Commit,
+    [switch]$NoCommit,
     [switch]$DryRun,
     [string]$FilesFrom,
     [string]$ExePath,
@@ -139,7 +141,7 @@ $root = if (Test-Path -LiteralPath $slnFull -PathType Leaf) { Split-Path -Parent
 if (-not $LogDir) { $LogDir = (Get-Location).Path }
 $stamp = (Get-Date).ToString('yyyyMMdd-HHmmss')
 $logPath = Join-Path $LogDir ("Run-SparrowSyntaxFix.$stamp.log")
-"Run-SparrowSyntaxFix | root=$root | rules=$($Rules -join ',') | dryrun=$([bool]$DryRun) | commit=$([bool]$Commit) | time=$stamp" | Out-File -LiteralPath $logPath -Encoding utf8
+"Run-SparrowSyntaxFix | root=$root | rules=$($Rules -join ',') | dryrun=$([bool]$DryRun) | commit=$([bool]$Commit) | nocommit=$([bool]$NoCommit) | time=$stamp" | Out-File -LiteralPath $logPath -Encoding utf8
 Write-Host "실행 로그(전체): $logPath"
 Write-Host "소스 루트      : $root"
 
@@ -237,7 +239,7 @@ function Invoke-GitCommitStep {
 }
 
 # 1b) -Commit/-DryRun 둘 다 없으면 물어봄(플래그 빼먹는 실수 방지). 비대화형은 안 물어보고 커밋 안 함.
-if (-not $Commit -and -not $DryRun) {
+if (-not $Commit -and -not $DryRun -and -not $NoCommit) {
     if ([Environment]::UserInteractive) {
         $ans = Read-Host "규칙별로 커밋할까요? (Y=규칙별 자동 커밋 / N=파일만 수정, 커밋 안 함)"
         if ($ans -match '^\s*(y|yes|예|ㅛ)\s*$') { $Commit = $true; Write-Host "-> 규칙별 커밋 진행" }
@@ -246,6 +248,9 @@ if (-not $Commit -and -not $DryRun) {
     else {
         Write-Host "(비대화형: -Commit 미지정 -> 커밋 안 함)"
     }
+}
+elseif ($NoCommit) {
+    Write-Host "-> 파일만 수정(커밋 안 함). (-NoCommit)"
 }
 
 # 2) 규칙별 실행 — native(dotnet/git) stderr가 EAP=Stop에서 throw되는 것을 막기 위해 이 구간은 Continue.
@@ -287,6 +292,7 @@ foreach ($r in $Rules) {
             'failed'    { Write-Warning "  커밋 실패(git 락 5회 재시도 후에도) - 파일 수정은 유지됨. 나중에 수동 커밋 가능." }
         }
     }
+    elseif ($NoCommit) { Write-Host "  커밋      : -NoCommit -> 커밋 안 함 (파일만 수정됨)" }
     else { Write-Host "  커밋      : -Commit 미지정 -> 커밋 안 함 (파일만 수정됨)" }
 }
 

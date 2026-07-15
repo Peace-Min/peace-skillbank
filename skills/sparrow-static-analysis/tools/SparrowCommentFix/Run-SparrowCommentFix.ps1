@@ -31,8 +31,8 @@
 #>
 param(
     [string]$Solution,      # .sln / .csproj / 폴더 경로 (소스 루트)
-    [ValidateSet('flatten', 'trailing', 'space', 'period', 'memberblank', 'onestatement', 'onedeclaration', 'continuation', 'linqalign')]
-    [string[]]$Rules = @('trailing', 'space', 'period'),
+    [ValidateSet('flatten', 'trailing', 'space', 'period', 'capitalize', 'memberblank', 'onestatement', 'onedeclaration', 'continuation', 'linqalign')]
+    [string[]]$Rules = @('trailing', 'space', 'period', 'capitalize'),
     [switch]$Commit,
     [switch]$DryRun,
     [string]$FilesFrom,          # (정밀) 이미 있는 index.csv를 주면 자동 글롭 대신 그걸 사용
@@ -59,6 +59,7 @@ $labels = [ordered]@{
     trailing = '트레일링 주석 독립 줄 이동 및 보정'
     space  = '주석 구분자 뒤 공백 일괄 (//x -> // x)'
     period = '주석 끝 마침표 일괄'
+    capitalize = '주석 첫 글자 대문자 일괄'
     memberblank = '멤버 선언 사이 빈 줄 일괄'
     onestatement = '한 줄 여러 구문 분리'
     onedeclaration = '한 줄 여러 선언 분리'
@@ -86,7 +87,7 @@ if (-not $rulesExplicit -and [Environment]::UserInteractive) {
     }
 }
 
-$canonicalRules = @('flatten', 'trailing', 'space', 'period', 'onedeclaration', 'onestatement', 'memberblank', 'linqalign', 'continuation')
+$canonicalRules = @('flatten', 'trailing', 'space', 'period', 'capitalize', 'onedeclaration', 'onestatement', 'memberblank', 'linqalign', 'continuation')
 $selectedRules = @($Rules)
 $Rules = @($canonicalRules | Where-Object { $selectedRules -contains $_ })
 

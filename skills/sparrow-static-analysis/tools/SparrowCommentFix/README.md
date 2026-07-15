@@ -18,7 +18,7 @@ and `"a//b"` are left byte-identical. This guarantee is covered by the SAFETY fi
 ## CLI
 
 ```
-SparrowCommentFix <file.cs> [<file2.cs> ...] [--files-from <index.csv>] [--root <dir>] --rules <flatten,trailing,space,period,memberblank,onestatement,onedeclaration,continuation,linqalign|all> [--dry-run]
+SparrowCommentFix <file.cs> [<file2.cs> ...] [--files-from <index.csv>] [--root <dir>] --rules <flatten,trailing,space,period,capitalize,memberblank,onestatement,onedeclaration,continuation,linqalign|all> [--dry-run]
 ```
 
 - Positional args are `.cs` file paths.
@@ -42,6 +42,7 @@ a rule with no safe deterministic contract is left unhandled rather than shipped
 | `trailing` | inline/trailing comment rule | `code; //ABC` -> `// ABC.` above `code;` | only real line-comment trivia after code on the same line |
 | `space` | `FORMATTING.COMMENT.MISSING_SPACE_AFTER_DELIMITER` | `//x`→`// x`, `///x`→`/// x`, `/*x*/`→`/* x*/` | untouched if next char is whitespace, another `/`, or (block) `*`; `//`/`////` untouched |
 | `period` | `FORMATTING.COMMENT.MISSING_PERIOD` | append `.` to comment content | only when the last content char is a **letter** (ASCII / Hangul / CJK) or **digit**; skips dividers (`// ----`, `/****/`), commented-out code ending in `;`/`]`, and content already ending in punctuation |
+| `capitalize` | `FORMATTING.COMMENT.LOWERCASE_FIRST_LETTER` | strip leading punctuation (`<`, `.`, `[`, `(`, ...), then uppercase an ASCII `a-z` first letter (`// <variableSource>`→`// VariableSource>`, `//badcase`→`//Badcase`) | **skips** `///` doc + `/**` Doxygen; never strips/uppercases Korean/CJK (no case); aborts if only symbols/whitespace precede the first letter (`// ==== divider`); inline `/* */` edited in place, **never** converted to `//` |
 | `memberblank` | `FORMATTING.BETWEEN_MEMBER_DEFINITION.MISSING_BLANK_LINE` | inserts one blank line between adjacent method/property declarations | only pure whitespace between members; skips comments/directives/attributes |
 | `onestatement` | `USE_ONE_STATEMENT_PER_LINE` | splits adjacent statements and single-line if blocks | same statement list only; skips comments/directives |
 | `onedeclaration` | `USE_ONE_DECLARATION_PER_LINE` | splits local/field multi-declarator declarations | plain declarations only; skips comments/directives/attributes/using locals |
@@ -51,9 +52,9 @@ a rule with no safe deterministic contract is left unhandled rather than shipped
 Every rule is **idempotent** — running it twice
 changes nothing.
 
-## Rules that are NOT active (3)
+## Rules that are NOT active (2)
 
-Passing legacy keys — `--rules capitalize`, `--rules blankline`, `--rules asterisk` — (or any unknown
+Passing legacy keys — `--rules blankline`, `--rules asterisk` — (or any unknown
 key) exits `2` with a message naming the valid keys and the reason. The clean rule registry means each can be
 **re-added later as a small diff** (one rule key + one rewrite method) once a correct, real-data-backed
 contract is defined.
@@ -62,9 +63,10 @@ Legacy alias keys remain inactive; use the active rule names in the table above.
 
 | key | Sparrow checker | status | reason |
 |---|---|---|---|
-| `capitalize` | `FORMATTING.COMMENT.LOWERCASE_FIRST_LETTER` | **removed** | real flagged comments mostly start with 한글/기호 (`[`, `<`, `.`) that have no deterministic "uppercase", and capitalizing commented-out code (`/*att*/`→`/*Att*/`) is a wrong edit |
 | `blankline` | `MISSING_BLANK_LINE_BEFORE_COMMENT` | **removed** | the real rule targets **trailing/inline** comments (`code; //c`) and wants them on their own line — the opposite target of the old "insert a blank line before a line-leading comment" logic; re-targeting is a risky structural rewrite for only ~10 real hits |
 | `asterisk` | `FORMATTING.COMMENT.BLOCK_OF_ASTERISK` | **deferred** | removing Doxygen `/** * */` blocks is a style judgment, not a safe mechanical edit |
+
+> `capitalize` was previously removed but is **now active** (re-added with a safe, real-data-backed contract — see the Rules table above).
 
 ## Generated-file noise is excluded by default
 

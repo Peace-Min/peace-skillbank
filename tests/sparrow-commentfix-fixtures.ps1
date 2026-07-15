@@ -5,8 +5,8 @@
 
     It builds the tool, writes synthetic .cs fixtures to a temp dir, runs the tool per rule, and asserts the
     ACTIVE rules (comment + layout) before/after, the string-literal SAFETY guarantee (`//` inside a string is
-    never touched), idempotency, --dry-run (writes nothing), --files-from CSV parsing, and that the three
-    NOT-active rules (capitalize / blankline / asterisk) and any unknown key all exit 2. Skips cleanly (not
+    never touched), idempotency, --dry-run (writes nothing), --files-from CSV parsing, and that the two
+    NOT-active rules (blankline / asterisk) and any unknown key all exit 2. Skips cleanly (not
     fails) when the .NET SDK is missing.
 
     `--rules all` means all active comment + layout rules; runner defaults are narrower.
@@ -414,8 +414,56 @@ class C {
     Check "period: // ---- divider unchanged" { $pd.Contains("// ----") -and (-not $pd.Contains("// ----.")) }
     Check "period: // 3) ends non-letter unchanged" { $pd.Contains("// 3)") -and (-not $pd.Contains("// 3).")) }
 
-    # capitalize / blankline were REMOVED from the tool (real-data analysis). Their exit-2 checks live with the
-    # asterisk/unknown checks at the end of this script; there are no before/after fixtures for them anymore.
+    # --- rule: capitalize (LOWERCASE_FIRST_LETTER: strip leading punctuation, uppercase ASCII a-z first letter) ---
+    # Positives use REAL-shaped findings: `<` XML markup, leading `.`/`[`, no-space `//`, and an INLINE `/* */`
+    # block comment inside an `if (...)` that must stay a block comment (never converted to `//`).
+    $capSrc = @'
+class C {
+    // <variableSource sourceID="x">
+    // .foo bar
+    // [tag] note
+    //badcase
+    void M() {
+        if (a/* att.IsSingleInput&& */)
+        {
+        }
+    }
+}
+'@
+    $capFile = New-Fixture "capitalize.cs" $capSrc
+    Check "capitalize: exit 0" { (Invoke-Tool @($capFile, "--rules", "capitalize")) -eq 0 }
+    $cap = Read-Text $capFile
+    Check "capitalize: <variableSource -> // VariableSource (strip <, cap v)" { $cap.Contains('// VariableSource sourceID="x">') -and (-not $cap.Contains("// <variableSource")) }
+    Check "capitalize: .foo -> // Foo (strip ., cap f)" { $cap.Contains("// Foo bar") -and (-not $cap.Contains("// .foo")) }
+    Check "capitalize: [tag] -> // Tag] (strip [, cap t)" { $cap.Contains("// Tag] note") -and (-not $cap.Contains("// [tag]")) }
+    Check "capitalize: //badcase -> //Badcase (no space added)" { $cap.Contains("//Badcase") -and (-not $cap.Contains("// Badcase")) -and (-not $cap.Contains("//badcase")) }
+    Check "capitalize: inline block stays block AND is capitalized (never converted to //)" { $cap.Contains("if (a/* Att.IsSingleInput&& */)") }
+    # idempotency: second run makes zero further changes (byte-identical).
+    $capOnce = [System.IO.File]::ReadAllBytes($capFile)
+    Check "capitalize: second run exit 0" { (Invoke-Tool @($capFile, "--rules", "capitalize")) -eq 0 }
+    $capTwice = [System.IO.File]::ReadAllBytes($capFile)
+    Check "capitalize: second run byte-identical (idempotent)" { Test-BytesEqual $capOnce $capTwice }
+
+    # capitalize NEGATIVES (must stay byte-identical): `///` XML doc, `/**` Doxygen, Korean-leading, no-letter
+    # divider, and an already-capitalized comment.
+    $capNegSrc = @'
+class C {
+    /// <summary>
+    ///   deg(º)과(와) 유사한 지역화된 문자열을 찾습니다.
+    /** @brief something */
+    void M() {
+        // 한글 주석입니다
+        // ==== divider
+        // Already capitalized
+        int a = 0;
+    }
+}
+'@
+    $capNegFile = New-Fixture "capitalize_negative.cs" $capNegSrc
+    $capNegBefore = [System.IO.File]::ReadAllBytes($capNegFile)
+    Check "capitalize negative: exit 0" { (Invoke-Tool @($capNegFile, "--rules", "capitalize")) -eq 0 }
+    $capNegAfter = [System.IO.File]::ReadAllBytes($capNegFile)
+    Check "capitalize negative: /// /** Korean no-letter already-cap all byte-identical" { Test-BytesEqual $capNegBefore $capNegAfter }
 
     # --- SAFETY: `//` inside string literals is never a comment -> --rules all leaves the file byte-identical ---
     $safeSrc = @'
@@ -497,8 +545,8 @@ items/1.md,101,FORMATTING.COMMENT.MISSING_SPACE_AFTER_DELIMITER,"낮음,높음",
     $ffText = Read-Text (Join-Path $work "ff_fixture.cs")
     Check "files-from: named fixture edited (//x -> // x)" { $ffText.Contains("// x") -and (-not $ffText.Contains("//x")) }
 
-    # --- not-active / unknown rules -> exit 2 (capitalize & blankline removed per real-data analysis) ---
-    Check "capitalize rule -> exit 2 (removed)" { (Invoke-Tool @($spaceFile, "--rules", "capitalize")) -eq 2 }
+    # --- capitalize is now ACTIVE -> exit 0; blankline/asterisk stay removed/deferred -> exit 2 ---
+    Check "capitalize rule -> exit 0 (re-enabled)" { (Invoke-Tool @($spaceFile, "--rules", "capitalize")) -eq 0 }
     Check "blankline rule -> exit 2 (removed)" { (Invoke-Tool @($spaceFile, "--rules", "blankline")) -eq 2 }
     Check "asterisk rule -> exit 2 (deferred)" { (Invoke-Tool @($spaceFile, "--rules", "asterisk")) -eq 2 }
     Check "unknown rule -> exit 2" { (Invoke-Tool @($spaceFile, "--rules", "bogus")) -eq 2 }

@@ -9,13 +9,19 @@
 //   trailing (inline `code; //comment` -> preceding normalized line comment)
 //   space    (FORMATTING.COMMENT.MISSING_SPACE_AFTER_DELIMITER, "//와 주석 사이 공백")
 //   period   (FORMATTING.COMMENT.MISSING_PERIOD, "주석 문장 끝 종결부호")
+//   capitalize (FORMATTING.COMMENT.LOWERCASE_FIRST_LETTER, "주석 첫 글자 대문자")
 //   memberblank / onedeclaration / onestatement / linqalign / continuation
 //
-// THREE RULES ARE INTENTIONALLY NOT ACTIVE (removed/deferred per that same real-data analysis). This is the
+// TWO RULES ARE INTENTIONALLY NOT ACTIVE (removed/deferred per that same real-data analysis). This is the
 // "code-fix-only" decision: deterministically-unfixable items are simply left unhandled rather than mis-edited.
-//   capitalize (FORMATTING.COMMENT.LOWERCASE_FIRST_LETTER) -- REMOVED. Real flagged comments mostly start with
-//               한글/기호(`[`, `<`, `.`) that have no deterministic "uppercase", and capitalizing commented-out
-//               code (`/*att*/`->`/*Att*/`) is a wrong edit. No safe mechanical contract exists.
+//   capitalize (FORMATTING.COMMENT.LOWERCASE_FIRST_LETTER) -- ACTIVE. A comment's text must start with an
+//               UPPERCASE letter. Real findings start with a special char (`<` XML markup, `.`, `[`, `(`) or an
+//               ASCII lowercase letter in PLAIN `//` line and `/* */` block comments. Contract: skip the standard
+//               single space, strip ONLY leading punctuation/symbol chars (stop at the first letter/digit; abort
+//               if whitespace or region end is reached first), then uppercase an ASCII a-z first letter. HARD
+//               GUARDS: `///` doc comments and `/**` Doxygen blocks are skipped; Korean/CJK (non-ASCII) leading
+//               letters are never stripped or "uppercased" (Hangul has no case); `/* */` is edited in place and
+//               NEVER converted to `//` (that would comment out trailing code). Idempotent.
 //   blankline  (MISSING_BLANK_LINE_BEFORE_COMMENT) -- REMOVED. The real rule flags TRAILING/inline comments
 //               (`code; //c`) and wants them on their OWN line; the old implementation instead inserted a blank
 //               line before comments that already began a line -- the opposite target. Re-targeting is a risky
@@ -34,8 +40,8 @@
 //    (text `///...`) and `/**...*/` as ordinary MultiLineCommentTrivia. That keeps every rule a simple,
 //    total text transform on the comment's delimiter+content -- no structured-XML trivia to reason about.
 //  - CLEAN RULE REGISTRY (AllRuleKeys + per-comment/layout dispatch): active rules each slot in by key.
-//    capitalize / blankline / asterisk are intentionally not active (see SCOPE above);
-//    passing any of them -- or an unknown key -- exits 2 with a message naming the valid keys and the reason.
+//    blankline / asterisk are intentionally not active (see SCOPE above);
+//    passing either of them -- or an unknown key -- exits 2 with a message naming the valid keys and the reason.
 //  - TEXT rules are comment-trivia rewrites; layout rules are narrow span rewrites with parse/overlap guards.
 //  - Every rule is IDEMPOTENT: a second run is a no-op (verified by fixtures).
 //  - PER-CHECKER COMMITS: run ONE rule at a time (e.g. `--rules period`) so that run's diff == that one
@@ -62,7 +68,7 @@ namespace SparrowCommentFix
         // Canonical order the active text rules are applied in (selection order is irrelevant; application is fixed).
         private static readonly string[] AllRuleKeys =
         {
-            "flatten", "trailing", "space", "period",
+            "flatten", "trailing", "space", "period", "capitalize",
             "memberblank", "onestatement", "onedeclaration", "continuation", "linqalign"
         };
 
@@ -274,6 +280,11 @@ namespace SparrowCommentFix
                     string next = RewritePeriod(cur);
                     if (!string.Equals(next, cur, StringComparison.Ordinal)) { stagedCounts["period"]++; cur = next; }
                 }
+                if (enabled.Contains("capitalize"))
+                {
+                    string next = RewriteCapitalize(cur);
+                    if (!string.Equals(next, cur, StringComparison.Ordinal)) { stagedCounts["capitalize"]++; cur = next; }
+                }
 
                 if (!string.Equals(cur, original, StringComparison.Ordinal))
                     edits.Add(new Edit(t.SpanStart, t.Span.Length, cur));
@@ -422,6 +433,65 @@ namespace SparrowCommentFix
             if (IsSingleLine(text)) return PeriodAt(text, SlashRun(text), text.Length);
             if (IsBlock(text)) return PeriodAt(text, 2, text.Length - 2);
             return text;
+        }
+
+        // FORMATTING.COMMENT.LOWERCASE_FIRST_LETTER: a comment's text should start with an UPPERCASE letter.
+        // Strip ONLY leading punctuation/symbol chars (`<`, `.`, `[`, `(`, `-`, `=`, ...) then uppercase an ASCII
+        // a-z first letter. HARD GUARDS: `///` doc comments and `/**` Doxygen blocks are skipped (functional/
+        // flatten's domain); the `/* */` block is edited IN PLACE, never converted to `//`. See CapitalizeInRegion.
+        private static string RewriteCapitalize(string text)
+        {
+            if (IsSingleLine(text))
+            {
+                // Only PLAIN `//` line comments. `///` (doc) and `////`+ (dividers) are left byte-identical.
+                if (SlashRun(text) != 2) return text;
+                return CapitalizeInRegion(text, 2, text.Length);
+            }
+            if (IsBlock(text))
+            {
+                // `/**...*/` Doxygen/XML doc block comments are flatten's domain -> skip.
+                if (text.StartsWith("/**", StringComparison.Ordinal)) return text;
+                // Region excludes the closing `*/`, so stripping/uppercasing never touches the delimiter and the
+                // comment stays a block comment (never converted to `//`).
+                return CapitalizeInRegion(text, 2, text.Length - 2);
+            }
+            return text;
+        }
+
+        // Within the comment content region [regionStart, regionEnd) (right after the opening delimiter, up to but
+        // excluding any closing delimiter): skip the leading standard single space, strip a CONTIGUOUS run of
+        // leading punctuation/symbol chars, and uppercase the first ASCII lowercase letter. Returns the input
+        // unchanged (byte-identical) when nothing qualifies -- guaranteeing idempotency and the hard guards.
+        private static string CapitalizeInRegion(string text, int regionStart, int regionEnd)
+        {
+            if (regionStart < 0 || regionEnd > text.Length || regionStart >= regionEnd) return text;
+
+            // Skip leading whitespace (the standard single space after the delimiter, plus any incidental ws).
+            int i = regionStart;
+            while (i < regionEnd && (text[i] == ' ' || text[i] == '\t')) i++;
+
+            // Strip ONLY leading punctuation/symbols. Stop at the first letter (ASCII or Unicode/Korean) or digit.
+            // If whitespace or the region end is reached before any letter/digit, the leading symbols form a
+            // standalone token (e.g. `// ==== divider`, `// ----`, pure symbols) -> skip (leave byte-identical).
+            int j = i;
+            while (j < regionEnd)
+            {
+                char c = text[j];
+                if (char.IsWhiteSpace(c)) return text;   // symbols are a standalone token -> no reachable letter
+                if (char.IsLetterOrDigit(c)) break;      // reached the word/number start
+                j++;                                     // strip this punctuation/symbol char
+            }
+            if (j >= regionEnd) return text;             // pure symbols / no content -> skip
+
+            char first = text[j];
+            // Only an ASCII lowercase letter is uppercased. A digit, an already-uppercase ASCII letter, or a
+            // non-ASCII letter (Hangul/CJK, which has no uppercase) -> skip. This keeps `// 한글주석`, `// 3)`,
+            // and `// Already capitalized` byte-identical, and makes a second run a no-op.
+            if (!(first >= 'a' && first <= 'z')) return text;
+
+            // Keep the delimiter + leading whitespace [0, i); DROP the stripped punctuation [i, j); uppercase the
+            // first letter; keep the remainder (including any closing `*/`).
+            return text.Substring(0, i) + char.ToUpperInvariant(first) + text.Substring(j + 1);
         }
 
         private static string NormalizeCommentContent(string content)
@@ -1098,14 +1168,14 @@ namespace SparrowCommentFix
             return true;
         }
 
-        // capitalize / blankline / asterisk are intentionally NOT active (removed/deferred per real-data
-        // analysis; see the file header). Name the valid keys AND state the reason so the operator is not
-        // left guessing why a checker key they saw in Sparrow is rejected.
+        // blankline / asterisk are intentionally NOT active (removed/deferred per real-data analysis; see the
+        // file header). Name the valid keys AND state the reason so the operator is not left guessing why a
+        // checker key they saw in Sparrow is rejected.
         private static string InvalidRuleMessage(string token)
         {
-            return "unknown or inactive rule '" + token + "'. valid rules: flatten, trailing, space, period, memberblank, onestatement, onedeclaration, continuation, linqalign, all.\n"
+            return "unknown or inactive rule '" + token + "'. valid rules: flatten, trailing, space, period, capitalize, memberblank, onestatement, onedeclaration, continuation, linqalign, all.\n"
                  + "  not active (removed/deferred per real-data analysis; re-addable as a small diff):\n"
-                 + "  - capitalize/asterisk: replaced by flatten for block comments\n"
+                 + "  - asterisk: replaced by flatten for block comments\n"
                  + "  - blankline: replaced by trailing for inline comments";
         }
 
@@ -1113,7 +1183,7 @@ namespace SparrowCommentFix
         {
             Console.Error.WriteLine("error: " + message);
             Console.Error.WriteLine("usage: SparrowCommentFix <file.cs> [<file2.cs> ...] [--files-from index.csv] "
-                                    + "[--root DIR] --rules <flatten,trailing,space,period,memberblank,onestatement,onedeclaration,continuation,linqalign|all> [--dry-run] [--include-generated]");
+                                    + "[--root DIR] --rules <flatten,trailing,space,period,capitalize,memberblank,onestatement,onedeclaration,continuation,linqalign|all> [--dry-run] [--include-generated]");
             return 2;   // usage / validation error
         }
     }

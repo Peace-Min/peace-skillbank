@@ -25,7 +25,8 @@
 
 - `catch(Exception)` / `catch`(무형) **절대 금지** — 최상위 경계 핸들러도 예외 없음.
 - try 본문에서 호출하는 각 API의 **문서화된 예외형을 전부 열거**해, 예외형마다 명시 catch 절을 작성한다.
-- 빈 catch 금지 → `LogUtil.Error(this, ex.ToString())`로 기록.
+- **예외 열거 근거 = ExceptionAnalyzer 로그**: 이 폴더에 넣어둔 `*_ApiCallCandidates.txt`(사용자 제공)에서 해당 try(파일:라인) 구간의 예외 목록·권장 catch 순서(파생→기반, Exception 제외)를 우선 근거로 삼는다. 로그가 없으면 예외를 추측하지 말고 보류(needs_context: ExceptionAnalyzer 로그 필요).
+- 빈 catch 금지 → `LogUtil.Error(this, ex.ToString())`로 기록. 각 명시 catch 본문은 LogUtil.Error + **원본 catch 로직(return/rethrow 등) 보존**.
 - 예외 열거가 부족하면 skip이 아니다 → 예외목록/소스를 확보한 뒤 **반드시 수정**(보류+needs_context).
 - 참고: `SafeFileUtil.SafeDelete`가 File 관련 예외를 전부 명시 catch로 잡는 모범 패턴이다.
 

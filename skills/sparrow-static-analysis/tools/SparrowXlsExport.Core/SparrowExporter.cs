@@ -268,8 +268,26 @@ namespace SparrowXlsExport.Core
             if (!desc.EndsWith("\n", StringComparison.Ordinal)) sb.Append('\n');
 
             string src = gv(vals, CSource);
+            // 대상 라인 강조: 소스 스니펫의 라인번호 접두("  96.")가 검출 라인과 같은 줄에 마커를 붙인다.
+            bool lineMarked = false;
+            if (int.TryParse(line.Trim(), out int targetLine) && targetLine > 0)
+            {
+                var reLine = new System.Text.RegularExpressions.Regex(@"(?m)^(\s*" + targetLine + @"\.[^\r\n]*)");
+                if (reLine.IsMatch(src))
+                {
+                    src = reLine.Replace(src, "$1    ◀────── 대상 라인 " + targetLine, 1);
+                    lineMarked = true;
+                }
+            }
             string fence = src.Contains("```") ? "````" : "```";   // escape source that itself contains a fence
             sb.Append("\n## 소스 코드\n");
+            if (line.Trim().Length > 0)
+            {
+                sb.Append("> ⚠️ **수정 대상 = 라인 ").Append(line.Trim()).Append("**");
+                sb.Append(lineMarked
+                    ? " (아래 소스의 `◀────── 대상 라인` 표시). 그 라인만 고치고, 표시 없는 다른 라인은 임의로 수정하지 마라.\n\n"
+                    : ". 이 라인만 고치고, 다른 라인은 임의로 수정하지 마라.\n\n");
+            }
             sb.Append(fence).Append("text\n");
             sb.Append(src);
             if (!src.EndsWith("\n", StringComparison.Ordinal)) sb.Append('\n');

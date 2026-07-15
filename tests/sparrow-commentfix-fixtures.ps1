@@ -487,6 +487,9 @@ class C {
         // ok!
         // ----
         // 3)
+        // Miss Distance(Min/Max/Avg)
+        // -- 시작 --
+        if (/* att.IsSingleInput&&*/ (a == 1)) { }
         int a = 0;
     }
 }
@@ -498,8 +501,12 @@ class C {
     Check "period: // 안녕 -> // 안녕. (Hangul letter qualifies)" { $pd.Contains("// 안녕.") }
     Check "period: // done. unchanged (no second period)" { $pd.Contains("// done.") -and (-not $pd.Contains("// done..")) }
     Check "period: // ok! unchanged" { $pd.Contains("// ok!") -and (-not $pd.Contains("// ok!.")) }
-    Check "period: // ---- divider unchanged" { $pd.Contains("// ----") -and (-not $pd.Contains("// ----.")) }
-    Check "period: // 3) ends non-letter unchanged" { $pd.Contains("// 3)") -and (-not $pd.Contains("// 3).")) }
+    Check "period: // ---- pure divider unchanged (no letter/digit)" { $pd.Contains("// ----") -and (-not $pd.Contains("// ----.")) }
+    # Goal = pass Sparrow: any comment with text NOT ending in . ? ! gets a period, regardless of last char.
+    Check "period: // 3) -> // 3). (ends ')' non-terminal)" { $pd.Contains("// 3).") }
+    Check "period: ')'-ending prose gets period" { $pd.Contains("// Miss Distance(Min/Max/Avg).") }
+    Check "period: divider-with-text gets period" { $pd.Contains("// -- 시작 --.") }
+    Check "period: inline /* */ commented code gets period, stays block" { $pd.Contains("att.IsSingleInput&&.*/") }
 
     # --- rule: capitalize (LOWERCASE_FIRST_LETTER: strip leading punctuation, uppercase ASCII a-z first letter) ---
     # Positives use REAL-shaped findings: `<` XML markup, leading `.`/`[`, no-space `//`, and an INLINE `/* */`

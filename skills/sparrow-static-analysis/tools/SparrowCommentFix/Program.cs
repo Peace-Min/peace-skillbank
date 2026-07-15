@@ -909,12 +909,18 @@ namespace SparrowCommentFix
             while (last >= start && char.IsWhiteSpace(text[last])) last--;
             if (last < start) return text;   // empty / whitespace-only content
 
-            // Divider guard: content (ignoring whitespace) has no letter/digit at all (e.g. `// ----`, `/****/`).
+            // Pure-decoration guard: content (ignoring whitespace) has NO letter/digit at all (e.g. `// ----`,
+            // `/****/`). Sparrow doesn't flag a sentence-less divider, so leave it untouched (avoids churn).
             bool anyAlnum = false;
             for (int i = start; i < end; i++) { if (IsPeriodChar(text[i])) { anyAlnum = true; break; } }
             if (!anyAlnum) return text;
 
-            if (!IsPeriodChar(text[last])) return text;   // already terminal/other punctuation -> leave alone
+            // Goal = pass Sparrow's MISSING_PERIOD (comment must END with a terminal punctuation . ? !). A comment
+            // is ONLY skipped when it already ends with one of those; otherwise append a period — regardless of the
+            // last char (`)`, symbol, box-drawing `─`, or commented-out code). Comments have no runtime effect, so
+            // this is safe; the only real guards are compile-safety (inline `/* */` keeps its `*/`, string literals
+            // untouched — handled by the caller/region) and idempotency (already-terminal -> no-op).
+            if (IsTerminalPunct(text[last])) return text;
             return text.Substring(0, last + 1) + "." + text.Substring(last + 1);
         }
 
@@ -1212,6 +1218,9 @@ namespace SparrowCommentFix
             if (c >= '豈' && c <= '﫿') return true;   // CJK Compatibility Ideographs
             return false;
         }
+
+        // Sparrow's accepted terminal punctuation for a comment sentence: period, question mark, exclamation mark.
+        private static bool IsTerminalPunct(char c) => c == '.' || c == '?' || c == '!';
 
         private static byte[] Prepend(byte[] prefix, byte[] body)
         {

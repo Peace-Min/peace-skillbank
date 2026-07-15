@@ -15,6 +15,7 @@
       - forvar               : for(int i=0; ...) -> for(var i=0; ...) (단일 선언자·명백 초기값; opt-in)
       - fieldsplit           : 다중 선언자 필드 -> 줄마다 하나(필드 한정; opt-in)
       - emptystmt            : 잉여 빈문장(; ;) 제거(for(;;)/label 등 의미상 필요분 제외; opt-in)
+      - forhoist             : 다중 선언자 for 초기화절 분해 — 비루프 선언자를 for 앞으로 hoist(for는 단일 선언자 유지; opt-in)
     Run-TrackA.ps1과 동일 UX: 솔루션 경로만 주면 동작(내부에서 exe 확보 -> 규칙별 실행 -> 규칙별 커밋).
 
     사용(원큐): 그냥 실행 -> 솔루션 경로 -> 검토필요 규칙 포함 여부(Y/N) -> 커밋 여부(Y/N)를 물어봄.
@@ -32,7 +33,7 @@
 #>
 param(
     [string]$Solution,
-    [ValidateSet('nullvar', 'nullcast', 'parens', 'objectvar-safe', 'foreachcast', 'obviousvar', 'objectvar-narrowing', 'localconst', 'objectinitializer', 'arrayvar-safe', 'arrayvar-narrowing', 'forvar', 'fieldsplit', 'emptystmt')]
+    [ValidateSet('nullvar', 'nullcast', 'parens', 'objectvar-safe', 'foreachcast', 'obviousvar', 'objectvar-narrowing', 'localconst', 'objectinitializer', 'arrayvar-safe', 'arrayvar-narrowing', 'forvar', 'fieldsplit', 'emptystmt', 'forhoist')]
     [string[]]$Rules = @('objectvar-safe', 'obviousvar', 'arrayvar-safe', 'parens'),
     [switch]$Commit,
     [switch]$DryRun,
@@ -70,6 +71,7 @@ $labels = [ordered]@{
     forvar                = 'for 초기화절 명시 타입 var 변환 (SparrowSyntaxFix)'
     fieldsplit            = '다중 선언자 필드 줄분리 (SparrowSyntaxFix)'
     emptystmt             = '잉여 빈문장(; ;) 제거 (SparrowSyntaxFix)'
+    forhoist              = '검토필요: 다중 선언자 for 초기화절 hoist 분해 (SparrowSyntaxFix)'
 }
 
 if (-not $rulesExplicit -and [Environment]::UserInteractive) {
@@ -82,7 +84,8 @@ if (-not $rulesExplicit -and [Environment]::UserInteractive) {
         @{ Key = 'arrayvar-narrowing'; Prompt = '배열 정적 타입 축소 var 변환(arrayvar-narrowing)을 포함할까요? (Y=포함 / N=제외)' },
         @{ Key = 'forvar'; Prompt = 'for 초기화절 var 변환(forvar)을 포함할까요? (Y=포함 / N=제외)' },
         @{ Key = 'fieldsplit'; Prompt = '다중 선언자 필드 줄분리(fieldsplit)를 포함할까요? (Y=포함 / N=제외)' },
-        @{ Key = 'emptystmt'; Prompt = '잉여 빈문장 제거(emptystmt)를 포함할까요? (Y=포함 / N=제외)' }
+        @{ Key = 'emptystmt'; Prompt = '잉여 빈문장 제거(emptystmt)를 포함할까요? (Y=포함 / N=제외)' },
+        @{ Key = 'forhoist'; Prompt = '다중 선언자 for 초기화절 hoist 분해(forhoist)를 포함할까요? (Y=포함 / N=제외)' }
     )
     foreach ($rule in $optionalRules) {
         $ans = Read-Host $rule.Prompt

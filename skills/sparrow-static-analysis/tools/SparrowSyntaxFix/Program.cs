@@ -31,6 +31,7 @@ namespace SparrowSyntaxFix
             ("forvar", SyntaxRule.ForVar),
             ("fieldsplit", SyntaxRule.FieldSplit),
             ("emptystmt", SyntaxRule.EmptyStmt),
+            ("forhoist", SyntaxRule.ForHoist),
         };
 
         private static int Main(string[] args)
@@ -182,6 +183,7 @@ namespace SparrowSyntaxFix
                     case "forvar": rules |= SyntaxRule.ForVar; break;
                     case "fieldsplit": rules |= SyntaxRule.FieldSplit; break;
                     case "emptystmt": rules |= SyntaxRule.EmptyStmt; break;
+                    case "forhoist": rules |= SyntaxRule.ForHoist; break;
                     default: return false;
                 }
             }
@@ -235,7 +237,7 @@ namespace SparrowSyntaxFix
             w.WriteLine("                            rules: nullvar(nullcast alias),parens,objectvar-safe,foreachcast,");
             w.WriteLine("                                   obviousvar,objectvar-narrowing,localconst,");
             w.WriteLine("                                   objectinitializer,arrayvar-safe,arrayvar-narrowing,");
-            w.WriteLine("                                   forvar,fieldsplit,emptystmt  (last three: opt-in, not in default)");
+            w.WriteLine("                                   forvar,fieldsplit,emptystmt,forhoist  (last four: opt-in, not in default)");
             w.WriteLine("  --dry-run                 report per-file/per-rule counts without writing");
             w.WriteLine("exit codes: 0 = success (changed or not), 1 = error, 2 = usage");
             return message == null ? 0 : 2;

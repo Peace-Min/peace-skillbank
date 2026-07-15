@@ -7,6 +7,7 @@ param(
     [switch]$IncludeSparrowLoopTests, # opt-in: also run the cross-rule loop/idempotency/compile tests (needs .NET SDK + Roslyn/WPF)
     [switch]$IncludeSparrowRealPatternTests, # opt-in: also run the grounded real-OSTES-pattern pipeline regression (needs .NET SDK + Roslyn)
     [switch]$IncludeSparrowRealXlsC3Tests, # opt-in: also run the real-xls C3 detect+fix regression (verbatim xls code; needs .NET SDK + Roslyn)
+    [switch]$IncludeSparrowRealXlsForHoistTests, # opt-in: also run the real-xls forhoist detect+fix regression (verbatim xls code; needs .NET SDK + Roslyn)
     [switch]$IncludeSparrowExhaustiveXls # opt-in: exhaustive Track A/B coverage over the REAL OSTES xls (needs .NET SDK + the xls in Downloads; self-skips if absent)
 )
 
@@ -258,6 +259,15 @@ $sparrowRealXlsC3 = Join-Path $RepositoryRoot "tests\sparrow-realxls-c3-tests.ps
 Assert-Condition (Test-Path -LiteralPath $sparrowRealXlsC3) "Missing Sparrow real-xls C3 test script"
 Test-PowerShellSyntax -Path $sparrowRealXlsC3
 if ($IncludeSparrowRealXlsC3Tests) { & $sparrowRealXlsC3 -RepositoryRoot $RepositoryRoot }
+
+# Sparrow real-xls forhoist regression: fixture embeds the EXACT xls-detected multi-declarator for-init
+# (verbatim, prefix stripped) for the opt-in forhoist rule; assert BOTH detection (rule fires -> positive
+# edit count) AND remediation (count hoisted to its own var line + for trimmed to a single var declarator +
+# parses clean + idempotent). Always syntax-check + assert existence; only RUN when opted in.
+$sparrowRealXlsForHoist = Join-Path $RepositoryRoot "tests\sparrow-realxls-forhoist-tests.ps1"
+Assert-Condition (Test-Path -LiteralPath $sparrowRealXlsForHoist) "Missing Sparrow real-xls forhoist test script"
+Test-PowerShellSyntax -Path $sparrowRealXlsForHoist
+if ($IncludeSparrowRealXlsForHoistTests) { & $sparrowRealXlsForHoist -RepositoryRoot $RepositoryRoot }
 
 # EXHAUSTIVE Sparrow Track A/B xls coverage: extract the REAL flagged code of EVERY Track A/B finding in the
 # OSTES issues .xls, generate a parseable snippet for each, run the matching tool+rule over all of them, and

@@ -32,6 +32,7 @@
     <Compile Include="..\ForVarRewriter.cs" Link="engine\ForVarRewriter.cs" />
     <Compile Include="..\FieldSplitRewriter.cs" Link="engine\FieldSplitRewriter.cs" />
     <Compile Include="..\EmptyStmtRewriter.cs" Link="engine\EmptyStmtRewriter.cs" />
+    <Compile Include="..\ForHoistRewriter.cs" Link="engine\ForHoistRewriter.cs" />
   </ItemGroup>
 
 </Project>

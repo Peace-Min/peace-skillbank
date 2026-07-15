@@ -31,9 +31,10 @@ namespace SparrowSyntaxFix
         ForVar = 1 << 10,
         FieldSplit = 1 << 11,
         EmptyStmt = 1 << 12,
+        ForHoist = 1 << 13,
         Default = Parens | ObjectVarSafe | ObviousVar | ArrayVarSafe,
         All = NullVar | Parens | ObjectVarSafe | ForeachCast | ObviousVar | ObjectVarNarrowing | LocalConst
-              | ObjectInitializer | ArrayVarSafe | ArrayVarNarrowing | ForVar | FieldSplit | EmptyStmt,
+              | ObjectInitializer | ArrayVarSafe | ArrayVarNarrowing | ForVar | FieldSplit | EmptyStmt | ForHoist,
     }
 
     // Result of a single-file rewrite: the new full text + per-rule edit counts + whether text changed.
@@ -62,6 +63,7 @@ namespace SparrowSyntaxFix
         public int ForVarEdits => Get("forvar");
         public int FieldSplitEdits => Get("fieldsplit");
         public int EmptyStmtEdits => Get("emptystmt");
+        public int ForHoistEdits => Get("forhoist");
         public bool Changed { get; }
 
         private int Get(string key) => Counts.TryGetValue(key, out int value) ? value : 0;
@@ -78,6 +80,12 @@ namespace SparrowSyntaxFix
             SyntaxNode current = root;
 
             var counts = NewCounts();
+
+            if ((rules & SyntaxRule.ForHoist) != 0)
+            {
+                current = ForHoistRewriter.Rewrite(current, source, out int forHoistCount);
+                counts["forhoist"] = forHoistCount;
+            }
 
             if ((rules & SyntaxRule.ForVar) != 0)
             {
@@ -191,6 +199,7 @@ namespace SparrowSyntaxFix
                 ["forvar"] = 0,
                 ["fieldsplit"] = 0,
                 ["emptystmt"] = 0,
+                ["forhoist"] = 0,
             };
         }
     }

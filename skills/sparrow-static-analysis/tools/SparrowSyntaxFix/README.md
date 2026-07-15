@@ -77,6 +77,7 @@ The CLI supports these rules:
 | `forvar` | `for (int i = 0; ...)` ??`for (var i = 0; ...)` for a single-declarator, obvious-init for-loop (multi-declarator / method-call init never touched) | `review-needed` (opt-in, not in default set) |
 | `fieldsplit` | `private double a, b, c;` ??one field per line, same indent, initializers/leading comment preserved (fields only) | `review-needed` (opt-in, not in default set) |
 | `emptystmt` | `stmt; ;` ??`stmt;` — removes a redundant empty statement (`for(;;)` / labels / loop-body empties kept) | `review-needed` (opt-in, not in default set) |
+| `forhoist` | `for (int i = 0, count = queue.Count; ...)` ??`var count = queue.Count;` + `for (var i = 0; ...)` — hoists non-loop declarators out of a multi-declarator for-init so the for stays single-declarator (dependency / name-collision / undeterminable-loop-var cases skipped) | `review-needed` (opt-in, not in default set) |
 
 `review-needed` rules are still CLI-applied, but must be isolated in their own rule run and commit. Suggested
 commit names:

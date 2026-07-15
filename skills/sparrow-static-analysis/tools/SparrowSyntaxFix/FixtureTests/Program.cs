@@ -33,6 +33,8 @@ namespace SparrowSyntaxFix.FixtureTests
             ObviousVarNegatives();
             ForVarPositives();
             ForVarNegatives();
+            ForHoistPositives();
+            ForHoistNegatives();
             FieldSplitPositives();
             FieldSplitNegatives();
             EmptyStmtPositives();
@@ -377,6 +379,45 @@ namespace SparrowSyntaxFix.FixtureTests
                 SyntaxRule.ForVar);
         }
 
+        // ============================ Rule: forhoist (opt-in) ============================
+
+        private static void ForHoistPositives()
+        {
+            Console.WriteLine("[forhoist positive]");
+            // Exact brief fixture (ActionQueue.cs:181 etc.): the multi-declarator for-init that LOOP_VARIABLE +
+            // USE_ONE_DECLARATION + OBVIOUS_VARIABLE_TYPE flag together and that cannot be fixed in place. The
+            // non-loop declarator (count) is hoisted to its own `var` local; the loop var stays as a single
+            // `var i = 0` declarator.
+            ExpectTransform("multi-declarator for-init hoists non-loop declarator",
+                "class C\n{\n    void M(System.Collections.Generic.Queue<int> queue)\n    {\n        for (int i = 0, count = queue.Count; i < count; i++)\n        {\n        }\n    }\n}\n",
+                "class C\n{\n    void M(System.Collections.Generic.Queue<int> queue)\n    {\n        var count = queue.Count;\n        for (var i = 0; i < count; i++)\n        {\n        }\n    }\n}\n",
+                SyntaxRule.ForHoist, false, false, forHoist: true);
+        }
+
+        private static void ForHoistNegatives()
+        {
+            Console.WriteLine("[forhoist negative — must stay byte-identical]");
+            // Single declarator: nothing to hoist (this is forvar's job, not forhoist's).
+            ExpectUnchanged("single-declarator for-init untouched",
+                "class C\n{\n    void M(int count)\n    {\n        for (int i = 0; i < count; i++)\n        {\n        }\n    }\n}\n",
+                SyntaxRule.ForHoist);
+            // Dependency: the hoisted declarator's initializer references the loop variable -> moving it before
+            // the for would read a not-yet-declared name / change evaluation order. Skip.
+            ExpectUnchanged("dependency: hoisted init references loop var",
+                "class C\n{\n    void M(int[] a)\n    {\n        for (int i = 0, sum = a[i]; i < a.Length; i++)\n        {\n        }\n    }\n}\n",
+                SyntaxRule.ForHoist);
+            // Name-collision: `count` is already a local in the enclosing method -> hoisting would shadow it. Skip.
+            ExpectUnchanged("name-collision: hoisted name already a local",
+                "class C\n{\n    void M(System.Collections.Generic.Queue<int> queue)\n    {\n        int count = 5;\n        for (int i = 0, count = queue.Count; i < count; i++)\n        {\n        }\n    }\n}\n",
+                SyntaxRule.ForHoist);
+            // Non-obvious (null) initializer on the hoisted declarator keeps the EXPLICIT type (var cannot infer
+            // from null). The loop var still becomes var.
+            ExpectTransform("non-obvious (null) hoisted declarator keeps explicit type",
+                "class C\n{\n    void M(int n)\n    {\n        for (int i = 0, node = default; i < n; i++)\n        {\n        }\n    }\n}\n",
+                "class C\n{\n    void M(int n)\n    {\n        int node = default;\n        for (var i = 0; i < n; i++)\n        {\n        }\n    }\n}\n",
+                SyntaxRule.ForHoist, false, false, forHoist: true);
+        }
+
         // ============================ Rule: fieldsplit (opt-in) ============================
 
         private static void FieldSplitPositives()
@@ -588,7 +629,8 @@ namespace SparrowSyntaxFix.FixtureTests
                                             bool arrayNarrowing = false,
                                             bool forVar = false,
                                             bool fieldSplit = false,
-                                            bool emptyStmt = false)
+                                            bool emptyStmt = false,
+                                            bool forHoist = false)
         {
             RewriteResult r = RewriteEngine.Rewrite(input, rules);
             bool textOk = r.NewText == expected;
@@ -605,6 +647,7 @@ namespace SparrowSyntaxFix.FixtureTests
                            && (r.ForVarEdits > 0) == forVar
                            && (r.FieldSplitEdits > 0) == fieldSplit
                            && (r.EmptyStmtEdits > 0) == emptyStmt
+                           && (r.ForHoistEdits > 0) == forHoist
                            && r.Changed;
             Report(label, textOk && countOk, textOk ? CountsText(r) : Diff(expected, r.NewText));
         }

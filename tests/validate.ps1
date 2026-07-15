@@ -6,6 +6,7 @@ param(
     [switch]$IncludeCommentE2E,   # opt-in: also build+run the SparrowCommentFix tool (needs .NET SDK + Roslyn restore)
     [switch]$IncludeSparrowLoopTests, # opt-in: also run the cross-rule loop/idempotency/compile tests (needs .NET SDK + Roslyn/WPF)
     [switch]$IncludeSparrowRealPatternTests, # opt-in: also run the grounded real-OSTES-pattern pipeline regression (needs .NET SDK + Roslyn)
+    [switch]$IncludeSparrowRealXlsC3Tests, # opt-in: also run the real-xls C3 detect+fix regression (verbatim xls code; needs .NET SDK + Roslyn)
     [switch]$IncludeSparrowExhaustiveXls # opt-in: exhaustive Track A/B coverage over the REAL OSTES xls (needs .NET SDK + the xls in Downloads; self-skips if absent)
 )
 
@@ -249,6 +250,14 @@ $sparrowRealPattern = Join-Path $RepositoryRoot "tests\sparrow-realpattern-tests
 Assert-Condition (Test-Path -LiteralPath $sparrowRealPattern) "Missing Sparrow real-pattern test script"
 Test-PowerShellSyntax -Path $sparrowRealPattern
 if ($IncludeSparrowRealPatternTests) { & $sparrowRealPattern -RepositoryRoot $RepositoryRoot }
+
+# Sparrow real-xls C3 regression: fixtures embed the EXACT xls-detected source (verbatim, prefix stripped) for the
+# five v0.1.50 C3 rules; assert BOTH detection (rule fires -> positive edit count) AND remediation (correct
+# transform + parses clean + idempotent). Always syntax-check + assert existence; only RUN when opted in.
+$sparrowRealXlsC3 = Join-Path $RepositoryRoot "tests\sparrow-realxls-c3-tests.ps1"
+Assert-Condition (Test-Path -LiteralPath $sparrowRealXlsC3) "Missing Sparrow real-xls C3 test script"
+Test-PowerShellSyntax -Path $sparrowRealXlsC3
+if ($IncludeSparrowRealXlsC3Tests) { & $sparrowRealXlsC3 -RepositoryRoot $RepositoryRoot }
 
 # EXHAUSTIVE Sparrow Track A/B xls coverage: extract the REAL flagged code of EVERY Track A/B finding in the
 # OSTES issues .xls, generate a parseable snippet for each, run the matching tool+rule over all of them, and

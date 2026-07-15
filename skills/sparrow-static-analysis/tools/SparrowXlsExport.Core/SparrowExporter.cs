@@ -268,24 +268,44 @@ namespace SparrowXlsExport.Core
             if (!desc.EndsWith("\n", StringComparison.Ordinal)) sb.Append('\n');
 
             string src = gv(vals, CSource);
-            // 대상 라인 강조: 소스 스니펫의 라인번호 접두("  96.")가 검출 라인과 같은 줄에 마커를 붙인다.
+            // 대상 라인 강조: 소스 스니펫의 라인번호 접두("  96:" 또는 "  96.")가 검출 라인과 같은 줄에 마커를 붙인다.
             bool lineMarked = false;
+            string targetLineText = "";
             if (int.TryParse(line.Trim(), out int targetLine) && targetLine > 0)
             {
-                var reLine = new System.Text.RegularExpressions.Regex(@"(?m)^(\s*" + targetLine + @"\.[^\r\n]*)");
+                var reLine = new System.Text.RegularExpressions.Regex(@"(?m)^(\s*" + targetLine + @"[\.:][^\r\n]*)");
                 if (reLine.IsMatch(src))
                 {
-                    src = reLine.Replace(src, "$1    ◀────── 대상 라인 " + targetLine, 1);
+                    var match = reLine.Match(src);
+                    targetLineText = match.Groups[1].Value.TrimEnd();
+                    src = reLine.Replace(src, "$1    <<< TARGET LINE " + targetLine + " - FIX THIS LINE >>>", 1);
                     lineMarked = true;
                 }
             }
+
+            sb.Append("\n## 수정 대상\n");
+            if (line.Trim().Length > 0)
+            {
+                sb.Append("- 파일: `").Append(fileName).Append("`\n");
+                sb.Append("- 라인: `").Append(line.Trim()).Append("`\n");
+                sb.Append("- 지시: **이 라인과 이 라인에서 직접 드러난 결함만 수정한다. 주변 문맥은 판단용이며 임의 수정 금지.**\n");
+                if (targetLineText.Length > 0)
+                {
+                    sb.Append("- 대상 코드: `").Append(InlineCode(targetLineText)).Append("`\n");
+                }
+            }
+            else
+            {
+                sb.Append("- 라인 정보 없음: 소스 스니펫과 파일 문맥을 확인한 뒤 실제 검출 위치를 먼저 특정한다.\n");
+            }
+
             string fence = src.Contains("```") ? "````" : "```";   // escape source that itself contains a fence
             sb.Append("\n## 소스 코드\n");
             if (line.Trim().Length > 0)
             {
                 sb.Append("> ⚠️ **수정 대상 = 라인 ").Append(line.Trim()).Append("**");
                 sb.Append(lineMarked
-                    ? " (아래 소스의 `◀────── 대상 라인` 표시). 그 라인만 고치고, 표시 없는 다른 라인은 임의로 수정하지 마라.\n\n"
+                    ? " (아래 소스의 `TARGET LINE` 표시). 그 라인만 고치고, 표시 없는 다른 라인은 임의로 수정하지 마라.\n\n"
                     : ". 이 라인만 고치고, 다른 라인은 임의로 수정하지 마라.\n\n");
             }
             sb.Append(fence).Append("text\n");
@@ -383,6 +403,9 @@ namespace SparrowXlsExport.Core
 
         private static string OneLine(string s) =>
             s.Replace("\r\n", " ").Replace("\n", " ").Replace("\r", " ").Trim();
+
+        private static string InlineCode(string s) =>
+            s.Replace("`", "'");
 
         private static string CsvQuote(string s) =>
             s.IndexOfAny(new[] { ',', '"', '\n', '\r' }) >= 0 ? "\"" + s.Replace("\"", "\"\"") + "\"" : s;

@@ -165,11 +165,25 @@ namespace SparrowCommentFix
             var ruleCounts = new Dictionary<string, int>(StringComparer.Ordinal);
             foreach (string k in AllRuleKeys) ruleCounts[k] = 0;
 
-            int scanned = 0, changed = 0, skippedNonUtf8 = 0;
+            int scanned = 0, changed = 0, skippedNonUtf8 = 0, skippedError = 0;
             foreach (string full in targets)
             {
                 scanned++;
-                FileResult r = ProcessFile(full, enabled, dryRun, includeGenerated);
+                FileResult r;
+                try
+                {
+                    r = ProcessFile(full, enabled, dryRun, includeGenerated);
+                }
+                catch (Exception ex)
+                {
+                    // A rewriter throwing on one pathological file must NOT crash the whole run.
+                    // ProcessFile writes only AFTER a successful rewrite, so a throw leaves the file untouched.
+                    // Log the culprit (file + exception) and continue with the rest.
+                    skippedError++;
+                    Console.Error.WriteLine("WARN: rewrite failed, skipping file (unchanged): " + full
+                        + " :: " + ex.GetType().Name + ": " + ex.Message);
+                    continue;
+                }
                 if (r.SkippedNonUtf8) { skippedNonUtf8++; Console.Error.WriteLine("WARN: not lossless UTF-8, skipping: " + full); continue; }
                 if (r.Changed) changed++;
                 foreach (var kv in r.RuleCounts) ruleCounts[kv.Key] += kv.Value;
@@ -188,6 +202,7 @@ namespace SparrowCommentFix
             }
             Console.WriteLine("total changes:   " + total.ToString(CultureInfo.InvariantCulture));
             if (skippedNonUtf8 > 0) Console.WriteLine("skipped (non-UTF-8): " + skippedNonUtf8.ToString(CultureInfo.InvariantCulture));
+            if (skippedError > 0) Console.WriteLine("skipped (error):     " + skippedError.ToString(CultureInfo.InvariantCulture) + "  (see WARN lines above for the file + exception)");
             Console.WriteLine("dry-run:         " + (dryRun ? "true" : "false"));
             return 0;
         }

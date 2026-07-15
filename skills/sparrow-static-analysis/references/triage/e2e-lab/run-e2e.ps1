@@ -114,7 +114,7 @@ if (Test-Path -LiteralPath $reqDir) { $instrFiles = @(Get-ChildItem -LiteralPath
 Check "B: 5 per-checker _작업지침.md" ($instrFiles.Count -eq 5) "found=$($instrFiles.Count)"
 $obcInstr = Join-Path $reqDir 'OVERLY_BROAD_CATCH\_작업지침.md'
 Check "B: OVERLY_BROAD_CATCH 작업지침 enforces policy" `
-    ((Test-Path -LiteralPath $obcInstr) -and ((Read-TextNoBom $obcInstr) -match '위양성 사용 금지') -and ((Read-TextNoBom $obcInstr).Contains('catch(Exception)'))) `
+    ((Test-Path -LiteralPath $obcInstr) -and ((Read-TextNoBom $obcInstr) -match '전건') -and ((Read-TextNoBom $obcInstr).Contains('catch(Exception)'))) `
     $obcInstr
 
 # each request must merge its guide (checker-specific CWE marker) + the item's source line
@@ -151,21 +151,22 @@ Check "B: unresolved.csv empty (header only)" ($unrLines.Count -eq 1) "lines=$($
 
 # ============================================================ C. 판정 (triage model = 나)
 # 각 requests/*.md 를 triage-prompt 규칙대로 판정한 결과 verdict JSON.
-# 4 진성(FORWARD_NULL/RESOURCE_LEAK/EMPTY_CATCH_BLOCK/NULL_RETURN_STD) + 1 위양성(OVERLY_BROAD_CATCH).
+# 전건 수정 정책(false-positive 스킵 없음): 4 진성(FORWARD_NULL/RESOURCE_LEAK/EMPTY_CATCH_BLOCK/NULL_RETURN_STD)
+# + 1 보류(OVERLY_BROAD_CATCH — 문맥 부족으로 지금 못 고침, needs_context; 확보 후 수정 대기).
 # fix.before 는 SampleApp 소스의 정확한 substring(LF). fix.after 는 가이드 수정패턴 준수 C# 7.3.
 Write-Host "`n==== C. 판정 (verdict JSON 작성 = triage 모델) ===="
 $verdictsDir = Join-Path $triage 'verdicts'
 [void](New-Item -ItemType Directory -Force -Path $verdictsDir)
 
 function New-Verdict {
-    param($id,$checker,$file,$line,$verdict,$rationale,$fixLines,$fixBefore,$fixAfter,$fpReason,$holdReason,$needsFrontier,$cwe)
+    param($id,$checker,$file,$line,$verdict,$rationale,$fixLines,$fixBefore,$fixAfter,$holdReason,$needsContext,$missingContext,$needsFrontier,$cwe)
     return [ordered]@{
         id = "$id"; checker = $checker; file = $file; line = "$line";
         verdict = $verdict; rationale = $rationale;
         fix = [ordered]@{ lines = $fixLines; before = $fixBefore; after = $fixAfter };
-        false_positive_reason = $fpReason; hold_reason = $holdReason;
-        needs_context = $false;
-        missing_context = @();
+        hold_reason = $holdReason;
+        needs_context = [bool]$needsContext;
+        missing_context = @($missingContext);
         needs_frontier = [bool]$needsFrontier;
         cwe = $cwe; weapon_item = '미매핑(187 추출 후 기입)'
     }
@@ -202,21 +203,21 @@ $nrAfter   = (@('            if (t == null) return null;','            return Ac
 $verdicts = @(
     (New-Verdict 9001 'FORWARD_NULL' 'NullDeref.cs' 11 '진성' `
         'FirstOrDefault 는 널 반환 가능 API이며(가이드 진성 판별 (2)), 결과 node 를 널 검사 없이 .Value 로 역참조한다. 역참조 전 non-null 확정 대입/검사 없음.' `
-        '11' $fnBefore $fnAfter '' '' $false 'CWE-476'),
+        '11' $fnBefore $fnAfter '' $false @() $false 'CWE-476'),
     (New-Verdict 9002 'RESOURCE_LEAK' 'LeakFile.cs' 9 '진성' `
         'new FileStream 으로 IDisposable 을 지역 소유하고, fs.Read(예외 가능) 뒤 fs.Close() 로만 해제해 예외 시 Dispose 누락(가이드 진성 판별). using 블록으로 감싼다.' `
-        '9-13' $rlBefore $rlAfter '' '' $false 'CWE-772'),
+        '9-13' $rlBefore $rlAfter '' $false @() $false 'CWE-772'),
     (New-Verdict 9003 'EMPTY_CATCH_BLOCK' 'SwallowEx.cs' 13 '진성' `
         'catch { } 본문이 비어 예외를 조용히 삼킴(로깅·복구·전파 전무, 가이드 진성 판별). 좁은 처리+로깅 후 throw; 로 전파.' `
-        '13' $ecBefore $ecAfter '' '' $false 'CWE-390'),
-    (New-Verdict 9004 'OVERLY_BROAD_CATCH' 'BroadCatch.cs' 13 '위양성' `
-        '경계 핸들러로서 넓게 잡아 로깅 후 격리하는 패턴에 해당.' `
+        '13' $ecBefore $ecAfter '' $false @() $false 'CWE-390'),
+    (New-Verdict 9004 'OVERLY_BROAD_CATCH' 'BroadCatch.cs' 13 '보류' `
+        'catch (Exception ex) 가 광역 포착이라 진성 후보이나, 전건 수정 정책상 예외형별 명시 catch 로 고치려면 try 본문 각 API의 문서화된 예외형 목록(문맥)이 필요하다. 지금은 못 고치므로 보류(스킵 아님).' `
         '' '' '' `
-        'catch (Exception ex) 가 예외를 로깅(Console.Error) 후 격리하는 경계 핸들러 — 가이드 흔한 위양성 패턴("최상위 경계 핸들러에서 의도적으로 넓게 잡아 로깅 후 안전 종료/격리")에 해당. 삼킴 아님(로깅 존재).' `
-        '' $false 'CWE-396'),
+        'catch (Exception ex) 를 예외형별 명시 catch 로 좁혀 수정해야 하나, BroadCatch.cs try 본문에서 호출하는 API들의 문서화된 예외형 목록이 없어 지금은 안전히 좁힐 수 없다. 목록 확보 후 반드시 명시 catch 로 수정한다.' `
+        $true @('BroadCatch.cs try 본문에서 호출하는 API들의 문서화된 예외형 목록') $false 'CWE-396'),
     (New-Verdict 9005 'NULL_RETURN_STD' 'BclNull.cs' 10 '진성' `
         'Type.GetType(name) 은 형식 미발견 시 null 반환하는 BCL 계약 메서드(가이드 진성 판별 예시). 반환 t 를 널 검사 없이 Activator.CreateInstance(t) 로 역참조. 지역변수 널 검사 추가.' `
-        '10' $nrBefore $nrAfter '' '' $false 'CWE-476')
+        '10' $nrBefore $nrAfter '' $false @() $false 'CWE-476')
 )
 $utf8 = New-Object System.Text.UTF8Encoding($false)
 foreach ($v in $verdicts) {
@@ -235,9 +236,9 @@ $ledgerLines = @()
 if (Test-Path -LiteralPath $ledger) { $ledgerLines = @((Read-TextNoBom $ledger) -split "`n" | Where-Object { $_.Trim().Length -gt 0 }) }
 Check "D: ledger has 5 rows"       (($ledgerLines.Count - 1) -eq 5) "rows=$($ledgerLines.Count - 1)"
 $jin = @($ledgerLines | Where-Object { $_ -match ',진성,' }).Count
-$wi  = @($ledgerLines | Where-Object { $_ -match ',위양성,' }).Count
+$bo  = @($ledgerLines | Where-Object { $_ -match ',보류,' }).Count
 Check "D: 4 진성"                  ($jin -eq 4) "진성=$jin"
-Check "D: 1 위양성"                ($wi -eq 1) "위양성=$wi"
+Check "D: 1 보류"                  ($bo -eq 1) "보류=$bo"
 $invalid = Join-Path $triage 'invalid.csv'
 $invLines = @((Read-TextNoBom $invalid) -split "`n" | Where-Object { $_.Trim().Length -gt 0 })
 Check "D: invalid.csv empty (header only)" ($invLines.Count -eq 1) "lines=$($invLines.Count)"

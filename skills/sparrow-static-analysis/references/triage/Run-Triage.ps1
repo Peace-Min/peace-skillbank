@@ -321,7 +321,7 @@ function Test-Verdict {
         if (-not ($v.PSObject.Properties.Name -contains $k)) { return "필수 키 없음: $k" }
     }
     $verdict = [string]$v.verdict
-    if (@('진성', '위양성', '보류') -notcontains $verdict) { return "verdict 값 오류: '$verdict'" }
+    if (@('진성', '보류') -notcontains $verdict) { return "verdict 값 오류: '$verdict'" }
     foreach ($boolKey in @('needs_context', 'needs_frontier')) {
         if ($v.PSObject.Properties.Name -contains $boolKey) {
             if (-not ($v.$boolKey -is [bool])) { return "$boolKey 값은 boolean이어야 함" }
@@ -331,7 +331,7 @@ function Test-Verdict {
     $needsFrontier = ($v.PSObject.Properties.Name -contains 'needs_frontier' -and $v.needs_frontier)
     if ($needsContext -and $needsFrontier) { return 'needs_context와 needs_frontier를 동시에 true로 둘 수 없음' }
     if ($verdict -ne '보류' -and ($needsContext -or $needsFrontier)) {
-        return '진성/위양성 verdict에는 needs_context/needs_frontier=true를 사용할 수 없음'
+        return '진성 verdict에는 needs_context/needs_frontier=true를 사용할 수 없음'
     }
 
     if ($verdict -eq '진성') {
@@ -341,9 +341,6 @@ function Test-Verdict {
         if ([string]::IsNullOrWhiteSpace($before) -or [string]::IsNullOrWhiteSpace($after)) {
             return '진성인데 fix.before/after 비어있음'
         }
-    }
-    elseif ($verdict -eq '위양성') {
-        if ([string]::IsNullOrWhiteSpace([string]$v.false_positive_reason)) { return '위양성인데 false_positive_reason 없음' }
     }
     elseif ($verdict -eq '보류') {
         if ([string]::IsNullOrWhiteSpace([string]$v.hold_reason)) { return '보류인데 hold_reason 없음' }
@@ -378,7 +375,7 @@ function Invoke-Collect {
     $invalid = New-Object System.Collections.Generic.List[string]
     $invalid.Add('verdict_file,사유')
 
-    $cntJin = 0; $cntWi = 0; $cntBo = 0; $cntBad = 0
+    $cntJin = 0; $cntBo = 0; $cntBad = 0
 
     $ErrorActionPreference = 'Continue'
     foreach ($f in $files) {
@@ -394,7 +391,6 @@ function Invoke-Collect {
         $valid.Add($obj)
         switch ([string]$obj.verdict) {
             '진성' { $cntJin++ }
-            '위양성' { $cntWi++ }
             '보류' { $cntBo++ }
         }
     }
@@ -414,8 +410,7 @@ function Invoke-Collect {
         $nc = if ($v.PSObject.Properties.Name -contains 'needs_context' -and $v.needs_context) { 'true' } else { 'false' }
         $mc = if ($v.PSObject.Properties.Name -contains 'missing_context' -and $null -ne $v.missing_context) { (@($v.missing_context) -join '; ') } else { '' }
         $nf = if ($v.PSObject.Properties.Name -contains 'needs_frontier' -and $v.needs_frontier) { 'true' } else { 'false' }
-        $summary = if ([string]$v.verdict -eq '위양성') { [string]$v.false_positive_reason }
-        elseif ([string]$v.verdict -eq '보류') { [string]$v.hold_reason }
+        $summary = if ([string]$v.verdict -eq '보류') { [string]$v.hold_reason }
         else { [string]$v.rationale }
         $ledger.Add((@(
                     (ConvertTo-CsvField ([string]$v.id)), (ConvertTo-CsvField ([string]$v.checker)),
@@ -433,7 +428,6 @@ function Invoke-Collect {
     foreach ($g in $groups) {
         $checkerKey = $g.Name
         $jin = @($g.Group | Where-Object { [string]$_.verdict -eq '진성' })
-        $wi = @($g.Group | Where-Object { [string]$_.verdict -eq '위양성' })
         $bo = @($g.Group | Where-Object { [string]$_.verdict -eq '보류' })
 
         $sb = New-Object System.Text.StringBuilder
@@ -446,12 +440,7 @@ function Invoke-Collect {
             if ($lines) { [void]$sb.Append(" (수정 라인 $lines)") }
             [void]$sb.Append(" — " + (ConvertTo-Csv1Line ([string]$v.rationale)) + "`n")
         }
-        [void]$sb.Append("`n## 위양성 (사유서)`n`n")
-        if ($wi.Count -eq 0) { [void]$sb.Append("- (없음)`n") }
-        foreach ($v in $wi) {
-            [void]$sb.Append(("- [{0}] {1}:{2} — {3}`n" -f [string]$v.id, [string]$v.file, [string]$v.line, (ConvertTo-Csv1Line ([string]$v.false_positive_reason))))
-        }
-        [void]$sb.Append("`n## 보류 (문맥 보강 또는 frontier 검토 후보)`n`n")
+        [void]$sb.Append("`n## 보류 (문맥 확보 후 수정 — needs_context 또는 frontier 검토 후보)`n`n")
         if ($bo.Count -eq 0) { [void]$sb.Append("- (없음)`n") }
         foreach ($v in $bo) {
             $nc = if ($v.PSObject.Properties.Name -contains 'needs_context' -and $v.needs_context) { 'true' } else { 'false' }
@@ -464,7 +453,6 @@ function Invoke-Collect {
 
     Write-Host "=== collect 요약 ==="
     Write-Host ("  진성 : {0}" -f $cntJin)
-    Write-Host ("  위양성 : {0}" -f $cntWi)
     Write-Host ("  보류 : {0}" -f $cntBo)
     Write-Host ("  무효 : {0}" -f $cntBad)
     Write-Host ("  원장 : {0}" -f (Join-Path (Resolve-Path -LiteralPath $Out).Path 'triage-ledger.csv'))

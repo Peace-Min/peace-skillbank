@@ -148,7 +148,7 @@ internal static class Program
             string obcInstrText = File.Exists(obcInstr) ? ReadText(obcInstr) : "";
             Check(obcInstrText.Contains("catch(Exception)"), "D: 작업지침 has catch(Exception) 금지");
             Check(obcInstrText.Contains("명시 catch"), "D: 작업지침 has 명시 catch");
-            Check(obcInstrText.Contains("위양성 사용 금지"), "D: 작업지침 has 위양성 사용 금지");
+            Check(obcInstrText.Contains("전건"), "D: 작업지침 has 전건 수정 정책");
 
             string? obcReq = FirstRequest(obcDir);
             Check(obcReq != null, "D: OVERLY_BROAD_CATCH has ≥1 request", obcDir);

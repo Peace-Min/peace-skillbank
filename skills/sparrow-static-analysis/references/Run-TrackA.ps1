@@ -63,9 +63,36 @@ Write-Host "실행 로그(전체 진단): $logPath"
 # 작업트리 오염 경고(자동수정 diff 격리를 위해)
 if (-not $DryRun) {
     $dirty = @(& git -C $slnDir status --porcelain 2>$null)
-    if ($dirty.Count -gt 0) {
-        Write-Warning "작업트리에 미커밋 변경이 있습니다($($dirty.Count)개). 자동수정 diff와 섞일 수 있으니 깨끗한 상태에서 권장."
+    $gitCode = $LASTEXITCODE
+    if ($gitCode -eq 0) {
+        # 커밋마다 git 자동 gc(재패킹)가 .git pack의 .idx를 unlink하려다 백신/인덱서와 충돌해
+        # "Unlink of file ...pack-*.idx failed. Should I try again?" 가 나는 것을 원천 차단(대상 repo 로컬, 1회).
+        & git -C $slnDir config gc.auto 0 2>&1 | Out-Null
+        & git -C $slnDir config gc.autoDetach false 2>&1 | Out-Null
+        & git -C $slnDir config core.fscache true 2>&1 | Out-Null
+        if ($dirty.Count -gt 0) {
+            Write-Warning "작업트리에 미커밋 변경이 있습니다($($dirty.Count)개). 자동수정 diff와 섞일 수 있으니 깨끗한 상태에서 권장."
+        }
     }
+}
+
+# git 커밋 하드닝: add/commit을 일시 락(.idx unlink 실패·index.lock 등)에 자동 재시도로 감쌈.
+# 반환: 'committed' | 'nochange' | 'failed'. 실패해도 러너는 계속 진행.
+function Invoke-GitCommitStep {
+    param([Parameter(Mandatory = $true)][string]$Root, [Parameter(Mandatory = $true)][string]$Message)
+    & git -C $Root add -- '*.cs' 2>&1 | Out-Null
+    & git -C $Root diff --cached --quiet
+    if ($LASTEXITCODE -eq 0) { return 'nochange' }
+    for ($attempt = 1; $attempt -le 5; $attempt++) {
+        & git -C $Root commit -q -m $Message 2>&1 | Out-Null
+        if ($LASTEXITCODE -eq 0) { return 'committed' }
+        & git -C $Root diff --cached --quiet
+        if ($LASTEXITCODE -eq 0) { return 'committed' }
+        Start-Sleep -Milliseconds (400 * $attempt)
+        $lock = Join-Path $Root '.git\index.lock'
+        if (Test-Path -LiteralPath $lock) { Remove-Item -LiteralPath $lock -Force -ErrorAction SilentlyContinue }
+    }
+    return 'failed'
 }
 
 # 1) .editorconfig 배치 — 기존 것이 있으면 백업 후 *최신 bucket1로 덮어씀*(버전 꼬임/충돌 방지가 기본).
@@ -130,13 +157,12 @@ foreach ($r in $Rules) {
         break
     }
     if ($Commit) {
-        & git -C $slnDir add -- '*.cs' 2>&1 | Out-Null
-        & git -C $slnDir diff --cached --quiet
-        if ($LASTEXITCODE -ne 0) {
-            & git -C $slnDir commit -q -m "sparrow: $($g.label)"
-            Write-Host "  커밋    : sparrow: $($g.label)"
+        $res = Invoke-GitCommitStep -Root $slnDir -Message "sparrow: $($g.label)"
+        switch ($res) {
+            'committed' { Write-Host "  커밋    : sparrow: $($g.label)" }
+            'nochange'  { Write-Host "  커밋    : 변경 없음 -> 건너뜀 (이 규칙에서 바뀐 .cs 없음)" }
+            'failed'    { Write-Warning "  커밋 실패(git 락 5회 재시도 후에도) - 파일 수정은 유지됨. 나중에 수동 커밋 가능." }
         }
-        else { Write-Host "  커밋    : 변경 없음 -> 건너뜀 (이 규칙에서 바뀐 .cs 없음)" }
     }
     else { Write-Host "  커밋    : -Commit 미지정 -> 커밋 안 함 (파일만 수정됨; 커밋하려면 -Commit)" }
 }

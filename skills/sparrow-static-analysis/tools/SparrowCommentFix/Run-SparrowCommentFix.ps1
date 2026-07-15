@@ -65,6 +65,7 @@ $labels = [ordered]@{
     onedeclaration = '한 줄 여러 선언 분리'
     continuation = '여러 줄 문장 들여쓰기 보정'
     linqalign = 'LINQ 쿼리 절 정렬'
+    blockpromote = '검토필요: 인라인 블록주석 상단 승격'
 }
 
 if (-not $rulesExplicit -and [Environment]::UserInteractive) {
@@ -85,9 +86,18 @@ if (-not $rulesExplicit -and [Environment]::UserInteractive) {
     else {
         Write-Host "-> layout 계열 제외"
     }
+
+    $ansBlockpromote = Read-Host "인라인 /* */ 블록주석 상단 승격(blockpromote)을 포함할까요? (Y=포함 / N=제외)"
+    if ($ansBlockpromote -match '^\s*(y|yes|예|ㅛ)\s*$') {
+        $Rules += @('blockpromote')
+        Write-Host "-> blockpromote 포함"
+    }
+    else {
+        Write-Host "-> blockpromote 제외"
+    }
 }
 
-$canonicalRules = @('flatten', 'trailing', 'space', 'period', 'capitalize', 'onedeclaration', 'onestatement', 'memberblank', 'linqalign', 'continuation')
+$canonicalRules = @('flatten', 'trailing', 'blockpromote', 'space', 'period', 'capitalize', 'onedeclaration', 'onestatement', 'memberblank', 'linqalign', 'continuation')
 $selectedRules = @($Rules)
 $Rules = @($canonicalRules | Where-Object { $selectedRules -contains $_ })
 

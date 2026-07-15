@@ -43,19 +43,28 @@ Assert (Test-Path -LiteralPath $index) "fixtures/index.csv 존재"
 Write-Host ""
 Write-Host "[prepare]"
 & $runTriage prepare -Index $index -ItemsDir $items -GuidesDir $guidesDir -Out $out -PromptPath $promptPath | Out-Null
-$reqFwd = Join-Path $out 'requests\5001_FORWARD_NULL.md'
-$reqLeak = Join-Path $out 'requests\5002_RESOURCE_LEAK.md'
-Assert (Test-Path -LiteralPath $reqFwd) "요청 생성: 5001_FORWARD_NULL.md"
-Assert (Test-Path -LiteralPath $reqLeak) "요청 생성: 5002_RESOURCE_LEAK.md"
+$reqFwd = Join-Path $out 'requests\FORWARD_NULL\5001_FORWARD_NULL.md'
+$reqLeak = Join-Path $out 'requests\RESOURCE_LEAK\5002_RESOURCE_LEAK.md'
+Assert (Test-Path -LiteralPath $reqFwd) "요청 생성: FORWARD_NULL\5001_FORWARD_NULL.md"
+Assert (Test-Path -LiteralPath $reqLeak) "요청 생성: RESOURCE_LEAK\5002_RESOURCE_LEAK.md"
 
 $fwdText = ReadAll $reqFwd
 Assert ($fwdText -match 'CWE-476') "요청에 가이드 병합됨 (CWE-476)"
 Assert ($fwdText -match 'FirstOrDefault') "요청에 항목 소스 병합됨 (FirstOrDefault)"
 Assert (($fwdText -notmatch '\{\{GUIDE\}\}') -and ($fwdText -notmatch '\{\{ITEM\}\}')) "자리표시자 모두 치환됨"
+Assert ($fwdText -match '## 처리 정책 \(이 프로젝트\)') "요청에 공통 처리 정책(Policy A) 임베드됨"
+Assert ($fwdText -match '위양성 사용 금지') "임베드 정책에 '위양성 사용 금지' 포함"
 
 $leakText = ReadAll $reqLeak
 Assert ($leakText -match 'CWE-772') "RESOURCE_LEAK 요청에 가이드 병합 (CWE-772)"
 Assert ($leakText -match 'SqlConnection') "RESOURCE_LEAK 요청에 항목 소스 병합"
+
+# 체커별 _작업지침.md
+$instrFwd = Join-Path $out 'requests\FORWARD_NULL\_작업지침.md'
+$instrLeak = Join-Path $out 'requests\RESOURCE_LEAK\_작업지침.md'
+Assert (Test-Path -LiteralPath $instrFwd) "작업지침 생성: FORWARD_NULL\_작업지침.md"
+Assert (Test-Path -LiteralPath $instrLeak) "작업지침 생성: RESOURCE_LEAK\_작업지침.md"
+Assert ((ReadAll $instrFwd) -match '위양성 사용 금지') "작업지침에 공통 정책 렌더됨"
 
 $wlLines = DataLines (ReadAll (Join-Path $out 'worklist.csv'))
 Assert (($wlLines | Where-Object { $_ -match ',TODO$' }).Count -eq 2) "worklist TODO 2건"

@@ -41,6 +41,12 @@ namespace SparrowXlsExport.Core
         /// <summary>Path to the triage-prompt.md template ({{GUIDE}}/{{ITEM}} placeholders). Required.</summary>
         public string PromptPath = "";
 
+        /// <summary>Path to references\project-conventions.md (OSTES 정책 단일 소스). Required.</summary>
+        public string ConventionsPath = "";
+
+        /// <summary>Path to the folder-instruction-template.md (_작업지침.md 렌더 템플릿). Required.</summary>
+        public string TemplatePath = "";
+
         /// <summary>Output directory; gets requests\, worklist.csv, unresolved.csv, empty verdicts\. Required.</summary>
         public string OutDir = "";
 
@@ -84,8 +90,18 @@ namespace SparrowXlsExport.Core
             if (!Directory.Exists(opts.GuidesDir)) throw new DirectoryNotFoundException("checkers(가이드) 폴더 없음: " + opts.GuidesDir);
             if (string.IsNullOrEmpty(opts.PromptPath)) throw new ArgumentException("prepare: PromptPath 필요");
             if (!File.Exists(opts.PromptPath)) throw new FileNotFoundException("프롬프트 템플릿 없음: " + opts.PromptPath);
+            if (string.IsNullOrEmpty(opts.ConventionsPath)) throw new ArgumentException("prepare: ConventionsPath 필요");
+            if (!File.Exists(opts.ConventionsPath)) throw new FileNotFoundException("프로젝트 규약 문서 없음: " + opts.ConventionsPath);
+            if (string.IsNullOrEmpty(opts.TemplatePath)) throw new ArgumentException("prepare: TemplatePath 필요");
+            if (!File.Exists(opts.TemplatePath)) throw new FileNotFoundException("폴더 지침 템플릿 없음: " + opts.TemplatePath);
 
             string promptTemplate = ReadTextNoBom(opts.PromptPath);
+
+            // OSTES 프로젝트 정책 소스(공통) + 폴더 지침 템플릿.
+            var conventions = GetConventionSections(ReadTextNoBom(opts.ConventionsPath));
+            string folderTemplate = ReadTextNoBom(opts.TemplatePath);
+            string commonPolicy = conventions.TryGetValue("(공통) 처리 정책", out string? _cp) ? _cp : "";
+            string generalNote = conventions.TryGetValue("프로젝트 규약", out string? _gn) ? _gn : "";
 
             var sevSet = new List<string>();
             if (!string.IsNullOrEmpty(opts.Severity))
@@ -107,6 +123,7 @@ namespace SparrowXlsExport.Core
             int requestCount = 0;
             int unresolvedCount = 0;
             var perChecker = new Dictionary<string, int>(StringComparer.Ordinal);
+            var perCheckerMeta = new Dictionary<string, (string Name, string Severity)>(StringComparer.Ordinal);
             int ordinal = 0;
 
             foreach (var row in rows)
@@ -156,6 +173,8 @@ namespace SparrowXlsExport.Core
                 }
 
                 string guideText = ReadTextNoBom(guidePath);
+                if (!perCheckerMeta.ContainsKey(checkerKey))
+                    perCheckerMeta[checkerKey] = GetGuideMeta(guideText, checkerKey);
                 if (checkerKey == "NULL_RETURN_STD")
                 {
                     string contractPath = JoinPathPwsh(ParentDir(opts.GuidesDir), "dotnet-contracts\\null-return-std.md");
@@ -169,8 +188,16 @@ namespace SparrowXlsExport.Core
                 // 자리표시자 치환(리터럴, 정규식 아님).
                 string reqText = promptTemplate.Replace("{{GUIDE}}", guideText).Replace("{{ITEM}}", itemText);
 
-                string reqName = SafeName(idPart) + "_" + SafeName(checkerKey) + ".md";
-                string reqPath = Path.Combine(reqDir, reqName);
+                // OSTES 정책 임베드: 모든 요청에 공통 Policy A(self-contained). 체커 섹션이 있으면 추가.
+                reqText = reqText + "\n\n---\n\n## 처리 정책 (이 프로젝트)\n\n" + commonPolicy + "\n";
+                if (conventions.TryGetValue(checkerKey, out string? checkerSection))
+                    reqText = reqText + "\n---\n\n## " + checkerKey + " — 프로젝트 의무\n\n" + checkerSection + "\n";
+
+                string safeChecker = SafeName(checkerKey);
+                string reqName = SafeName(idPart) + "_" + safeChecker + ".md";
+                string subDir = Path.Combine(reqDir, safeChecker);
+                Directory.CreateDirectory(subDir);
+                string reqPath = Path.Combine(subDir, reqName);
                 WriteUtf8Lf(reqPath, reqText);
                 requestCount++;
                 perChecker[checkerKey] = perChecker.TryGetValue(checkerKey, out int c) ? c + 1 : 1;
@@ -179,9 +206,25 @@ namespace SparrowXlsExport.Core
                 {
                     CsvField(idPart), CsvField(checkerKey), CsvField(sev),
                     CsvField(file), CsvField(line),
-                    CsvField("requests/" + reqName),
+                    CsvField("requests/" + safeChecker + "/" + reqName),
                     CsvField(guidePath), "TODO",
                 }));
+            }
+
+            // 체커별 _작업지침.md (요청 ≥1건 받은 폴더). 결정론: 체커키 오름차순.
+            foreach (string ck in perChecker.Keys.OrderBy(k => k, StringComparer.Ordinal))
+            {
+                string safeChecker = SafeName(ck);
+                var meta = perCheckerMeta[ck];
+                string mandate = conventions.TryGetValue(ck, out string? sec) ? sec : generalNote;
+                string instr = folderTemplate
+                    .Replace("{{CHECKER_KEY}}", ck)
+                    .Replace("{{CHECKER_NAME}}", meta.Name)
+                    .Replace("{{COUNT}}", perChecker[ck].ToString(CultureInfo.InvariantCulture))
+                    .Replace("{{SEVERITY}}", meta.Severity)
+                    .Replace("{{COMMON_POLICY}}", commonPolicy)
+                    .Replace("{{CHECKER_MANDATE}}", mandate);
+                WriteUtf8Lf(Path.Combine(reqDir, safeChecker, "_작업지침.md"), instr);
             }
 
             WriteUtf8Lf(Path.Combine(opts.OutDir, "worklist.csv"), string.Join("\n", worklist) + "\n");
@@ -236,6 +279,63 @@ namespace SparrowXlsExport.Core
         {
             string lf = content.Replace("\r\n", "\n");
             File.WriteAllText(path, lf, new UTF8Encoding(false));
+        }
+
+        // Parse project-conventions.md into '## <name>' -> body(Trim) map. Mirrors Get-ConventionSections:
+        // a section starts at a line with the exact "## " prefix ('### ' is not a boundary); body is the lines
+        // up to the next "## " (or EOF), trimmed. H1 ('# ') outside a section is ignored.
+        private static Dictionary<string, string> GetConventionSections(string text)
+        {
+            string norm = text.Replace("\r\n", "\n");
+            string[] lines = norm.Split('\n');
+            var sections = new Dictionary<string, string>(StringComparer.Ordinal);
+            string? current = null;
+            var buffer = new List<string>();
+            foreach (string ln in lines)
+            {
+                if (ln.StartsWith("## ", StringComparison.Ordinal))
+                {
+                    if (current != null) sections[current] = string.Join("\n", buffer).Trim();
+                    current = ln.Substring(3).Trim();
+                    buffer = new List<string>();
+                }
+                else if (current != null) buffer.Add(ln);
+            }
+            if (current != null) sections[current] = string.Join("\n", buffer).Trim();
+            return sections;
+        }
+
+        // Extract the checker's Korean name (H1 '# KEY — 이름') and severity ('**심각도**: 값 |') from the
+        // guide text. Mirrors Get-GuideMeta. Falls back to the key / "" when not found.
+        private static (string Name, string Severity) GetGuideMeta(string guideText, string checkerKey)
+        {
+            string norm = guideText.Replace("\r\n", "\n");
+            string[] lines = norm.Split('\n');
+            string name = checkerKey;
+            string sev = "";
+            foreach (string ln in lines)
+            {
+                if (name == checkerKey && ln.StartsWith("# ", StringComparison.Ordinal))
+                {
+                    int dash = ln.IndexOf('—');
+                    if (dash >= 0) name = ln.Substring(dash + 1).Trim();
+                }
+                if (sev.Length == 0)
+                {
+                    int sevIdx = ln.IndexOf("심각도", StringComparison.Ordinal);
+                    if (sevIdx >= 0)
+                    {
+                        int colon = ln.IndexOf(':', sevIdx);
+                        if (colon >= 0)
+                        {
+                            string rest = ln.Substring(colon + 1);
+                            int bar = rest.IndexOf('|');
+                            sev = (bar >= 0 ? rest.Substring(0, bar) : rest).Trim();
+                        }
+                    }
+                }
+            }
+            return (name, sev);
         }
 
         // --- CSV read (ConvertFrom-Csv equivalent, header-keyed) ---

@@ -40,6 +40,8 @@ internal static class Program
         string references = Path.Combine(skillRoot, "references");
         string guidesDir = Path.Combine(references, "checkers");
         string promptPath = Path.Combine(references, "triage", "triage-prompt.md");
+        string conventionsPath = Path.Combine(references, "project-conventions.md");
+        string templatePath = Path.Combine(references, "triage", "folder-instruction-template.md");
         string runTriage = Path.Combine(references, "triage", "Run-Triage.ps1");
         string fixturesIndex = Path.Combine(references, "triage", "fixtures", "index.csv");
         string fixturesItems = Path.Combine(references, "triage", "fixtures", "items");
@@ -62,6 +64,8 @@ internal static class Program
             Check(File.Exists(realXls), "precondition: real xls exists", realXls);
             Check(File.Exists(runTriage), "precondition: Run-Triage.ps1 exists", runTriage);
             Check(File.Exists(promptPath), "precondition: triage-prompt.md exists", promptPath);
+            Check(File.Exists(conventionsPath), "precondition: project-conventions.md exists", conventionsPath);
+            Check(File.Exists(templatePath), "precondition: folder-instruction-template.md exists", templatePath);
             if (_fails > 0) return Done();
 
             // ================================================================ A
@@ -94,7 +98,7 @@ internal static class Program
             Console.WriteLine("\n==== C. Core.Prepare == Run-Triage.ps1 prepare (CRITICAL) ====");
 
             // C1: fixture set.
-            ComparePrepare("C1 fixtures", runTriage, promptPath,
+            ComparePrepare("C1 fixtures", runTriage, promptPath, conventionsPath, templatePath,
                 fixturesIndex, fixturesItems, guidesDir, work, "C1",
                 checker: null, severity: null, max: null);
 
@@ -105,24 +109,62 @@ internal static class Program
             string realItems = Path.Combine(realParsed, "items");
 
             // C2: real full (7170 rows; mixed resolved/unresolved, exercises unresolved.csv at scale).
-            ComparePrepare("C2 real-full", runTriage, promptPath,
+            ComparePrepare("C2 real-full", runTriage, promptPath, conventionsPath, templatePath,
                 realIndex, realItems, guidesDir, work, "C2",
                 checker: null, severity: null, max: null);
 
             // C3: real -Checker RESOURCE_LEAK (exact checker filter + guide resolution).
-            ComparePrepare("C3 real-RESOURCE_LEAK", runTriage, promptPath,
+            ComparePrepare("C3 real-RESOURCE_LEAK", runTriage, promptPath, conventionsPath, templatePath,
                 realIndex, realItems, guidesDir, work, "C3",
                 checker: "RESOURCE_LEAK", severity: null, max: null);
 
             // C4: real -Checker NULL_RETURN_STD (exercises the dotnet-contracts append path, if any rows).
-            ComparePrepare("C4 real-NULL_RETURN_STD", runTriage, promptPath,
+            ComparePrepare("C4 real-NULL_RETURN_STD", runTriage, promptPath, conventionsPath, templatePath,
                 realIndex, realItems, guidesDir, work, "C4",
                 checker: "NULL_RETURN_STD", severity: null, max: null);
 
             // C5: real -Severity 매우위험 -Max 50 (severity set filter + max cap).
-            ComparePrepare("C5 real-severity-max", runTriage, promptPath,
+            ComparePrepare("C5 real-severity-max", runTriage, promptPath, conventionsPath, templatePath,
                 realIndex, realItems, guidesDir, work, "C5",
                 checker: null, severity: "매우위험", max: 50);
+
+            // C6: real -Checker OVERLY_BROAD_CATCH (per-checker mandate embed path).
+            ComparePrepare("C6 real-OVERLY_BROAD_CATCH", runTriage, promptPath, conventionsPath, templatePath,
+                realIndex, realItems, guidesDir, work, "C6",
+                checker: "OVERLY_BROAD_CATCH", severity: null, max: null);
+
+            // C7: real -Checker EMPTY_CATCH_BLOCK (per-checker mandate embed path).
+            ComparePrepare("C7 real-EMPTY_CATCH_BLOCK", runTriage, promptPath, conventionsPath, templatePath,
+                realIndex, realItems, guidesDir, work, "C7",
+                checker: "EMPTY_CATCH_BLOCK", severity: null, max: null);
+
+            // ================================================================ D. policy-embed content
+            Console.WriteLine("\n==== D. Policy embeds + per-checker _작업지침.md (content) ====");
+
+            // OVERLY_BROAD_CATCH folder instruction (from the C6 Core output).
+            string obcDir = Path.Combine(work, "C6_cs", "requests", "OVERLY_BROAD_CATCH");
+            string obcInstr = Path.Combine(obcDir, "_작업지침.md");
+            Check(File.Exists(obcInstr), "D: OVERLY_BROAD_CATCH\\_작업지침.md exists", obcInstr);
+            string obcInstrText = File.Exists(obcInstr) ? ReadText(obcInstr) : "";
+            Check(obcInstrText.Contains("catch(Exception)"), "D: 작업지침 has catch(Exception) 금지");
+            Check(obcInstrText.Contains("명시 catch"), "D: 작업지침 has 명시 catch");
+            Check(obcInstrText.Contains("위양성 사용 금지"), "D: 작업지침 has 위양성 사용 금지");
+
+            string? obcReq = FirstRequest(obcDir);
+            Check(obcReq != null, "D: OVERLY_BROAD_CATCH has ≥1 request", obcDir);
+            string obcReqText = obcReq != null ? ReadText(obcReq) : "";
+            Check(obcReqText.Contains("## 처리 정책 (이 프로젝트)"), "D: OBC request has 처리 정책 embed");
+            Check(obcReqText.Contains("catch(Exception)") && obcReqText.Contains("명시 catch"),
+                  "D: OBC request has OVERLY_BROAD_CATCH mandate");
+
+            // EMPTY_CATCH_BLOCK request (from the C7 Core output).
+            string ecbDir = Path.Combine(work, "C7_cs", "requests", "EMPTY_CATCH_BLOCK");
+            string? ecbReq = FirstRequest(ecbDir);
+            Check(ecbReq != null, "D: EMPTY_CATCH_BLOCK has ≥1 request", ecbDir);
+            string ecbReqText = ecbReq != null ? ReadText(ecbReq) : "";
+            Check(ecbReqText.Contains("LogUtil.Error"), "D: ECB request has LogUtil.Error rule");
+            Check(ecbReqText.Contains("Console.WriteLine(\"Exception\")") && ecbReqText.Contains("오답"),
+                  "D: ECB request flags Console.WriteLine(\"Exception\")…오답");
 
             return Done();
         }
@@ -140,8 +182,9 @@ internal static class Program
         Console.WriteLine("== CoreTests FAIL (" + _fails + ") =="); return 1;
     }
 
-    // Run PS prepare and Core.Prepare on the same inputs, then byte-compare requests/*, worklist, unresolved.
+    // Run PS prepare and Core.Prepare on the same inputs, then byte-compare requests/**, worklist, unresolved.
     private static void ComparePrepare(string label, string runTriage, string promptPath,
+        string conventionsPath, string templatePath,
         string index, string itemsDir, string guidesDir, string work, string tag,
         string? checker, string? severity, int? max)
     {
@@ -155,6 +198,7 @@ internal static class Program
             "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", runTriage, "prepare",
             "-Index", index, "-ItemsDir", itemsDir, "-GuidesDir", guidesDir,
             "-Out", psOut, "-PromptPath", promptPath,
+            "-ConventionsPath", conventionsPath, "-TemplatePath", templatePath,
         };
         if (checker != null) { psArgs.Add("-Checker"); psArgs.Add(checker); }
         if (severity != null) { psArgs.Add("-Severity"); psArgs.Add(severity); }
@@ -169,15 +213,17 @@ internal static class Program
             ItemsDir = itemsDir,
             GuidesDir = guidesDir,
             PromptPath = promptPath,
+            ConventionsPath = conventionsPath,
+            TemplatePath = templatePath,
             OutDir = csOut,
             Checker = checker,
             Severity = severity,
             Max = max,
         }, TextWriter.Null);
 
-        // Compare.
-        Check(DirsByteIdentical(Path.Combine(psOut, "requests"), Path.Combine(csOut, "requests"), "*", out string reqDiff),
-              label + ": requests/* byte-identical", reqDiff);
+        // Compare the whole requests\ tree (subfolders + _작업지침.md + request bodies).
+        Check(TreeByteIdentical(Path.Combine(psOut, "requests"), Path.Combine(csOut, "requests"), out string reqDiff),
+              label + ": requests\\** byte-identical", reqDiff);
         Check(FilesByteIdentical(Path.Combine(psOut, "worklist.csv"), Path.Combine(csOut, "worklist.csv"), out string wlDiff),
               label + ": worklist.csv byte-identical", wlDiff);
         Check(FilesByteIdentical(Path.Combine(psOut, "unresolved.csv"), Path.Combine(csOut, "unresolved.csv"), out string unDiff),
@@ -231,6 +277,45 @@ internal static class Program
             if (!FilesByteIdentical(Path.Combine(a, na[i]!), Path.Combine(b, nb[i]!), out string d)) { diff = d; return false; }
         }
         diff = ""; return true;
+    }
+
+    // Recursive tree compare: every file under a/ and b/ (by relative path, ordinal-sorted) byte-identical.
+    private static bool TreeByteIdentical(string a, string b, out string diff)
+    {
+        bool aEx = Directory.Exists(a), bEx = Directory.Exists(b);
+        if (!aEx && !bEx) { diff = ""; return true; }
+        if (!aEx) { diff = "missing PS dir: " + a; return false; }
+        if (!bEx) { diff = "missing Core dir: " + b; return false; }
+        var na = Directory.GetFiles(a, "*", SearchOption.AllDirectories)
+            .Select(p => Path.GetRelativePath(a, p)).OrderBy(x => x, StringComparer.Ordinal).ToList();
+        var nb = Directory.GetFiles(b, "*", SearchOption.AllDirectories)
+            .Select(p => Path.GetRelativePath(b, p)).OrderBy(x => x, StringComparer.Ordinal).ToList();
+        if (na.Count != nb.Count) { diff = "file count " + na.Count + " vs " + nb.Count; return false; }
+        for (int i = 0; i < na.Count; i++)
+        {
+            if (!string.Equals(na[i], nb[i], StringComparison.Ordinal)) { diff = "path mismatch: " + na[i] + " vs " + nb[i]; return false; }
+            if (!FilesByteIdentical(Path.Combine(a, na[i]), Path.Combine(b, nb[i]), out string d)) { diff = na[i] + ": " + d; return false; }
+        }
+        diff = ""; return true;
+    }
+
+    // Read UTF-8 (BOM-stripped) text for content assertions.
+    private static string ReadText(string path)
+    {
+        byte[] bytes = File.ReadAllBytes(path);
+        string t = new UTF8Encoding(false).GetString(bytes);
+        if (t.Length > 0 && t[0] == '﻿') t = t.Substring(1);
+        return t;
+    }
+
+    // First request md (a file not named _작업지침.md) in a checker subfolder, ordinal-sorted; null if none.
+    private static string? FirstRequest(string dir)
+    {
+        if (!Directory.Exists(dir)) return null;
+        return Directory.GetFiles(dir, "*.md")
+            .Where(p => !string.Equals(Path.GetFileName(p), "_작업지침.md", StringComparison.Ordinal))
+            .OrderBy(p => Path.GetFileName(p), StringComparer.Ordinal)
+            .FirstOrDefault();
     }
 
     private static bool HasUtf8Bom(string path)

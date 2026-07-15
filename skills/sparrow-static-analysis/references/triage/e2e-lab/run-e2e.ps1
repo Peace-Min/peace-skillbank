@@ -103,8 +103,19 @@ $triage = Join-Path $Out 'triage'
 & $RunTriage prepare -Index $indexCsv -ItemsDir $itemsDir -GuidesDir $Checkers -Out $triage | Out-Null
 $reqDir = Join-Path $triage 'requests'
 $reqFiles = @()
-if (Test-Path -LiteralPath $reqDir) { $reqFiles = @(Get-ChildItem -LiteralPath $reqDir -Filter *.md -File) }
+if (Test-Path -LiteralPath $reqDir) {
+    # 요청은 이제 requests\<체커키>\ 하위에 있고, 각 폴더엔 _작업지침.md 도 있으므로 재귀 + 제외.
+    $reqFiles = @(Get-ChildItem -LiteralPath $reqDir -Filter *.md -File -Recurse | Where-Object { $_.Name -ne '_작업지침.md' })
+}
 Check "B: 5 requests created"    ($reqFiles.Count -eq 5) "found=$($reqFiles.Count)"
+# 체커별 _작업지침.md (5개 폴더)
+$instrFiles = @()
+if (Test-Path -LiteralPath $reqDir) { $instrFiles = @(Get-ChildItem -LiteralPath $reqDir -Filter '_작업지침.md' -File -Recurse) }
+Check "B: 5 per-checker _작업지침.md" ($instrFiles.Count -eq 5) "found=$($instrFiles.Count)"
+$obcInstr = Join-Path $reqDir 'OVERLY_BROAD_CATCH\_작업지침.md'
+Check "B: OVERLY_BROAD_CATCH 작업지침 enforces policy" `
+    ((Test-Path -LiteralPath $obcInstr) -and ((Read-TextNoBom $obcInstr) -match '위양성 사용 금지') -and ((Read-TextNoBom $obcInstr).Contains('catch(Exception)'))) `
+    $obcInstr
 
 # each request must merge its guide (checker-specific CWE marker) + the item's source line
 $cweByChecker = @{

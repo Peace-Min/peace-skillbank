@@ -4,7 +4,8 @@ param(
     [switch]$IncludeSparrowE2E,   # opt-in: also build+run the Sparrow XLS export tool (needs .NET SDK + NPOI restore)
     [switch]$IncludeSyntaxFixE2E, # opt-in: also build+run the SparrowSyntaxFix rewriter tool (needs .NET SDK + Roslyn restore)
     [switch]$IncludeCommentE2E,   # opt-in: also build+run the SparrowCommentFix tool (needs .NET SDK + Roslyn restore)
-    [switch]$IncludeSparrowLoopTests # opt-in: also run the cross-rule loop/idempotency/compile tests (needs .NET SDK + Roslyn/WPF)
+    [switch]$IncludeSparrowLoopTests, # opt-in: also run the cross-rule loop/idempotency/compile tests (needs .NET SDK + Roslyn/WPF)
+    [switch]$IncludeSparrowRealPatternTests # opt-in: also run the grounded real-OSTES-pattern pipeline regression (needs .NET SDK + Roslyn)
 )
 
 $ErrorActionPreference = "Stop"
@@ -239,6 +240,14 @@ $sparrowLoop = Join-Path $RepositoryRoot "tests\sparrow-loop-tests.ps1"
 Assert-Condition (Test-Path -LiteralPath $sparrowLoop) "Missing Sparrow loop test script"
 Test-PowerShellSyntax -Path $sparrowLoop
 if ($IncludeSparrowLoopTests) { & $sparrowLoop -RepositoryRoot $RepositoryRoot }
+
+# Sparrow grounded real-OSTES-pattern pipeline regression: seed ONE compilable net8.0 file with the real xls
+# shapes, run the full Track A/B pipeline, assert 0-errors before/after + convergence + per-pattern transforms.
+# Always syntax-check + assert existence; only RUN when opted in (builds both tools + compiles; needs the SDK).
+$sparrowRealPattern = Join-Path $RepositoryRoot "tests\sparrow-realpattern-tests.ps1"
+Assert-Condition (Test-Path -LiteralPath $sparrowRealPattern) "Missing Sparrow real-pattern test script"
+Test-PowerShellSyntax -Path $sparrowRealPattern
+if ($IncludeSparrowRealPatternTests) { & $sparrowRealPattern -RepositoryRoot $RepositoryRoot }
 
 # Track A auto-fix kit (LLM-free): assert the .editorconfig + runner exist and the runner parses.
 # (Run-TrackA.ps1 carries Korean text -> must stay UTF-8-with-BOM or PS 5.1 mis-parses it.)

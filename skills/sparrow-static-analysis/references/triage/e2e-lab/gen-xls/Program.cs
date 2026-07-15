@@ -1,7 +1,7 @@
 // GenXls: emits two Sparrow-style .xls workbooks (real BIFF via NPOI HSSF) for the E2E test:
 //   sample-before.xls  = all 5 planted defects (미해결)
 //   sample-after.xls   = post-fix rescan: only the OVERLY_BROAD_CATCH row remains (보류 — not fixed yet);
-//                        the 4 진성 checkers' rows are removed. No NEW (checker,file,line).
+//                        the 4 수정 checkers' rows are removed. No NEW (checker,file,line).
 // Sheet name 'issues'. Header + the well-known Sparrow columns the parser keys on:
 //   ID, 체커 키, 체커명, 위험도, 파일명, 라인, 이슈 상태, 체커 설명, 소스 코드
 // Values (체커 키/체커명/위험도/체커 설명) are verbatim from the tool's real checkers.md.

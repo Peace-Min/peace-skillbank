@@ -12,7 +12,7 @@
 - 행안부 SW보안약점(2021): "부적절한 자원 해제"
 - .NET Framework Design Guideline: IDisposable 자원은 `using`/Dispose 패턴으로 해제
 
-## 진성 판별 기준
+## 결함 판별 기준
 - 지역에서 `new`/팩토리로 **IDisposable 을 생성·소유**하고(예: `new FileStream`, `SqlConnection`, `Bitmap`, `StreamReader`), 그 스코프에서 소비 후 종료된다.
 - 생성부터 마지막 사용까지 사이에 **예외 발생 가능 호출**이 있는데 `using`/`try-finally` 로 감싸이지 않음 → 예외 시 Dispose 누락.
 - 또는 조기 `return`/`break` 경로에서 Dispose 를 건너뜀.
@@ -32,7 +32,7 @@
 - 예외 가능 호출이 자원 생성 후 Dispose 전 사이에 있는지.
 
 ## 문맥 부족 시 보류 기준
-- 자원 생성 한 줄만 있고 생명주기 전체가 없으면 진성 단정 금지.
+- 자원 생성 한 줄만 있고 생명주기 전체가 없으면 결함 단정 금지.
 - 반환 또는 필드 저장으로 소유권이 이전되는지 알 수 없으면 `needs_context=true`로 둔다.
 - 상위 객체의 Dispose 패턴이 있는지 확인할 수 없으면 보류한다.
 
@@ -78,5 +78,5 @@ using (var cmd = new SqlCommand(sql, conn))
 - 신규 검출 0 — 특히 **이중 해제(USE_AFTER_FREE 성격)·소유권 오이전으로 인한 신규 결함 없음**. 소유권 이전 케이스를 using 으로 감싸 회귀시키지 않았는지 확인.
 
 ## 기본 처리 분류
-- [ ] 진성 → 수정 (using / try-finally / Dispose 패턴)
+- [ ] 수정 → 검출 라인을 위 패턴으로 고침 (using / try-finally / Dispose 패턴)
 - [ ] 보류 → 문맥 확보 후 수정 (소유권 흐름 판단 불가 시 needs_context; 확보 후 반드시 수정; frontier-handoff)

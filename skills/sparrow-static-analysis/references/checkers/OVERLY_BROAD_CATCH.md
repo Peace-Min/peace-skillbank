@@ -12,7 +12,7 @@
 - 행안부 SW보안약점(2021): "부적절한 예외처리"
 - .NET Framework Design Guideline: 포괄적 `catch (Exception)` 대신 구체적 예외형만 포착
 
-## 진성 판별 기준
+## 결함 판별 기준
 - `catch (Exception)` / `catch` / `catch (SystemException)` 등 광범위 포착.
 - **실제로 발생 가능한 예외는 소수의 특정형**인데(예: `IOException`, `FormatException`) 전부 잡고 있다.
 - 잡은 뒤 예외형을 구분하지 않고 동일 처리 → 버그성 예외까지 정상처럼 흡수.
@@ -33,7 +33,7 @@
 - 같은 try에 더 구체적인 catch가 앞에 있는지, 마지막 catch가 예상 밖 예외만 처리하는 구조인지.
 
 ## 문맥 부족 시 보류 기준
-- `catch (Exception)` 한 줄만 있고 `try` 본문 또는 catch 본문 전체가 없으면 진성 여부를 단정하지 않는다.
+- `catch (Exception)` 한 줄만 있고 `try` 본문 또는 catch 본문 전체가 없으면 결함 여부를 단정하지 않는다.
 - 경계 핸들러 여부를 알 수 없거나 호출 API의 발생 가능 예외를 알 수 없으면 `보류`로 둔다(문맥 확보 후 수정).
 - 단순 로깅처럼 보여도 이후 재던지기/격리/상태복구 여부가 누락되면 `needs_context=true`로 둔다.
 
@@ -73,5 +73,5 @@ catch (Exception ex)
 - 신규 검출 0 — 좁힌 결과 미처리 예외 경로가 EMPTY_CATCH 나 새 UNCHECKED 결함을 만들지 않는지.
 
 ## 기본 처리 분류
-- [ ] 진성 → 수정 (예외형 좁히기 / 예상 밖 재던지기)
+- [ ] 수정 → 검출 라인을 위 패턴으로 고침 (예외형 좁히기 / 예상 밖 재던지기)
 - [ ] 보류 → 문맥 확보 후 수정 (발생 가능 예외형 판단 불가 시 needs_context; 확보 후 반드시 수정; frontier-handoff)

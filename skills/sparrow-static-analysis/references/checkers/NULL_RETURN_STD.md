@@ -12,7 +12,7 @@ C# 표준 라이브러리(BCL)에는 **실패/부재 시 null 을 반환**하는
 - 행안부 SW보안약점(2021): "널 포인터 역참조"
 - .NET Framework Design Guideline: BCL 메서드의 "없으면 null" 반환 계약을 소비측이 검사해야 함
 
-## 진성 판별 기준
+## 결함 판별 기준
 - **null 반환 가능한 BCL 메서드의 결과를 무검사 역참조**한다. 대표 예:
   - `Type.GetType(name)` / `Assembly.GetType(name)` — 형식을 못 찾으면 null
   - `Assembly.GetEntryAssembly()` — 관리 진입점이 없으면 null
@@ -70,5 +70,5 @@ var name = Assembly.GetEntryAssembly()?.GetName().Name ?? "unknown";
 - 신규 검출 0 (추가한 가드가 데드코드/EMPTY_CATCH/새 NULL 결함을 만들지 않는지).
 
 ## 기본 처리 분류
-- [ ] 진성 → 수정 (BCL 반환 null 검사 / `?.`·`??`)
+- [ ] 수정 → 검출 라인을 위 패턴으로 고침 (BCL 반환 null 검사 / `?.`·`??`)
 - [ ] 보류 → 문맥 확보 후 수정 (BCL 반환 계약·입력 보장 판단 불가 시 needs_context; 확보 후 반드시 수정; frontier-handoff)

@@ -1,7 +1,7 @@
 {
   "id": "5001", "checker": "FORWARD_NULL", "file": "Foo.cs", "line": "88",
-  "verdict": "진성",
-  "rationale": "가이드 진성 판별 기준: FirstOrDefault 등 null 반환 가능 API 결과를 무검사 역참조(node.Value). 87행에 가드가 없어 node 가 null 이면 NRE.",
+  "verdict": "수정",
+  "rationale": "가이드 결함 판별 기준: FirstOrDefault 등 null 반환 가능 API 결과를 무검사 역참조(node.Value). 87행에 가드가 없어 node 가 null 이면 NRE.",
   "fix": {
     "lines": "86-88",
     "before": "var node = list.FirstOrDefault(n => n.Id == id);\nProcess(node.Value);",

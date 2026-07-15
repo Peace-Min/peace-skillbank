@@ -346,7 +346,7 @@ function Test-Verdict {
         if (-not ($v.PSObject.Properties.Name -contains $k)) { return "필수 키 없음: $k" }
     }
     $verdict = [string]$v.verdict
-    if (@('진성', '보류') -notcontains $verdict) { return "verdict 값 오류: '$verdict'" }
+    if (@('수정', '보류') -notcontains $verdict) { return "verdict 값 오류: '$verdict'" }
     foreach ($boolKey in @('needs_context', 'needs_frontier')) {
         if ($v.PSObject.Properties.Name -contains $boolKey) {
             if (-not ($v.$boolKey -is [bool])) { return "$boolKey 값은 boolean이어야 함" }
@@ -356,15 +356,15 @@ function Test-Verdict {
     $needsFrontier = ($v.PSObject.Properties.Name -contains 'needs_frontier' -and $v.needs_frontier)
     if ($needsContext -and $needsFrontier) { return 'needs_context와 needs_frontier를 동시에 true로 둘 수 없음' }
     if ($verdict -ne '보류' -and ($needsContext -or $needsFrontier)) {
-        return '진성 verdict에는 needs_context/needs_frontier=true를 사용할 수 없음'
+        return '수정 verdict에는 needs_context/needs_frontier=true를 사용할 수 없음'
     }
 
-    if ($verdict -eq '진성') {
-        if (-not ($v.PSObject.Properties.Name -contains 'fix') -or $null -eq $v.fix) { return '진성인데 fix 없음' }
+    if ($verdict -eq '수정') {
+        if (-not ($v.PSObject.Properties.Name -contains 'fix') -or $null -eq $v.fix) { return '수정인데 fix 없음' }
         $before = [string]$v.fix.before
         $after = [string]$v.fix.after
         if ([string]::IsNullOrWhiteSpace($before) -or [string]::IsNullOrWhiteSpace($after)) {
-            return '진성인데 fix.before/after 비어있음'
+            return '수정인데 fix.before/after 비어있음'
         }
     }
     elseif ($verdict -eq '보류') {
@@ -415,7 +415,7 @@ function Invoke-Collect {
         }
         $valid.Add($obj)
         switch ([string]$obj.verdict) {
-            '진성' { $cntJin++ }
+            '수정' { $cntJin++ }
             '보류' { $cntBo++ }
         }
     }
@@ -452,12 +452,12 @@ function Invoke-Collect {
     $groups = $sorted | Group-Object { [string]$_.checker } | Sort-Object Name
     foreach ($g in $groups) {
         $checkerKey = $g.Name
-        $jin = @($g.Group | Where-Object { [string]$_.verdict -eq '진성' })
+        $jin = @($g.Group | Where-Object { [string]$_.verdict -eq '수정' })
         $bo = @($g.Group | Where-Object { [string]$_.verdict -eq '보류' })
 
         $sb = New-Object System.Text.StringBuilder
         [void]$sb.Append("# $checkerKey — 트리아지 결과`n`n")
-        [void]$sb.Append("## 진성 (수정 대상 — 커밋 단위 후보)`n`n")
+        [void]$sb.Append("## 수정 (수정 대상 — 커밋 단위 후보)`n`n")
         if ($jin.Count -eq 0) { [void]$sb.Append("- (없음)`n") }
         foreach ($v in $jin) {
             $lines = if ($v.PSObject.Properties.Name -contains 'fix' -and $v.fix) { [string]$v.fix.lines } else { '' }
@@ -477,7 +477,7 @@ function Invoke-Collect {
     }
 
     Write-Host "=== collect 요약 ==="
-    Write-Host ("  진성 : {0}" -f $cntJin)
+    Write-Host ("  수정 : {0}" -f $cntJin)
     Write-Host ("  보류 : {0}" -f $cntBo)
     Write-Host ("  무효 : {0}" -f $cntBad)
     Write-Host ("  원장 : {0}" -f (Join-Path (Resolve-Path -LiteralPath $Out).Path 'triage-ledger.csv'))

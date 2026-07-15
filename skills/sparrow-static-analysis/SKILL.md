@@ -13,6 +13,17 @@ Work only inside `skills/sparrow-static-analysis` and the explicit Sparrow XLS/s
 
 Track A and Track B are deterministic tooling tracks. Track C is not an autofix track; it is an LLM/human judgment workflow.
 
+## Real Fix Pattern Corpus
+
+When the user has manually fixed Sparrow findings in a closed network and wants those fixes reused without exposing source code, document them as anonymized before/after patterns under `references/real-fix-patterns/`.
+
+- Use `references/real-fix-patterns/README.md` as the workflow.
+- Use `references/real-fix-patterns/TEMPLATE.md` for each checker file.
+- Extract only the minimum diff shape needed to explain the checker fix.
+- Anonymize filenames, symbols, string literals, paths, and domain terms.
+- Classify whether the pattern is Track A/B CLI-automatable, Track C LLM guidance, or human-review only.
+- Do not copy closed-network source code, full functions, or business logic into this repo.
+
 ## Windows Launcher UX
 
 For normal one-shot local execution, prefer the `.cmd` launchers next to the PowerShell scripts:

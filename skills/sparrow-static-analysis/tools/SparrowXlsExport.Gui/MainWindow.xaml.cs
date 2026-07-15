@@ -5,30 +5,30 @@ using System.IO;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows;
-using System.Windows.Controls;
+using System.Windows.Threading;
 using Microsoft.Win32;
+using SparrowXlsExport.Core;
 
 namespace SparrowXlsExport.Gui
 {
     /// <summary>
-    /// Simple launcher for the SparrowXlsExport console tool. The GUI only shells out to the
-    /// existing net8.0 exe (zero changes to the console project); it builds the argument list
-    /// from the form fields, runs the exe asynchronously, streams stdout/stderr into the log,
-    /// and — on success — parses the "output dir:" summary line to enable "출력 폴더 열기".
+    /// One-click GUI for the Sparrow XLS Track C prep. On 확인 it runs the WHOLE pipeline in-process on a
+    /// background thread: <see cref="SparrowExporter.Run"/> (parse -&gt; items/index.csv/checkers.md) then
+    /// <see cref="TriagePreparer.Prepare"/> (index.csv + guides + prompt -&gt; requests/ + worklist.csv +
+    /// unresolved.csv + empty verdicts/). Both human summaries stream into the log box. No dependency on any
+    /// external exe or script — parsing and prepare both live in the shared Core library.
     /// </summary>
     public partial class MainWindow : Window
     {
-        private const string ExeName = "SparrowXlsExport.exe";
-
-        // Remembered for the session if the user browses for the exe manually.
-        private string? _userChosenExePath;
-
         // Resolved after a successful run so "출력 폴더 열기" knows where to point Explorer.
         private string? _lastOutputDir;
 
         public MainWindow()
         {
             InitializeComponent();
+            // Pre-fill the references path with the auto-resolved skill references folder (if found).
+            string? refs = ResolveReferencesRoot();
+            if (refs != null) ReferencesPathBox.Text = refs;
         }
 
         // ---- File / folder pickers ---------------------------------------------------------
@@ -63,6 +63,22 @@ namespace SparrowXlsExport.Gui
             }
         }
 
+        private void BrowseReferencesButton_Click(object sender, RoutedEventArgs e)
+        {
+            var dlg = new OpenFolderDialog
+            {
+                Title = "스킬 references 폴더 선택 (checkers + triage/triage-prompt.md 포함)"
+            };
+            if (!string.IsNullOrWhiteSpace(ReferencesPathBox.Text) && Directory.Exists(ReferencesPathBox.Text))
+            {
+                dlg.InitialDirectory = ReferencesPathBox.Text;
+            }
+            if (dlg.ShowDialog(this) == true)
+            {
+                ReferencesPathBox.Text = dlg.FolderName;
+            }
+        }
+
         // ---- Run -----------------------------------------------------------------------------
 
         private async void RunButton_Click(object sender, RoutedEventArgs e)
@@ -75,68 +91,87 @@ namespace SparrowXlsExport.Gui
                 return;
             }
 
-            string? exePath = LocateExe();
-            if (exePath == null)
+            // Resolve references (guides + prompt) up-front so we fail fast with a Korean hint.
+            string referencesRoot = ReferencesPathBox.Text.Trim();
+            if (string.IsNullOrEmpty(referencesRoot))
             {
-                var result = MessageBox.Show(this,
-                    "SparrowXlsExport.exe 를 찾을 수 없습니다.\n직접 선택하시겠습니까?",
-                    "실행 파일 없음", MessageBoxButton.YesNo, MessageBoxImage.Question);
-                if (result != MessageBoxResult.Yes) return;
-
-                var dlg = new OpenFileDialog
-                {
-                    Title = "SparrowXlsExport.exe 선택",
-                    Filter = "SparrowXlsExport.exe|SparrowXlsExport.exe|실행 파일 (*.exe)|*.exe",
-                    CheckFileExists = true
-                };
-                if (dlg.ShowDialog(this) != true) return;
-                _userChosenExePath = dlg.FileName;
-                exePath = _userChosenExePath;
+                referencesRoot = ResolveReferencesRoot() ?? "";
+            }
+            if (string.IsNullOrEmpty(referencesRoot) || !Directory.Exists(referencesRoot))
+            {
+                MessageBox.Show(this,
+                    "스킬 references 폴더를 찾을 수 없습니다.\n\n고급 옵션의 '스킬 references 경로'에 checkers 가이드와 " +
+                    "triage/triage-prompt.md 가 들어 있는 references 폴더를 지정하세요.",
+                    "references 경로 확인", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+            string guidesDir = Path.Combine(referencesRoot, "checkers");
+            string promptPath = Path.Combine(referencesRoot, "triage", "triage-prompt.md");
+            if (!Directory.Exists(guidesDir) || !File.Exists(promptPath))
+            {
+                MessageBox.Show(this,
+                    "references 경로가 올바르지 않습니다.\n\n다음이 모두 있어야 합니다:\n  - " + guidesDir +
+                    "\n  - " + promptPath +
+                    "\n\n스킬의 references 폴더(checkers, triage/triage-prompt.md 포함)를 지정하세요.",
+                    "references 경로 확인", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
             }
 
-            List<string> args = BuildArgs(input);
+            ExportOptions opts = BuildOptions(input);
 
             SetRunning(true);
             _lastOutputDir = null;
             OpenOutputButton.IsEnabled = false;
             LogBox.Clear();
-            AppendLog("실행 파일: " + exePath);
-            AppendLog("인자: " + string.Join(" ", args));
+            AppendLog("입력 파일: " + input);
+            AppendLog("references: " + referencesRoot);
             AppendLog(new string('-', 60));
 
-            int exitCode;
-            string capturedStdout;
+            var log = new DispatcherTextWriter(Dispatcher, AppendLog);
+
+            string outputDir;
             try
             {
-                (exitCode, capturedStdout) = await RunProcessAsync(exePath, args);
+                outputDir = await Task.Run(() =>
+                {
+                    // Stage 1: parse the xls into items/ + index.csv + checkers.md.
+                    log.WriteLine("[1/2] 파싱 (parse) …");
+                    ExportResult parse = SparrowExporter.Run(opts, log);
+
+                    // Stage 2: assemble LLM-ready triage requests from the parsed index + guides + prompt.
+                    log.WriteLine("");
+                    log.WriteLine(new string('-', 60));
+                    log.WriteLine("[2/2] 트리아지 요청 조립 (prepare) …");
+                    var prepOpts = new PrepareOptions
+                    {
+                        IndexCsvPath = Path.Combine(parse.OutputDir, "index.csv"),
+                        ItemsDir = Path.Combine(parse.OutputDir, "items"),
+                        GuidesDir = guidesDir,
+                        PromptPath = promptPath,
+                        OutDir = parse.OutputDir,
+                    };
+                    TriagePreparer.Prepare(prepOpts, log);
+                    return parse.OutputDir;
+                });
             }
             catch (Exception ex)
             {
                 SetRunning(false);
-                AppendLog("예외: " + ex.Message);
+                AppendLog(new string('-', 60));
+                AppendLog("오류: " + ex.Message);
                 StatusText.Text = "실행 실패";
-                MessageBox.Show(this, "실행 중 오류가 발생했습니다.\n\n" + ex.Message,
+                MessageBox.Show(this, "처리에 실패했습니다.\n\n" + ex.Message,
                     "오류", MessageBoxButton.OK, MessageBoxImage.Error);
                 return;
             }
 
             AppendLog(new string('-', 60));
-            AppendLog("종료 코드: " + exitCode);
+            AppendLog("완료 — items · index.csv · checkers.md · requests · worklist.csv · unresolved.csv · verdicts");
             SetRunning(false);
 
-            if (exitCode == 0)
-            {
-                _lastOutputDir = ParseOutputDir(capturedStdout) ?? ComputeDefaultOutputDir(input);
-                OpenOutputButton.IsEnabled = _lastOutputDir != null && Directory.Exists(_lastOutputDir);
-                StatusText.Text = "완료" + (_lastOutputDir != null ? "  →  " + _lastOutputDir : "");
-            }
-            else
-            {
-                StatusText.Text = "실패 (종료 코드 " + exitCode + ")";
-                MessageBox.Show(this,
-                    "내보내기에 실패했습니다. (종료 코드 " + exitCode + ")\n자세한 내용은 출력 로그를 확인하세요.",
-                    "오류", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
+            _lastOutputDir = outputDir;
+            OpenOutputButton.IsEnabled = !string.IsNullOrEmpty(_lastOutputDir) && Directory.Exists(_lastOutputDir);
+            StatusText.Text = "완료" + (!string.IsNullOrEmpty(_lastOutputDir) ? "  →  " + _lastOutputDir : "");
         }
 
         private void OpenOutputButton_Click(object sender, RoutedEventArgs e)
@@ -160,155 +195,49 @@ namespace SparrowXlsExport.Gui
 
         // ---- Helpers -------------------------------------------------------------------------
 
-        /// <summary>
-        /// Locate SparrowXlsExport.exe, first-match wins:
-        ///  (a) next to the running GUI exe (AppContext.BaseDirectory);
-        ///  (b) dev fallbacks relative to the GUI project output (sibling console bin\Debug|Release);
-        ///  (c) the known offline bundle location;
-        ///  (d) a path the user picked earlier this session.
-        /// </summary>
-        private string? LocateExe()
+        /// <summary>Build the export options from the form fields.</summary>
+        private ExportOptions BuildOptions(string input)
         {
-            var candidates = new List<string>();
-
-            if (!string.IsNullOrEmpty(_userChosenExePath))
-                candidates.Add(_userChosenExePath!);
-
-            string baseDir = AppContext.BaseDirectory;
-            candidates.Add(Path.Combine(baseDir, ExeName));
-
-            // (b) dev fallback: ...\SparrowXlsExport.Gui\bin\Debug\net8.0-windows\  ->  sibling console project
-            candidates.Add(Path.GetFullPath(Path.Combine(baseDir,
-                "..", "..", "..", "..", "SparrowXlsExport", "bin", "Debug", "net8.0", ExeName)));
-            candidates.Add(Path.GetFullPath(Path.Combine(baseDir,
-                "..", "..", "..", "..", "SparrowXlsExport", "bin", "Release", "net8.0", ExeName)));
-
-            // (c) offline bundle fallback
-            candidates.Add(@"C:\Users\CEO\Desktop\dotnet-gcdump-offline\sparrow-xlsexport\win-x64\" + ExeName);
-
-            foreach (string c in candidates)
-            {
-                try { if (File.Exists(c)) return c; }
-                catch { /* ignore malformed candidate */ }
-            }
-            return null;
-        }
-
-        private List<string> BuildArgs(string input)
-        {
-            var args = new List<string> { input };
+            var opts = new ExportOptions { InputPath = input };
 
             string outDir = OutputPathBox.Text.Trim();
-            if (!string.IsNullOrEmpty(outDir))
-            {
-                args.Add("--out");
-                args.Add(outDir);
-            }
+            if (!string.IsNullOrEmpty(outDir)) opts.OutDir = outDir;
 
-            var sevs = new List<string>();
+            var sevs = new HashSet<string>(StringComparer.Ordinal);
             if (SevVeryHigh.IsChecked == true) sevs.Add("매우위험");
             if (SevHigh.IsChecked == true) sevs.Add("높음");
             if (SevRisk.IsChecked == true) sevs.Add("위험");
             if (SevMedium.IsChecked == true) sevs.Add("보통");
             if (SevLow.IsChecked == true) sevs.Add("낮음");
-            if (sevs.Count > 0)
-            {
-                args.Add("--severity");
-                args.Add(string.Join(",", sevs));
-            }
+            opts.Severities = sevs;
 
             string checker = CheckerBox.Text.Trim();
-            if (!string.IsNullOrEmpty(checker))
-            {
-                args.Add("--checker");
-                args.Add(checker);
-            }
+            if (!string.IsNullOrEmpty(checker)) opts.Checker = checker;
 
             string max = MaxBox.Text.Trim();
-            if (!string.IsNullOrEmpty(max))
-            {
-                args.Add("--max");
-                args.Add(max);
-            }
+            if (!string.IsNullOrEmpty(max) && int.TryParse(max, out int mv)) opts.Max = mv;
 
-            return args;
+            return opts;
         }
 
-        /// <summary>Run the exe async; stream stdout/stderr into the log; return (exitCode, full stdout).</summary>
-        private async Task<(int ExitCode, string Stdout)> RunProcessAsync(string exePath, List<string> args)
-        {
-            var psi = new ProcessStartInfo
-            {
-                FileName = exePath,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                StandardOutputEncoding = new UTF8Encoding(false),
-                StandardErrorEncoding = new UTF8Encoding(false),
-                WorkingDirectory = Path.GetDirectoryName(exePath) ?? Environment.CurrentDirectory
-            };
-            foreach (string a in args) psi.ArgumentList.Add(a);
-
-            var stdoutBuilder = new StringBuilder();
-
-            using var process = new Process { StartInfo = psi, EnableRaisingEvents = true };
-
-            process.OutputDataReceived += (s, ev) =>
-            {
-                if (ev.Data == null) return;
-                stdoutBuilder.AppendLine(ev.Data);
-                string line = ev.Data;
-                Dispatcher.Invoke(() => AppendLog(line));
-            };
-            process.ErrorDataReceived += (s, ev) =>
-            {
-                if (ev.Data == null) return;
-                string line = ev.Data;
-                Dispatcher.Invoke(() => AppendLog(line));
-            };
-
-            process.Start();
-            process.BeginOutputReadLine();
-            process.BeginErrorReadLine();
-
-            await process.WaitForExitAsync();
-
-            return (process.ExitCode, stdoutBuilder.ToString());
-        }
-
-        /// <summary>Parse the console summary line: "output dir:&lt;spaces&gt;C:\...\foo.items".</summary>
-        private static string? ParseOutputDir(string stdout)
-        {
-            using var reader = new StringReader(stdout);
-            string? line;
-            while ((line = reader.ReadLine()) != null)
-            {
-                const string prefix = "output dir:";
-                int idx = line.IndexOf(prefix, StringComparison.Ordinal);
-                if (idx >= 0)
-                {
-                    string dir = line.Substring(idx + prefix.Length).Trim();
-                    if (dir.Length > 0) return dir;
-                }
-            }
-            return null;
-        }
-
-        /// <summary>Fallback when the summary line is missing: &lt;xls dir&gt;\&lt;name&gt;.items.</summary>
-        private static string? ComputeDefaultOutputDir(string input)
+        /// <summary>
+        /// Walk up from the app base dir looking for a skill root that contains
+        /// references\triage\triage-prompt.md; return that references folder, or null if not found.
+        /// </summary>
+        private static string? ResolveReferencesRoot()
         {
             try
             {
-                string full = Path.GetFullPath(input);
-                string? dir = Path.GetDirectoryName(full);
-                if (dir == null) return null;
-                return Path.Combine(dir, Path.GetFileNameWithoutExtension(full) + ".items");
+                var dir = new DirectoryInfo(AppContext.BaseDirectory);
+                for (int depth = 0; dir != null && depth < 12; depth++, dir = dir.Parent)
+                {
+                    string candidate = Path.Combine(dir.FullName, "references");
+                    string prompt = Path.Combine(candidate, "triage", "triage-prompt.md");
+                    if (File.Exists(prompt)) return candidate;
+                }
             }
-            catch
-            {
-                return null;
-            }
+            catch { /* best-effort resolution; fall through to null */ }
+            return null;
         }
 
         private void AppendLog(string line)
@@ -322,8 +251,33 @@ namespace SparrowXlsExport.Gui
             RunButton.IsEnabled = !running;
             BrowseInputButton.IsEnabled = !running;
             BrowseOutputButton.IsEnabled = !running;
+            BrowseReferencesButton.IsEnabled = !running;
             RunButton.Content = running ? "실행 중…" : "확인";
             if (running) StatusText.Text = "실행 중…";
+        }
+
+        /// <summary>
+        /// TextWriter that marshals each summary line from the background export thread onto the UI thread
+        /// via the Dispatcher, so the log box updates live while the pipeline runs.
+        /// </summary>
+        private sealed class DispatcherTextWriter : TextWriter
+        {
+            private readonly Dispatcher _dispatcher;
+            private readonly Action<string> _append;
+
+            public DispatcherTextWriter(Dispatcher dispatcher, Action<string> append)
+            {
+                _dispatcher = dispatcher;
+                _append = append;
+            }
+
+            public override Encoding Encoding => new UTF8Encoding(false);
+
+            public override void WriteLine(string? value)
+            {
+                string line = value ?? "";
+                _dispatcher.BeginInvoke(new Action(() => _append(line)));
+            }
         }
     }
 }

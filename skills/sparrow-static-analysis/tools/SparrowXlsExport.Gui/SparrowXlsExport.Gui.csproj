@@ -10,4 +10,9 @@
     <RootNamespace>SparrowXlsExport.Gui</RootNamespace>
   </PropertyGroup>
 
+  <ItemGroup>
+    <!-- In-process parsing via the shared Core library (NPOI comes transitively). No exe shell-out. -->
+    <ProjectReference Include="..\SparrowXlsExport.Core\SparrowXlsExport.Core.csproj" />
+  </ItemGroup>
+
 </Project>

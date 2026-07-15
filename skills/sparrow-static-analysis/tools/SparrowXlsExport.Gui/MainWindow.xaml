@@ -38,7 +38,7 @@
         <!-- Title -->
         <StackPanel Grid.Row="0" Margin="0,0,0,14">
             <TextBlock Text="Sparrow XLS Export" FontSize="18" FontWeight="Bold"/>
-            <TextBlock Text="파수 정적분석 결과 .xls를 항목별 마크다운 · index.csv · checkers.md로 분할합니다."
+            <TextBlock Text="파수 정적분석 결과 .xls를 한 번에 분할(items · index.csv · checkers.md)하고 LLM-ready 트리아지 요청(requests)까지 생성합니다."
                        Style="{StaticResource HintText}"/>
         </StackPanel>
 
@@ -93,7 +93,22 @@
 
                 <TextBlock Text="최대 건수 (Max)" Style="{StaticResource SectionLabel}"/>
                 <TextBox x:Name="MaxBox" Width="120" HorizontalAlignment="Left" Height="26"
-                         VerticalContentAlignment="Center"/>
+                         VerticalContentAlignment="Center" Margin="0,0,0,12"/>
+
+                <TextBlock Text="스킬 references 경로" Style="{StaticResource SectionLabel}"/>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBox x:Name="ReferencesPathBox" Grid.Column="0" Height="26"
+                             VerticalContentAlignment="Center"/>
+                    <Button x:Name="BrowseReferencesButton" Grid.Column="1" Content="찾아보기…"
+                            Margin="8,0,0,0" Click="BrowseReferencesButton_Click"/>
+                </Grid>
+                <TextBlock x:Name="ReferencesHint"
+                           Text="checkers 가이드와 triage-prompt.md가 있는 스킬의 references 폴더. 비우면 자동 탐색합니다."
+                           Style="{StaticResource HintText}"/>
             </StackPanel>
         </Expander>
 

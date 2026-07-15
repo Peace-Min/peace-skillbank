@@ -147,7 +147,7 @@ function Invoke-Prepare {
         # 필터(AND). checker=정확 일치(체커 키), severity=집합 포함.
         if ($Checker -and ($checkerKey -ne $Checker)) { continue }
         if ($sevSet.Count -gt 0 -and ($sevSet -notcontains $sev.Trim())) { continue }
-        if ($PSBoundParameters.ContainsKey('Max') -and $requestCount + $unresolvedCount -ge $Max) { break }
+        if ($Max -gt 0 -and $requestCount + $unresolvedCount -ge $Max) { break }
 
         $idPart = if ($id -and $id.Trim().Length -gt 0) { $id.Trim() } else { $ordinal.ToString('D5') }
         $itemLeaf = if ($mdField) { Split-Path -Leaf $mdField } else { '' }

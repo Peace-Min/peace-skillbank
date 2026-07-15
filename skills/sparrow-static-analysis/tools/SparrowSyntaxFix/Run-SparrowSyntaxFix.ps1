@@ -172,9 +172,38 @@ if (-not $DryRun) {
     $dirty = @(& git -C $root status --porcelain 2>$null)
     $gitCode = $LASTEXITCODE
     $ErrorActionPreference = 'Stop'
-    if ($gitCode -eq 0 -and $dirty.Count -gt 0) {
-        Write-Warning "작업트리에 미커밋 변경이 있습니다($($dirty.Count)개). 자동수정 diff와 섞일 수 있으니 깨끗한 상태에서 권장."
+    if ($gitCode -eq 0) {
+        # 커밋마다 git 자동 gc(재패킹)가 .git pack의 .idx를 unlink하려다 백신/인덱서와 충돌해
+        # "Unlink of file ...pack-*.idx failed. Should I try again?" 가 나는 것을 원천 차단.
+        # 대상 repo 로컬 설정(1회), 다른 repo엔 영향 없음.
+        & git -C $root config gc.auto 0 2>&1 | Out-Null
+        & git -C $root config gc.autoDetach false 2>&1 | Out-Null
+        & git -C $root config core.fscache true 2>&1 | Out-Null
+        if ($dirty.Count -gt 0) {
+            Write-Warning "작업트리에 미커밋 변경이 있습니다($($dirty.Count)개). 자동수정 diff와 섞일 수 있으니 깨끗한 상태에서 권장."
+        }
     }
+}
+
+# git 커밋 하드닝: add/commit을 일시 락(.idx unlink 실패·index.lock 등)에 자동 재시도로 감쌈.
+# 반환: 'committed' | 'nochange' | 'failed'. 실패해도 러너는 계속 진행(다음 규칙 처리).
+function Invoke-GitCommitStep {
+    param([Parameter(Mandatory)][string]$Root, [Parameter(Mandatory)][string]$Message)
+    & git -C $Root add -- '*.cs' 2>&1 | Out-Null
+    & git -C $Root diff --cached --quiet
+    if ($LASTEXITCODE -eq 0) { return 'nochange' }
+    for ($attempt = 1; $attempt -le 5; $attempt++) {
+        & git -C $Root commit -q -m $Message 2>&1 | Out-Null
+        if ($LASTEXITCODE -eq 0) { return 'committed' }
+        # 커밋이 실제로는 성공(스테이징 소진)했는지 확인 - 그러면 성공 처리.
+        & git -C $Root diff --cached --quiet
+        if ($LASTEXITCODE -eq 0) { return 'committed' }
+        # 전형적 일시 락 - 점증 백오프 후 재시도. 혹시 남은 index.lock 은 정리.
+        Start-Sleep -Milliseconds (400 * $attempt)
+        $lock = Join-Path $Root '.git\index.lock'
+        if (Test-Path -LiteralPath $lock) { Remove-Item -LiteralPath $lock -Force -ErrorAction SilentlyContinue }
+    }
+    return 'failed'
 }
 
 # 1b) -Commit/-DryRun 둘 다 없으면 물어봄(플래그 빼먹는 실수 방지). 비대화형은 안 물어보고 커밋 안 함.
@@ -220,14 +249,13 @@ foreach ($r in $Rules) {
     if ($DryRun) { Write-Host "  결과      : [dry-run] 파일 변경 안 함"; continue }
 
     if ($Commit) {
-        & git -C $root add -- '*.cs' 2>&1 | Out-Null
-        & git -C $root diff --cached --quiet
-        if ($LASTEXITCODE -ne 0) {
-            $prefix = if ($labels[$r] -like '검토필요:*') { 'sparrow(A)! ' } else { 'sparrow(A): ' }
-            & git -C $root commit -q -m "$prefix$($labels[$r])"
-            Write-Host "  커밋      : $prefix$($labels[$r])"
+        $prefix = if ($labels[$r] -like '검토필요:*') { 'sparrow(A)! ' } else { 'sparrow(A): ' }
+        $res = Invoke-GitCommitStep -Root $root -Message "$prefix$($labels[$r])"
+        switch ($res) {
+            'committed' { Write-Host "  커밋      : $prefix$($labels[$r])" }
+            'nochange'  { Write-Host "  커밋      : 변경 없음 -> 건너뜀 (이 규칙에서 바뀐 .cs 없음)" }
+            'failed'    { Write-Warning "  커밋 실패(git 락 5회 재시도 후에도) - 파일 수정은 유지됨. 나중에 수동 커밋 가능." }
         }
-        else { Write-Host "  커밋      : 변경 없음 -> 건너뜀 (이 규칙에서 바뀐 .cs 없음)" }
     }
     else { Write-Host "  커밋      : -Commit 미지정 -> 커밋 안 함 (파일만 수정됨)" }
 }

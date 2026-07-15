@@ -309,6 +309,47 @@ class C {
     $contOverAfter = [System.IO.File]::ReadAllBytes($contOverFile)
     Check "continuation overindented: byte-identical no churn" { Test-BytesEqual $contOverBefore $contOverAfter }
 
+    # --- continuation: OPERATOR-LED style (dominant in OSTES): the continuation line begins with `&&`/`||`,
+    #     not the operand. The indent fix must target the operator token and set it to if-indent + 4. ---
+    $contOpLedSrc = @'
+public class C {
+    public void M(int a) {
+        if (20 > 10
+        && 30 > 10)
+        { System.Console.WriteLine("x"); }
+        if (a > 0
+        || a < 5)
+        { }
+    }
+}
+'@
+    $contOpLedFile = New-Fixture "continuation_opled.cs" $contOpLedSrc
+    Check "continuation op-led: exit 0" { (Invoke-Tool @($contOpLedFile, "--rules", "continuation")) -eq 0 }
+    $col = Read-Text $contOpLedFile
+    Check "continuation op-led: && line indented to if-indent+4" { $col.Contains("        if (20 > 10`r`n            && 30 > 10)") -or $col.Contains("        if (20 > 10`n            && 30 > 10)") }
+    Check "continuation op-led: || line indented to if-indent+4" { $col.Contains("        if (a > 0`r`n            || a < 5)") -or $col.Contains("        if (a > 0`n            || a < 5)") }
+    # idempotency: a second run makes zero further changes (byte-identical).
+    $contOpLed1 = [System.IO.File]::ReadAllBytes($contOpLedFile)
+    Check "continuation op-led: second run exit 0" { (Invoke-Tool @($contOpLedFile, "--rules", "continuation")) -eq 0 }
+    $contOpLed2 = [System.IO.File]::ReadAllBytes($contOpLedFile)
+    Check "continuation op-led: second run byte-identical (idempotent)" { Test-BytesEqual $contOpLed1 $contOpLed2 }
+
+    # already-correct op-led continuation: `&&` already at if-indent+4 -> no change, no churn.
+    $contOkSrc = @'
+public class C {
+    public void M() {
+        if (20 > 10
+            && 30 > 10)
+        { }
+    }
+}
+'@
+    $contOkFile = New-Fixture "continuation_opled_ok.cs" $contOkSrc
+    $contOkBefore = [System.IO.File]::ReadAllBytes($contOkFile)
+    Check "continuation op-led already-correct: exit 0" { (Invoke-Tool @($contOkFile, "--rules", "continuation")) -eq 0 }
+    $contOkAfter = [System.IO.File]::ReadAllBytes($contOkFile)
+    Check "continuation op-led already-correct: byte-identical no churn" { Test-BytesEqual $contOkBefore $contOkAfter }
+
     # --- layout: linqalign ---
     $linqSrc = @'
 using System.Linq;

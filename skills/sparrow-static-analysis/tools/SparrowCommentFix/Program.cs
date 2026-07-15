@@ -666,11 +666,22 @@ namespace SparrowCommentFix
             {
                 int baseLine = LineStart(text, list.SpanStart);
                 string desired = IndentBefore(text, list.SpanStart) + "    ";
-                foreach (ArgumentSyntax arg in list.Arguments)
+                SeparatedSyntaxList<ArgumentSyntax> args = list.Arguments;
+                for (int i = 0; i < args.Count; i++)
                 {
-                    int argLine = LineStart(text, arg.SpanStart);
+                    ArgumentSyntax arg = args[i];
+                    // The continuation line's first token is either the argument itself (comma-trailing style:
+                    // `foo(a,\n    b)`) or the leading comma separator (comma-led style: `foo(a\n    , b)`).
+                    // Anchor on whichever begins the physical line so the indent fix targets its true start.
+                    int anchor = arg.SpanStart;
+                    if (i >= 1)
+                    {
+                        int sepStart = args.GetSeparator(i - 1).SpanStart;
+                        if (LineStart(text, sepStart) == LineStart(text, arg.SpanStart)) anchor = sepStart;
+                    }
+                    int argLine = LineStart(text, anchor);
                     if (argLine == baseLine || !touchedLines.Add(argLine)) continue;
-                    if (TrySetLineIndent(text, arg.SpanStart, desired, out Edit edit))
+                    if (TrySetLineIndent(text, anchor, desired, out Edit edit))
                     {
                         edits.Add(edit);
                         ruleCounts["continuation"]++;
@@ -682,10 +693,18 @@ namespace SparrowCommentFix
             {
                 if (!binary.IsKind(SyntaxKind.LogicalAndExpression) && !binary.IsKind(SyntaxKind.LogicalOrExpression)) continue;
                 int baseLine = LineStart(text, binary.Left.SpanStart);
-                int rightLine = LineStart(text, binary.Right.SpanStart);
-                if (rightLine == baseLine || !touchedLines.Add(rightLine)) continue;
+                // The continuation line's first token is either the operator (operator-led style, dominant in
+                // OSTES: `if (a\n    && b)`) or the right operand (operator-trailing style: `if (a &&\n    b)`).
+                // When the operator and right operand share a line, the operator leads -> anchor on the operator;
+                // otherwise the right operand starts the continuation line. Anchoring on the operand alone (the
+                // old behavior) silently missed every operator-led line because its true start is `&&`/`||`.
+                int opStart = binary.OperatorToken.SpanStart;
+                int rightStart = binary.Right.SpanStart;
+                int anchor = LineStart(text, opStart) == LineStart(text, rightStart) ? opStart : rightStart;
+                int contLine = LineStart(text, anchor);
+                if (contLine == baseLine || !touchedLines.Add(contLine)) continue;
                 string desired = IndentBefore(text, binary.Left.SpanStart) + "    ";
-                if (TrySetLineIndent(text, binary.Right.SpanStart, desired, out Edit edit))
+                if (TrySetLineIndent(text, anchor, desired, out Edit edit))
                 {
                     edits.Add(edit);
                     ruleCounts["continuation"]++;

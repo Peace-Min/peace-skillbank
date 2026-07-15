@@ -38,6 +38,16 @@ trap {
     exit 1
 }
 
+try {
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [Console]::InputEncoding = $utf8NoBom
+    [Console]::OutputEncoding = $utf8NoBom
+    $OutputEncoding = $utf8NoBom
+}
+catch {
+    # 콘솔 인코딩 설정 실패는 러너 본동작을 막지 않는다.
+}
+
 $ErrorActionPreference = 'Stop'
 $here = $PSScriptRoot
 $syntaxRunner  = Join-Path $here 'SparrowSyntaxFix\Run-SparrowSyntaxFix.ps1'

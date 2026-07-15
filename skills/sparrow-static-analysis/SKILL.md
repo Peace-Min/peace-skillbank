@@ -22,8 +22,9 @@ For normal one-shot local execution, prefer the `.cmd` launchers next to the Pow
 - `tools/SparrowCommentFix/Run-SparrowCommentFix.cmd`
 - `tools/Run-SparrowAll.cmd`
 
-The `.cmd` launchers call the matching `.ps1` with `powershell.exe -NoProfile -ExecutionPolicy Bypass -NoExit -File ...`.
+The `.cmd` launchers call the matching `.ps1` with `powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -NoExit -File ...`.
 This preserves the existing prompt flow (solution path, optional rules, commit choice) while preventing a newly opened PowerShell window from closing before the user can read errors or completion output.
+They also switch the console to UTF-8 and start from the launcher directory, so Korean `dotnet` output does not become mojibake and logs are not written to `C:\Windows\System32` when launched elevated.
 Use raw `.ps1` files from an already-open PowerShell terminal, tests, or automation.
 
 ## Track A

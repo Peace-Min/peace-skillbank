@@ -1,6 +1,6 @@
 {
   "name": "peace-skillbank",
-  "version": "0.1.44",
+  "version": "0.1.45",
   "description": "Reusable Claude Code skills: Sparrow static-analysis triage/autofix support, .NET diagsession/gcdump memory-leak analysis, grounded LightningChart 7.2 API assistance, and frontier-model handoff prompt packaging for offline/air-gapped work.",
   "author": {
     "name": "Peace-Min",

@@ -153,10 +153,14 @@ function Resolve-Tool {
 $tool = Resolve-Tool
 Write-Host "툴            : $($tool.path)"
 
-# 작업트리 오염 경고(자동수정 diff 격리를 위해)
+# 작업트리 오염 경고(자동수정 diff 격리를 위해). native(git) stderr가 EAP=Stop에서 throw되는 것을 막기
+# 위해 이 구간만 Continue. git 없음/비-git 폴더(exit!=0)면 조용히 건너뜀(경고는 편의 기능일 뿐).
 if (-not $DryRun) {
+    $ErrorActionPreference = 'Continue'
     $dirty = @(& git -C $root status --porcelain 2>$null)
-    if ($dirty.Count -gt 0) {
+    $gitCode = $LASTEXITCODE
+    $ErrorActionPreference = 'Stop'
+    if ($gitCode -eq 0 -and $dirty.Count -gt 0) {
         Write-Warning "작업트리에 미커밋 변경이 있습니다($($dirty.Count)개). 자동수정 diff와 섞일 수 있으니 깨끗한 상태에서 권장."
     }
 }

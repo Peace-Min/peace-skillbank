@@ -33,7 +33,6 @@
 #>
 param(
     [string]$Solution,
-    [ValidateSet('nullvar', 'nullcast', 'parens', 'objectvar-safe', 'foreachcast', 'obviousvar', 'objectvar-narrowing', 'localconst', 'objectinitializer', 'arrayvar-safe', 'arrayvar-narrowing', 'forvar', 'fieldsplit', 'emptystmt', 'forhoist')]
     [string[]]$Rules = @('objectvar-safe', 'obviousvar', 'arrayvar-safe', 'parens'),
     [switch]$Commit,
     [switch]$DryRun,
@@ -41,6 +40,20 @@ param(
     [string]$ExePath,
     [string]$LogDir
 )
+
+trap {
+    $message = if ($_.Exception) { $_.Exception.Message } else { ($_ | Out-String).Trim() }
+    Write-Host ""
+    Write-Host "[FATAL] Run-SparrowSyntaxFix 중단: $message" -ForegroundColor Red
+    $lp = Get-Variable -Name logPath -Scope 0 -ErrorAction SilentlyContinue
+    if ($lp -and $lp.Value) { Write-Host "로그: $($lp.Value)" }
+    $inputRedirected = $false
+    try { $inputRedirected = [Console]::IsInputRedirected } catch { $inputRedirected = $false }
+    if ([Environment]::UserInteractive -and -not $inputRedirected) {
+        [void](Read-Host "오류로 중단되었습니다. 내용을 확인한 뒤 Enter를 누르면 닫습니다")
+    }
+    exit 1
+}
 
 $ErrorActionPreference = 'Stop'
 $rulesExplicit = $PSBoundParameters.ContainsKey('Rules')
@@ -97,6 +110,13 @@ if (-not $rulesExplicit -and [Environment]::UserInteractive) {
             Write-Host "-> $($rule.Key) 제외"
         }
     }
+}
+
+$canonicalRules = @('nullvar', 'nullcast', 'parens', 'objectvar-safe', 'foreachcast', 'obviousvar', 'objectvar-narrowing', 'localconst', 'objectinitializer', 'arrayvar-safe', 'arrayvar-narrowing', 'forvar', 'fieldsplit', 'emptystmt', 'forhoist')
+$Rules = @($Rules | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+$invalidRules = @($Rules | Where-Object { $canonicalRules -notcontains $_ })
+if ($invalidRules.Count -gt 0) {
+    throw "지원하지 않는 규칙: $($invalidRules -join ', ') / 허용: $($canonicalRules -join ', ')"
 }
 
 # 0) preflight

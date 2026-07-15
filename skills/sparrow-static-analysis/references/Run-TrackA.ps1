@@ -14,7 +14,7 @@
 param(
     [string]$Solution,
     [string]$EditorConfig,
-    [ValidateSet('var', 'parens', 'initializer')][string[]]$Rules = @('var', 'parens', 'initializer'),
+    [string[]]$Rules = @('var', 'parens', 'initializer'),
     [switch]$Commit,
     [switch]$DryRun,
     [string]$Severity = 'info',
@@ -22,6 +22,20 @@ param(
     [string]$LogDir,
     [switch]$KeepEditorConfig
 )
+
+trap {
+    $message = if ($_.Exception) { $_.Exception.Message } else { ($_ | Out-String).Trim() }
+    Write-Host ""
+    Write-Host "[FATAL] Run-TrackA 중단: $message" -ForegroundColor Red
+    $lp = Get-Variable -Name logPath -Scope 0 -ErrorAction SilentlyContinue
+    if ($lp -and $lp.Value) { Write-Host "로그: $($lp.Value)" }
+    $inputRedirected = $false
+    try { $inputRedirected = [Console]::IsInputRedirected } catch { $inputRedirected = $false }
+    if ([Environment]::UserInteractive -and -not $inputRedirected) {
+        [void](Read-Host "오류로 중단되었습니다. 내용을 확인한 뒤 Enter를 누르면 닫습니다")
+    }
+    exit 1
+}
 
 $ErrorActionPreference = 'Stop'
 
@@ -42,6 +56,11 @@ $groups = [ordered]@{
     var         = @{ ids = @('IDE0007', 'IDE0008'); label = 'var 일괄(IDE0007/0008)' }
     parens      = @{ ids = @('IDE0048');            label = '괄호 명확화(IDE0048)' }
     initializer = @{ ids = @('IDE0017');            label = '객체 이니셜라이저(IDE0017)' }
+}
+$Rules = @($Rules | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+$invalidRules = @($Rules | Where-Object { -not $groups.Contains($_) })
+if ($invalidRules.Count -gt 0) {
+    throw "지원하지 않는 규칙: $($invalidRules -join ', ') / 허용: $($groups.Keys -join ', ')"
 }
 
 # 0) preflight

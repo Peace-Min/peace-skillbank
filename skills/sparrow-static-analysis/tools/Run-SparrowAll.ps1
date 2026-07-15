@@ -26,6 +26,18 @@ param(
     [string]$CommentRules = 'flatten,trailing,space,period,capitalize,memberblank,onestatement,onedeclaration,continuation,linqalign,blockpromote'
 )
 
+trap {
+    $message = if ($_.Exception) { $_.Exception.Message } else { ($_ | Out-String).Trim() }
+    Write-Host ""
+    Write-Host "[FATAL] Run-SparrowAll 중단: $message" -ForegroundColor Red
+    $inputRedirected = $false
+    try { $inputRedirected = [Console]::IsInputRedirected } catch { $inputRedirected = $false }
+    if ([Environment]::UserInteractive -and -not $inputRedirected) {
+        [void](Read-Host "오류로 중단되었습니다. 내용을 확인한 뒤 Enter를 누르면 닫습니다")
+    }
+    exit 1
+}
+
 $ErrorActionPreference = 'Stop'
 $here = $PSScriptRoot
 $syntaxRunner  = Join-Path $here 'SparrowSyntaxFix\Run-SparrowSyntaxFix.ps1'

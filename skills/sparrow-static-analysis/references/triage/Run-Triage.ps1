@@ -7,7 +7,8 @@
     사용:
       # 요청 조립(결정론)
       .\Run-Triage.ps1 prepare -Index out\index.csv -ItemsDir out\items -GuidesDir ..\checkers -Out triage `
-                               [-Checker FORWARD_NULL] [-Severity 매우위험,높음] [-Max 50] [-PromptPath triage-prompt.md]
+                               [-Checker FORWARD_NULL] [-Severity 매우위험,높음] [-Tracks C] [-Max 50] [-PromptPath triage-prompt.md]
+      # -Tracks: 요청을 생성할 가이드 트랙 집합(쉼표구분, 기본 C만). 예) -Tracks A,B,C 로 Track A/B 체커도 포함.
       # verdict 수거·검증·집계(결정론)
       .\Run-Triage.ps1 collect -VerdictsDir triage\verdicts -Worklist triage\worklist.csv -Out triage
 
@@ -24,6 +25,7 @@ param(
     [string]$GuidesDir,
     [string]$Checker,
     [string]$Severity,
+    [string]$Tracks,
     [int]$Max,
     [string]$PromptPath,
     [string]$ConventionsPath,
@@ -147,6 +149,13 @@ function Get-GuideMeta {
     return [pscustomobject]@{ Name = $name; Severity = $sev }
 }
 
+# 체커 가이드 헤더의 '**트랙**: X'(X=A/B/C)를 추출. 파싱 불가/누락 시 'C'(안전 기본 — 무필터 회귀 방지).
+function Get-GuideTrack {
+    param([string]$GuideText)
+    if ($GuideText -match '\*\*트랙\*\*:\s*([ABC])') { return $Matches[1] }
+    return 'C'
+}
+
 # ---------------------------------------------------------------- prepare
 function Invoke-Prepare {
     if (-not $Index) { throw "prepare: -Index <index.csv> 필요" }
@@ -175,6 +184,11 @@ function Invoke-Prepare {
     $sevSet = @()
     if ($Severity) { $sevSet = @($Severity.Split(',') | ForEach-Object { $_.Trim() } | Where-Object { $_.Length -gt 0 }) }
 
+    # 트랙 필터: 요청을 생성할 가이드 트랙 집합. 기본 = C만(A/B 가이드 추가 이전과 동일한 'C 전용' 기본 복원).
+    # -Tracks A,B,C 처럼 명시하면 그 집합으로 대체(GUI는 항상 C를 포함해 값을 만든다).
+    $trackSet = @('C')
+    if ($Tracks) { $trackSet = @($Tracks.Split(',') | ForEach-Object { $_.Trim().ToUpperInvariant() } | Where-Object { $_.Length -gt 0 }) }
+
     # 출력 폴더 준비(멱등: prepare 산출물만 초기화, verdicts\는 보존).
     [void](New-Item -ItemType Directory -Force -Path $Out)
     $reqDir = Join-Path $Out 'requests'
@@ -192,6 +206,7 @@ function Invoke-Prepare {
 
     $requestCount = 0
     $unresolvedCount = 0
+    $trackFilteredCount = 0
     $perChecker = @{}
     $perCheckerMeta = @{}   # 체커키 → @{ Name; Severity }(가이드에서 1회 추출)
     $ordinal = 0
@@ -229,6 +244,15 @@ function Invoke-Prepare {
             continue
         }
 
+        # 가이드 존재 → 트랙 필터. 가이드에서 트랙을 읽어 요청 집합에 없으면 이 행을 건너뜀
+        # (요청도, 미해결도 아님 — 단순 제외). 가이드 read는 여기서 1회 하고 요청 조립 때 재사용.
+        $guideText = Read-TextNoBom -Path $guidePath
+        $guideTrack = Get-GuideTrack -GuideText $guideText
+        if ($trackSet -notcontains $guideTrack) {
+            $trackFilteredCount++
+            continue
+        }
+
         if (-not $itemPath -or -not (Test-Path -LiteralPath $itemPath)) {
             $unresolvedCount++
             $unresolved.Add((@(
@@ -239,7 +263,6 @@ function Invoke-Prepare {
             continue
         }
 
-        $guideText = Read-TextNoBom -Path $guidePath
         if (-not $perCheckerMeta.ContainsKey($checkerKey)) {
             $perCheckerMeta[$checkerKey] = (Get-GuideMeta -GuideText $guideText -CheckerKey $checkerKey)
         }
@@ -298,8 +321,10 @@ function Invoke-Prepare {
     Write-Utf8Lf -Path (Join-Path $Out 'unresolved.csv') -Content (($unresolved -join "`n") + "`n")
 
     Write-Host "=== prepare 요약 ==="
+    Write-Host ("  트랙 필터   : {0}" -f ($trackSet -join ','))
     Write-Host ("  요청 생성수 : {0}" -f $requestCount)
     Write-Host ("  미해결수    : {0}" -f $unresolvedCount)
+    Write-Host ("  트랙 제외수 : {0}" -f $trackFilteredCount)
     Write-Host "  체커별 카운트:"
     if ($perChecker.Count -eq 0) {
         Write-Host "    (없음)"

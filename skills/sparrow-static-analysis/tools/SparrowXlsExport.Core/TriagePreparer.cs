@@ -56,6 +56,13 @@ namespace SparrowXlsExport.Core
         /// <summary>Comma-separated severity set (each trimmed); null/empty =&gt; no severity filter.</summary>
         public string? Severity;
 
+        /// <summary>
+        /// Comma-separated set of guide tracks (A/B/C) to INCLUDE. null/empty =&gt; default "C" only
+        /// (mirrors Run-Triage.ps1 -Tracks). A guide whose parsed track is not in this set is skipped
+        /// (neither a request nor an unresolved row). Guides with no parseable track are treated as C.
+        /// </summary>
+        public string? Tracks;
+
         /// <summary>Cap on requests+unresolved among filter-passing rows; null =&gt; no cap.</summary>
         public int? Max;
     }
@@ -65,6 +72,8 @@ namespace SparrowXlsExport.Core
     {
         public int RequestCount;
         public int UnresolvedCount;
+        /// <summary>Rows skipped because the guide's track was not in the requested -Tracks set.</summary>
+        public int TrackFiltered;
         /// <summary>Per-checker request counts, ordered count desc then key asc (PS summary order).</summary>
         public IReadOnlyList<(string Checker, int Count)> PerChecker = Array.Empty<(string, int)>();
         public string OutDir = "";
@@ -107,6 +116,13 @@ namespace SparrowXlsExport.Core
             if (!string.IsNullOrEmpty(opts.Severity))
                 sevSet = opts.Severity.Split(',').Select(x => x.Trim()).Where(x => x.Length > 0).ToList();
 
+            // 트랙 필터: 요청을 생성할 가이드 트랙 집합. 기본 = C만(Run-Triage.ps1 -Tracks 기본과 동일).
+            var trackSet = new HashSet<string>(StringComparer.Ordinal) { "C" };
+            if (!string.IsNullOrEmpty(opts.Tracks))
+                trackSet = new HashSet<string>(
+                    opts.Tracks.Split(',').Select(x => x.Trim().ToUpperInvariant()).Where(x => x.Length > 0),
+                    StringComparer.Ordinal);
+
             // 출력 폴더 준비(멱등: prepare 산출물만 초기화, verdicts\는 보존).
             Directory.CreateDirectory(opts.OutDir);
             string reqDir = Path.Combine(opts.OutDir, "requests");
@@ -122,6 +138,7 @@ namespace SparrowXlsExport.Core
 
             int requestCount = 0;
             int unresolvedCount = 0;
+            int trackFilteredCount = 0;
             var perChecker = new Dictionary<string, int>(StringComparer.Ordinal);
             var perCheckerMeta = new Dictionary<string, (string Name, string Severity)>(StringComparer.Ordinal);
             int ordinal = 0;
@@ -161,6 +178,16 @@ namespace SparrowXlsExport.Core
                     continue;
                 }
 
+                // 가이드 존재 → 트랙 필터. 가이드를 여기서 1회 읽어 트랙을 파싱하고, 요청 집합에 없으면
+                // 이 행을 건너뜀(요청도 미해결도 아님). 통과 시 guideText 를 요청 조립 때 재사용.
+                string guideText = ReadTextNoBom(guidePath);
+                string guideTrack = GetGuideTrack(guideText);
+                if (!trackSet.Contains(guideTrack))
+                {
+                    trackFilteredCount++;
+                    continue;
+                }
+
                 if (itemPath.Length == 0 || !File.Exists(itemPath))
                 {
                     unresolvedCount++;
@@ -172,7 +199,6 @@ namespace SparrowXlsExport.Core
                     continue;
                 }
 
-                string guideText = ReadTextNoBom(guidePath);
                 if (!perCheckerMeta.ContainsKey(checkerKey))
                     perCheckerMeta[checkerKey] = GetGuideMeta(guideText, checkerKey);
                 if (checkerKey == "NULL_RETURN_STD")
@@ -239,8 +265,10 @@ namespace SparrowXlsExport.Core
             if (log != null)
             {
                 log.WriteLine("=== prepare 요약 ===");
+                log.WriteLine("  트랙 필터   : " + string.Join(",", trackSet));
                 log.WriteLine("  요청 생성수 : " + requestCount.ToString(CultureInfo.InvariantCulture));
                 log.WriteLine("  미해결수    : " + unresolvedCount.ToString(CultureInfo.InvariantCulture));
+                log.WriteLine("  트랙 제외수 : " + trackFilteredCount.ToString(CultureInfo.InvariantCulture));
                 log.WriteLine("  체커별 카운트:");
                 if (perCheckerOrdered.Count == 0)
                 {
@@ -258,6 +286,7 @@ namespace SparrowXlsExport.Core
             {
                 RequestCount = requestCount,
                 UnresolvedCount = unresolvedCount,
+                TrackFiltered = trackFilteredCount,
                 PerChecker = perCheckerOrdered,
                 OutDir = Path.GetFullPath(opts.OutDir),
             };
@@ -336,6 +365,18 @@ namespace SparrowXlsExport.Core
                 }
             }
             return (name, sev);
+        }
+
+        // Matches the guide header '**트랙**: X' (X = A/B/C). Same regex PowerShell -match uses (.NET engine).
+        private static readonly System.Text.RegularExpressions.Regex TrackRe =
+            new System.Text.RegularExpressions.Regex(@"\*\*트랙\*\*:\s*([ABC])",
+                System.Text.RegularExpressions.RegexOptions.Compiled);
+
+        // Extract the checker guide's track (A/B/C). Missing/unparseable => "C" (safe default: no regression).
+        private static string GetGuideTrack(string guideText)
+        {
+            var m = TrackRe.Match(guideText);
+            return m.Success ? m.Groups[1].Value : "C";
         }
 
         // --- CSV read (ConvertFrom-Csv equivalent, header-keyed) ---

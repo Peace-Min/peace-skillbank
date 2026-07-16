@@ -14,6 +14,8 @@ extracted-gcdumps/
 TestResults/
 out/
 tmp/
+.vs/
+.agents/
 LLM_REQUEST.md
 MODEL_RESPONSE.md
 MODEL_RESPONSE.stderr.txt

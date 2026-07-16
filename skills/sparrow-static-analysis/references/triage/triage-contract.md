@@ -86,5 +86,3 @@ false-positive skip은 없다. `문맥 필요`는 스킵이 아니라 문맥 확
 - XLS CLI: `tools/SparrowXlsExport`
 - 요청 조립 스크립트: `references/triage/Run-Triage.ps1 prepare`
 - 재분석 비교: `references/triage/Compare-Sparrow.ps1`
-
-`Run-Triage.ps1 collect`는 과거 JSON 판정 기반 흐름과의 호환용이다. 기본 GUI/스킬 워크플로우에서는 사용하지 않는다.

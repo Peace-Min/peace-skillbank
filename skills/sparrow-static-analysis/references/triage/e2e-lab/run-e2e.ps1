@@ -5,7 +5,7 @@
     Exercises the REAL pieces (parser exe + Run-Triage.ps1 + Compare-Sparrow.ps1 + guide files)
     against a realistic mini C# project with planted defects and generated Sparrow-style .xls.
 
-    Pipeline proven: 파싱(parser) -> prepare -> 판정(verdicts) -> collect -> 수정+빌드(G1) -> G2 게이트.
+    Pipeline proven: 파싱(parser) -> prepare -> 수정+빌드(G1) -> G2 게이트.
     Prints PASS/FAIL per check; exits nonzero if any check fails.
 #>
 $ErrorActionPreference = 'Stop'
@@ -149,28 +149,8 @@ $unresolved = Join-Path $triage 'unresolved.csv'
 $unrLines = @((Read-TextNoBom $unresolved) -split "`n" | Where-Object { $_.Trim().Length -gt 0 })
 Check "B: unresolved.csv empty (header only)" ($unrLines.Count -eq 1) "lines=$($unrLines.Count)"
 
-# ============================================================ C. 판정 (triage model = 나)
-# 각 requests/*.md 를 triage-prompt 규칙대로 판정한 결과 verdict JSON.
-# 전건 수정 정책(false-positive 스킵 없음): 4 진성(FORWARD_NULL/RESOURCE_LEAK/EMPTY_CATCH_BLOCK/NULL_RETURN_STD)
-# + 1 보류(OVERLY_BROAD_CATCH — 문맥 부족으로 지금 못 고침, needs_context; 확보 후 수정 대기).
-# fix.before 는 SampleApp 소스의 정확한 substring(LF). fix.after 는 가이드 수정패턴 준수 C# 7.3.
-Write-Host "`n==== C. 판정 (verdict JSON 작성 = triage 모델) ===="
-$verdictsDir = Join-Path $triage 'verdicts'
-[void](New-Item -ItemType Directory -Force -Path $verdictsDir)
-
-function New-Verdict {
-    param($id,$checker,$file,$line,$verdict,$rationale,$fixLines,$fixBefore,$fixAfter,$holdReason,$needsContext,$missingContext,$needsFrontier,$cwe)
-    return [ordered]@{
-        id = "$id"; checker = $checker; file = $file; line = "$line";
-        verdict = $verdict; rationale = $rationale;
-        fix = [ordered]@{ lines = $fixLines; before = $fixBefore; after = $fixAfter };
-        hold_reason = $holdReason;
-        needs_context = [bool]$needsContext;
-        missing_context = @($missingContext);
-        needs_frontier = [bool]$needsFrontier;
-        cwe = $cwe; weapon_item = '미매핑(187 추출 후 기입)'
-    }
-}
+# ============================================================ C. 합성 수정 적용 + 빌드 (G1)
+Write-Host "`n==== C. 합성 수정 적용 + 빌드 (G1) ===="
 # multi-line fix bodies built by joining with LF (never CRLF) so they match the LF-normalized source.
 $fnBefore  = '            return node.Value;'
 $fnAfter   = (@('            if (node == null) return -1;','            return node.Value;') -join "`n")
@@ -200,100 +180,57 @@ $ecAfter   = (@(
 $nrBefore  = '            return Activator.CreateInstance(t);'
 $nrAfter   = (@('            if (t == null) return null;','            return Activator.CreateInstance(t);') -join "`n")
 
-$verdicts = @(
-    (New-Verdict 9001 'FORWARD_NULL' 'NullDeref.cs' 11 '진성' `
-        'FirstOrDefault 는 널 반환 가능 API이며(가이드 진성 판별 (2)), 결과 node 를 널 검사 없이 .Value 로 역참조한다. 역참조 전 non-null 확정 대입/검사 없음.' `
-        '11' $fnBefore $fnAfter '' $false @() $false 'CWE-476'),
-    (New-Verdict 9002 'RESOURCE_LEAK' 'LeakFile.cs' 9 '진성' `
-        'new FileStream 으로 IDisposable 을 지역 소유하고, fs.Read(예외 가능) 뒤 fs.Close() 로만 해제해 예외 시 Dispose 누락(가이드 진성 판별). using 블록으로 감싼다.' `
-        '9-13' $rlBefore $rlAfter '' $false @() $false 'CWE-772'),
-    (New-Verdict 9003 'EMPTY_CATCH_BLOCK' 'SwallowEx.cs' 13 '진성' `
-        'catch { } 본문이 비어 예외를 조용히 삼킴(로깅·복구·전파 전무, 가이드 진성 판별). 좁은 처리+로깅 후 throw; 로 전파.' `
-        '13' $ecBefore $ecAfter '' $false @() $false 'CWE-390'),
-    (New-Verdict 9004 'OVERLY_BROAD_CATCH' 'BroadCatch.cs' 13 '보류' `
-        'catch (Exception ex) 가 광역 포착이라 진성 후보이나, 전건 수정 정책상 예외형별 명시 catch 로 고치려면 try 본문 각 API의 문서화된 예외형 목록(문맥)이 필요하다. 지금은 못 고치므로 보류(스킵 아님).' `
-        '' '' '' `
-        'catch (Exception ex) 를 예외형별 명시 catch 로 좁혀 수정해야 하나, BroadCatch.cs try 본문에서 호출하는 API들의 문서화된 예외형 목록이 없어 지금은 안전히 좁힐 수 없다. 목록 확보 후 반드시 명시 catch 로 수정한다.' `
-        $true @('BroadCatch.cs try 본문에서 호출하는 API들의 문서화된 예외형 목록') $false 'CWE-396'),
-    (New-Verdict 9005 'NULL_RETURN_STD' 'BclNull.cs' 10 '진성' `
-        'Type.GetType(name) 은 형식 미발견 시 null 반환하는 BCL 계약 메서드(가이드 진성 판별 예시). 반환 t 를 널 검사 없이 Activator.CreateInstance(t) 로 역참조. 지역변수 널 검사 추가.' `
-        '10' $nrBefore $nrAfter '' $false @() $false 'CWE-476')
+$repairs = @(
+    @{ Checker = 'FORWARD_NULL'; File = 'NullDeref.cs'; Before = $fnBefore; After = $fnAfter },
+    @{ Checker = 'RESOURCE_LEAK'; File = 'LeakFile.cs'; Before = $rlBefore; After = $rlAfter },
+    @{ Checker = 'EMPTY_CATCH_BLOCK'; File = 'SwallowEx.cs'; Before = $ecBefore; After = $ecAfter },
+    @{ Checker = 'NULL_RETURN_STD'; File = 'BclNull.cs'; Before = $nrBefore; After = $nrAfter }
 )
-$utf8 = New-Object System.Text.UTF8Encoding($false)
-foreach ($v in $verdicts) {
-    $json = $v | ConvertTo-Json -Depth 6
-    [System.IO.File]::WriteAllText((Join-Path $verdictsDir ("{0}.json" -f $v.id)), $json, $utf8)
-}
-$vCount = @(Get-ChildItem -LiteralPath $verdictsDir -Filter *.json -File).Count
-Check "C: 5 verdict JSON written"  ($vCount -eq 5) "found=$vCount"
 
-# ============================================================ D. collect
-Write-Host "`n==== D. collect (Run-Triage.ps1: verdict 검증·집계) ===="
-$worklist = Join-Path $triage 'worklist.csv'
-& $RunTriage collect -VerdictsDir $verdictsDir -Worklist $worklist -Out $triage | Out-Null
-$ledger = Join-Path $triage 'triage-ledger.csv'
-$ledgerLines = @()
-if (Test-Path -LiteralPath $ledger) { $ledgerLines = @((Read-TextNoBom $ledger) -split "`n" | Where-Object { $_.Trim().Length -gt 0 }) }
-Check "D: ledger has 5 rows"       (($ledgerLines.Count - 1) -eq 5) "rows=$($ledgerLines.Count - 1)"
-$jin = @($ledgerLines | Where-Object { $_ -match ',진성,' }).Count
-$bo  = @($ledgerLines | Where-Object { $_ -match ',보류,' }).Count
-Check "D: 4 진성"                  ($jin -eq 4) "진성=$jin"
-Check "D: 1 보류"                  ($bo -eq 1) "보류=$bo"
-$invalid = Join-Path $triage 'invalid.csv'
-$invLines = @((Read-TextNoBom $invalid) -split "`n" | Where-Object { $_.Trim().Length -gt 0 })
-Check "D: invalid.csv empty (header only)" ($invLines.Count -eq 1) "lines=$($invLines.Count)"
-$byChkDir = Join-Path $triage 'by-checker'
-$byChkFiles = @()
-if (Test-Path -LiteralPath $byChkDir) { $byChkFiles = @(Get-ChildItem -LiteralPath $byChkDir -Filter *.md -File) }
-Check "D: by-checker files exist (5)" ($byChkFiles.Count -eq 5) "found=$($byChkFiles.Count)"
-
-# ============================================================ E. 수정 적용 + 빌드 (G1)
-Write-Host "`n==== E. 수정 적용 + 빌드 (G1) ===="
 $fixedApp = Join-Path $Out 'SampleApp-fixed'
 Copy-Item -LiteralPath (Join-Path $ScriptDir 'SampleApp') -Destination $fixedApp -Recurse -Force
 # remove any copied build outputs to force a clean build
 foreach ($d in @('bin','obj')) { $p = Join-Path $fixedApp $d; if (Test-Path -LiteralPath $p) { Remove-Item -LiteralPath $p -Recurse -Force } }
 
 $applied = 0
-foreach ($vf in (Get-ChildItem -LiteralPath $verdictsDir -Filter *.json -File | Sort-Object Name)) {
-    $v = Read-TextNoBom $vf.FullName | ConvertFrom-Json
-    if ([string]$v.verdict -ne '진성') { continue }
-    $target = Join-Path $fixedApp ([string]$v.file)
-    $before = [string]$v.fix.before
-    $after  = [string]$v.fix.after
+foreach ($r in $repairs) {
+    $target = Join-Path $fixedApp ([string]$r.File)
+    $before = [string]$r.Before
+    $after  = [string]$r.After
     $okTarget = Test-Path -LiteralPath $target
-    if (-not $okTarget) { Check ("E: target exists {0}" -f $v.file) $false $target; continue }
+    if (-not $okTarget) { Check ("C: target exists {0}" -f $r.File) $false $target; continue }
     # normalize to LF so multi-line before matches exactly
     $src = [System.IO.File]::ReadAllText($target) -replace "`r`n", "`n"
     $occ = ($src.Length - $src.Replace($before, '').Length)
     $count = if ($before.Length -gt 0) { [math]::Round($occ / $before.Length) } else { 0 }
-    Check ("E: '{0}' fix.before found exactly once in {1}" -f $v.checker, $v.file) ($count -eq 1) "count=$count"
+    Check ("C: '{0}' before found exactly once in {1}" -f $r.Checker, $r.File) ($count -eq 1) "count=$count"
     if ($count -eq 1) {
         $src = $src.Replace($before, $after)
+        $utf8 = New-Object System.Text.UTF8Encoding($false)
         [System.IO.File]::WriteAllText($target, $src, $utf8)
         $applied++
     }
 }
-Check "E: 4 fixes applied"         ($applied -eq 4) "applied=$applied"
+Check "C: 4 fixes applied"         ($applied -eq 4) "applied=$applied"
 
 $csproj = Join-Path $fixedApp 'SampleApp.csproj'
 Write-Host "  building fixed SampleApp (dotnet build, LangVersion 7.3) ..."
 $buildOut = & dotnet build $csproj -c Debug --nologo 2>&1
 $buildExit = $LASTEXITCODE
-Check "E: dotnet build SUCCESS (G1)" ($buildExit -eq 0) "exit=$buildExit"
+Check "C: dotnet build SUCCESS (G1)" ($buildExit -eq 0) "exit=$buildExit"
 if ($buildExit -ne 0) { $buildOut | ForEach-Object { Write-Host ("      | " + $_) } }
 
-# ============================================================ F. G2 게이트
-Write-Host "`n==== F. G2 게이트 (Compare-Sparrow.ps1: 검출 소멸 + 신규 0) ===="
+# ============================================================ D. G2 게이트
+Write-Host "`n==== D. G2 게이트 (Compare-Sparrow.ps1: 검출 소멸 + 신규 0) ===="
 # positive: before vs after, FORWARD_NULL 소멸 + 신규 0 => PASS (exit 0)
 & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $Compare -Before $BeforeXls -After $AfterXls -Checker FORWARD_NULL -Exe $ParserExe | Out-Null
 $g2pos = $LASTEXITCODE
-Check "F: G2 PASS (before vs after, FORWARD_NULL eliminated) exit 0" ($g2pos -eq 0) "exit=$g2pos"
+Check "D: G2 PASS (before vs after, FORWARD_NULL eliminated) exit 0" ($g2pos -eq 0) "exit=$g2pos"
 
 # negative control: before vs before, FORWARD_NULL still present => FAIL (exit 1)
 & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $Compare -Before $BeforeXls -After $BeforeXls -Checker FORWARD_NULL -Exe $ParserExe | Out-Null
 $g2neg = $LASTEXITCODE
-Check "F: G2 discriminates (before vs before) exit 1" ($g2neg -eq 1) "exit=$g2neg"
+Check "D: G2 discriminates (before vs before) exit 1" ($g2neg -eq 1) "exit=$g2neg"
 
 # ============================================================ summary
 Write-Host "`n============================================================"

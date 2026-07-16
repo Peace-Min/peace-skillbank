@@ -443,7 +443,8 @@ namespace SparrowRunner.Gui
 
         private void AddRuleInfo(CheckBox checkBox, string title, string summary, string checker, string example)
         {
-            var info = new RuleInfo(title, summary, checker, example);
+            var (before, after) = SplitExample(example);
+            var info = new RuleInfo(title, summary, checker, before, after);
             _ruleInfos[checkBox.Name] = info;
             checkBox.ToolTip = title + Environment.NewLine + checker;
             checkBox.MouseEnter += RuleControl_MouseEnter;
@@ -475,13 +476,30 @@ namespace SparrowRunner.Gui
             {
                 RuleInfoTitle.Text = "규칙 설명";
                 RuleInfoBody.Text = "규칙을 선택하면 대응 체커와 변경 예시가 표시됩니다.";
-                RuleInfoExample.Text = "";
+                RuleBeforeBox.Text = "";
+                RuleAfterBox.Text = "";
                 return;
             }
 
             RuleInfoTitle.Text = info.Title;
             RuleInfoBody.Text = info.Summary + Environment.NewLine + info.Checker;
-            RuleInfoExample.Text = info.Example;
+            RuleBeforeBox.Text = info.Before;
+            RuleAfterBox.Text = info.After;
+        }
+
+        private static (string Before, string After) SplitExample(string example)
+        {
+            string normalized = example.Replace("\r\n", "\n");
+            const string marker = "\n// ->\n";
+            int index = normalized.IndexOf(marker, StringComparison.Ordinal);
+            if (index < 0)
+            {
+                return (example.Trim(), "");
+            }
+
+            string before = normalized.Substring(0, index).Trim();
+            string after = normalized.Substring(index + marker.Length).Trim();
+            return (before, after);
         }
 
         private void UpdateSummary()
@@ -512,7 +530,7 @@ namespace SparrowRunner.Gui
                 : CommitCheck.IsChecked == true
                     ? "규칙별 커밋 모드: 규칙 단위로 변경을 나눠 남깁니다."
                     : "수정만 적용: 커밋은 생성하지 않습니다.";
-            SummaryModeText.Text = $"{mode}\nTrack A {trackA}개 · Track B {trackB}개 · 검토필요 {reviewNeeded}개";
+            SummaryModeText.Text = $"{mode} / Track A {trackA}개 · Track B {trackB}개 · 검토필요 {reviewNeeded}개";
         }
 
         private static int CountChecked(params CheckBox[] boxes)
@@ -569,18 +587,20 @@ namespace SparrowRunner.Gui
 
         private sealed class RuleInfo
         {
-            public RuleInfo(string title, string summary, string checker, string example)
+            public RuleInfo(string title, string summary, string checker, string before, string after)
             {
                 Title = title;
                 Summary = summary;
                 Checker = checker;
-                Example = example;
+                Before = before;
+                After = after;
             }
 
             public string Title { get; }
             public string Summary { get; }
             public string Checker { get; }
-            public string Example { get; }
+            public string Before { get; }
+            public string After { get; }
         }
 
         private sealed class RunnerJob

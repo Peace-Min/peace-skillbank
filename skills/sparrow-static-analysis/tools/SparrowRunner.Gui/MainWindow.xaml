@@ -140,24 +140,24 @@
         </Style>
     </Window.Resources>
 
-    <Grid Margin="24">
+    <Grid Margin="18">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
-            <RowDefinition Height="150"/>
+            <RowDefinition Height="132"/>
         </Grid.RowDefinitions>
 
-        <Grid Grid.Row="0" Margin="0,0,0,20">
+        <Grid Grid.Row="0" Margin="0,0,0,12">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
             <StackPanel>
-                <TextBlock Text="Sparrow Runner" FontSize="28" FontWeight="Bold"
+                <TextBlock Text="Sparrow Runner" FontSize="24" FontWeight="Bold"
                            Foreground="{StaticResource TextPrimaryBrush}"/>
                 <TextBlock Text="스패로우 코드 규칙과 주석/레이아웃 자동수정을 한 화면에서 선택하고 실행합니다."
-                           Foreground="{StaticResource TextSecondaryBrush}" Margin="0,6,0,0"/>
+                           Foreground="{StaticResource TextSecondaryBrush}" Margin="0,4,0,0"/>
             </StackPanel>
             <Border Grid.Column="1" Background="#E8F2FF" CornerRadius="18"
                     Padding="14,8" VerticalAlignment="Top">
@@ -168,7 +168,7 @@
 
         <Border Grid.Row="1" Background="{StaticResource PanelBrush}" CornerRadius="18"
                 BorderBrush="{StaticResource LineBrush}" BorderThickness="1"
-                Padding="18" Margin="0,0,0,18">
+                Padding="14" Margin="0,0,0,12">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
@@ -180,9 +180,9 @@
                 <TextBox x:Name="TargetPathBox" Style="{StaticResource InputBox}" TextChanged="TargetPathBox_TextChanged"/>
                 </StackPanel>
                 <Button x:Name="BrowseFileButton" Grid.Column="1" Content="파일 선택"
-                        Margin="12,30,0,0" Click="BrowseFileButton_Click"/>
+                        Margin="12,27,0,0" Click="BrowseFileButton_Click"/>
                 <Button x:Name="BrowseFolderButton" Grid.Column="2" Content="폴더 선택"
-                        Margin="8,30,0,0" Click="BrowseFolderButton_Click"/>
+                        Margin="8,27,0,0" Click="BrowseFolderButton_Click"/>
             </Grid>
         </Border>
 
@@ -276,60 +276,87 @@
 
             <Grid Grid.Column="1">
                 <Grid.RowDefinitions>
+                    <RowDefinition Height="124"/>
                     <RowDefinition Height="*"/>
-                    <RowDefinition Height="220"/>
                 </Grid.RowDefinitions>
 
-                <Border Background="{StaticResource PanelBrush}" CornerRadius="18"
+                <Border Background="{StaticResource PanelBrush}" CornerRadius="16"
                         BorderBrush="{StaticResource LineBrush}" BorderThickness="1"
-                        Padding="18" Margin="0,0,0,18">
+                        Padding="16" Margin="0,0,0,12">
                     <Grid>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="64"/>
+                            <RowDefinition Height="Auto"/>
                             <RowDefinition Height="Auto"/>
                         </Grid.RowDefinitions>
                         <TextBlock Text="실행 요약" Style="{StaticResource SectionTitle}"/>
                         <TextBlock x:Name="SummaryTargetText" Grid.Row="1" Text="대상 경로가 필요합니다."
-                                   Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,2,0,10"/>
+                                   Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="NoWrap"
+                                   TextTrimming="CharacterEllipsis" Margin="0,0,0,8"/>
                         <TextBlock x:Name="SummaryRulesText" Grid.Row="2" Text="선택된 규칙 0개"
-                                   Foreground="{StaticResource TextPrimaryBrush}" FontWeight="SemiBold" Margin="0,0,0,12"/>
-                        <Border Grid.Row="3" Background="#F8FAFB" CornerRadius="12" Padding="14">
-                            <TextBlock x:Name="SummaryModeText" Text="규칙별 커밋 모드"
-                                       Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"/>
-                        </Border>
+                                   Foreground="{StaticResource TextPrimaryBrush}" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                        <TextBlock x:Name="SummaryModeText" Grid.Row="3" Text="규칙별 커밋 모드"
+                                   Foreground="{StaticResource TextSecondaryBrush}" FontSize="12"
+                                   TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"/>
                     </Grid>
                 </Border>
 
-                <Border Grid.Row="1" Background="#111827" CornerRadius="18" Padding="18">
-                    <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="*"/>
-                        </Grid.RowDefinitions>
-                        <TextBlock x:Name="RuleInfoTitle" Foreground="#FFFFFF"
-                                   FontSize="16" FontWeight="SemiBold"/>
-                        <TextBlock x:Name="RuleInfoBody" Grid.Row="1" Margin="0,8,0,10"
-                                   Foreground="#BFC6D1" TextWrapping="Wrap"
-                                   TextTrimming="CharacterEllipsis"/>
-                                <TextBox x:Name="RuleInfoExample" Grid.Row="2"
-                                 Height="Auto"
-                                 IsReadOnly="True" IsUndoEnabled="False"
-                                 FontFamily="Consolas" FontSize="12"
-                                 VerticalContentAlignment="Top"
-                                 VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
-                                 TextWrapping="NoWrap" Background="#0B1220" Foreground="#E5E7EB"
-                                 BorderBrush="#253044" Padding="10"/>
-                    </Grid>
+                <Border Grid.Row="1" Background="#111827" CornerRadius="16" Padding="16">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                        <StackPanel>
+                            <TextBlock x:Name="RuleInfoTitle" Foreground="#FFFFFF"
+                                       FontSize="16" FontWeight="SemiBold"/>
+                            <TextBlock x:Name="RuleInfoBody" Margin="0,8,0,12"
+                                       Foreground="#BFC6D1" TextWrapping="Wrap"
+                                       MaxHeight="76"/>
+
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="12"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+
+                                <StackPanel Grid.Column="0">
+                                    <Border Background="#253044" CornerRadius="8" Padding="10,4"
+                                            HorizontalAlignment="Left" Margin="0,0,0,6">
+                                        <TextBlock Text="Before" Foreground="#D1D5DB" FontSize="11" FontWeight="SemiBold"/>
+                                    </Border>
+                                    <TextBox x:Name="RuleBeforeBox"
+                                             Height="104"
+                                             IsReadOnly="True" IsUndoEnabled="False"
+                                             FontFamily="Consolas" FontSize="12"
+                                             VerticalContentAlignment="Top"
+                                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                             TextWrapping="NoWrap" Background="#0B1220" Foreground="#E5E7EB"
+                                             BorderBrush="#253044" Padding="10"/>
+                                </StackPanel>
+
+                                <StackPanel Grid.Column="2">
+                                    <Border Background="#E8F2FF" CornerRadius="8" Padding="10,4"
+                                            HorizontalAlignment="Left" Margin="0,0,0,6">
+                                        <TextBlock Text="After" Foreground="#0064FF" FontSize="11" FontWeight="SemiBold"/>
+                                    </Border>
+                                    <TextBox x:Name="RuleAfterBox"
+                                             Height="104"
+                                             IsReadOnly="True" IsUndoEnabled="False"
+                                             FontFamily="Consolas" FontSize="12"
+                                             VerticalContentAlignment="Top"
+                                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                             TextWrapping="NoWrap" Background="#F8FAFF" Foreground="#191F28"
+                                             BorderBrush="#C9DDFF" Padding="10"/>
+                                </StackPanel>
+                            </Grid>
+                        </StackPanel>
+                    </ScrollViewer>
                 </Border>
             </Grid>
         </Grid>
 
         <Border Grid.Row="3" Background="{StaticResource PanelBrush}" CornerRadius="18"
                 BorderBrush="{StaticResource LineBrush}" BorderThickness="1"
-                Padding="16" Margin="0,18,0,0">
+                Padding="14" Margin="0,12,0,0">
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>

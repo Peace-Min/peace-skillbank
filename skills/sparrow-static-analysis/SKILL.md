@@ -28,12 +28,12 @@ When the user has manually fixed Sparrow findings in a closed network and wants 
 
 For normal one-shot local execution, prefer the `.cmd` launchers next to the PowerShell scripts:
 
-- `tools/Run-SparrowRunnerGui.cmd` for the integrated Track A/B WPF wrapper.
+- `tools/Run-SparrowRunnerGui.cmd` for the integrated Track A/B/C Sparrow Helper GUI.
 - `tools/SparrowSyntaxFix/Run-SparrowSyntaxFix.cmd`
 - `tools/SparrowCommentFix/Run-SparrowCommentFix.cmd`
 - `tools/Run-SparrowAll.cmd`
 
-The WPF wrapper is a GUI shell over the existing CLI scripts. It lets the user choose a solution/project/folder, select Track A/B rules with checkboxes, choose commit/dry-run behavior, and view live logs. Keep rewrite logic in the CLI scripts; future rule improvements should update the CLI first and the GUI should only expose/select those options.
+The WPF wrapper is the single closed-network Sparrow Helper GUI. It lets the user choose a solution/project/folder, select Track A/B rules with checkboxes, choose commit/dry-run behavior, prepare Track C XLS/LLM triage packages, and view live logs. Keep Track A/B rewrite logic in the CLI scripts and keep Track C parsing/prepare logic in `SparrowXlsExport.Core`; future rule improvements should update the underlying deterministic tool first and the GUI should only expose/select those options.
 
 The `.cmd` launchers call the matching `.ps1` with `powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -NoExit -File ...`.
 This preserves the existing prompt flow (solution path, optional rules, commit choice) while preventing a newly opened PowerShell window from closing before the user can read errors or completion output.
@@ -62,14 +62,15 @@ Track C covers security/quality findings requiring judgment, including exception
 
 Required workflow:
 
-1. Use `references/triage/triage-contract.md` as the workflow contract.
-2. Use `references/triage/triage-prompt.md` as the model prompt template.
-3. For each finding, read the exact checker guide at `references/checkers/<CHECKER_KEY>.md`.
-4. If the checker is `NULL_RETURN_STD`, also consult `references/dotnet-contracts/null-return-std.md`.
-5. Judge only from the checker guide and the finding/source context.
-6. If source context is missing, do not guess. Return `verdict = 보류`, `needs_context = true`, and list `missing_context`.
-7. Use `needs_frontier = true` only when enough context is present but the local model still cannot make a reliable decision.
-8. Do not auto-edit Track C target source code. Provide verdict JSON and fix guidance only.
+1. For GUI-based preparation, run `tools/Run-SparrowRunnerGui.cmd` and use the `Track C XLS/LLM 검토` tab to create `items`, `index.csv`, `requests`, `worklist.csv`, `unresolved.csv`, and `verdicts`.
+2. Use `references/triage/triage-contract.md` as the workflow contract.
+3. Use `references/triage/triage-prompt.md` as the model prompt template.
+4. For each finding, read the exact checker guide at `references/checkers/<CHECKER_KEY>.md`.
+5. If the checker is `NULL_RETURN_STD`, also consult `references/dotnet-contracts/null-return-std.md`.
+6. Judge only from the checker guide and the finding/source context.
+7. If source context is missing, do not guess. Return `verdict = 보류`, `needs_context = true`, and list `missing_context`.
+8. Use `needs_frontier = true` only when enough context is present but the local model still cannot make a reliable decision.
+9. Do not auto-edit Track C target source code. Provide verdict JSON and fix guidance only.
 
 Track C verdicts must classify each item as either `진성` or `보류` (this project fixes every finding — there is no false-positive skip):
 

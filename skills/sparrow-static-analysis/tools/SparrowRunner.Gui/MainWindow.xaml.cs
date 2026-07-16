@@ -9,7 +9,9 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Threading;
 using Microsoft.Win32;
+using SparrowXlsExport.Core;
 
 namespace SparrowRunner.Gui
 {
@@ -23,6 +25,7 @@ namespace SparrowRunner.Gui
         private readonly Dictionary<string, RuleInfo> _ruleInfos = new Dictionary<string, RuleInfo>(StringComparer.Ordinal);
         private CancellationTokenSource? _cts;
         private Process? _currentProcess;
+        private string? _lastTrackCOutputDir;
 
         public MainWindow()
         {
@@ -30,6 +33,7 @@ namespace SparrowRunner.Gui
 
             _skillRoot = ResolveSkillRoot();
             _toolsDir = Path.Combine(_skillRoot, "tools");
+            TrackCReferencesPathBox.Text = Path.Combine(_skillRoot, "references");
             AppendLog("GUI 준비 완료");
             InitializeRuleInfo();
             ShowRuleInfo(nameof(ASObjectVarSafe));
@@ -64,10 +68,62 @@ namespace SparrowRunner.Gui
             }
         }
 
+        private void BrowseTrackCXlsButton_Click(object sender, RoutedEventArgs e)
+        {
+            var dlg = new OpenFileDialog
+            {
+                Title = "Sparrow 결과 XLS 선택",
+                Filter = "Sparrow 결과 (*.xls;*.xlsx)|*.xls;*.xlsx|모든 파일 (*.*)|*.*",
+                CheckFileExists = true
+            };
+            if (dlg.ShowDialog(this) == true)
+            {
+                TrackCXlsPathBox.Text = dlg.FileName;
+            }
+        }
+
+        private void BrowseTrackCOutputButton_Click(object sender, RoutedEventArgs e)
+        {
+            var dlg = new OpenFolderDialog
+            {
+                Title = "Track C 출력 폴더 선택"
+            };
+            string current = TrackCOutputPathBox.Text.Trim();
+            if (Directory.Exists(current)) dlg.InitialDirectory = current;
+            if (dlg.ShowDialog(this) == true)
+            {
+                TrackCOutputPathBox.Text = dlg.FolderName;
+            }
+        }
+
+        private void BrowseTrackCReferencesButton_Click(object sender, RoutedEventArgs e)
+        {
+            var dlg = new OpenFolderDialog
+            {
+                Title = "sparrow-static-analysis references 폴더 선택"
+            };
+            string current = TrackCReferencesPathBox.Text.Trim();
+            if (Directory.Exists(current)) dlg.InitialDirectory = current;
+            if (dlg.ShowDialog(this) == true)
+            {
+                TrackCReferencesPathBox.Text = dlg.FolderName;
+            }
+        }
+
         private async void RunButton_Click(object sender, RoutedEventArgs e)
         {
+            bool runTrackA = RunTrackASyntaxCheck.IsChecked == true;
+            bool runTrackB = RunTrackBCheck.IsChecked == true;
+            bool runTrackC = RunTrackCCheck.IsChecked == true;
+            if (!runTrackA && !runTrackB && !runTrackC)
+            {
+                MessageBox.Show(this, "실행할 Track을 하나 이상 선택하세요.", "Track 확인",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
             string target = TargetPathBox.Text.Trim().Trim('"');
-            if (string.IsNullOrEmpty(target) || (!File.Exists(target) && !Directory.Exists(target)))
+            if ((runTrackA || runTrackB) && (string.IsNullOrEmpty(target) || (!File.Exists(target) && !Directory.Exists(target))))
             {
                 MessageBox.Show(this, "대상 .sln/.csproj 또는 소스 폴더를 먼저 선택하세요.", "입력 확인",
                     MessageBoxButton.OK, MessageBoxImage.Warning);
@@ -75,18 +131,35 @@ namespace SparrowRunner.Gui
             }
 
             var jobs = BuildJobs(target);
-            if (jobs.Count == 0)
+            if ((runTrackA || runTrackB) && jobs.Count == 0)
             {
                 MessageBox.Show(this, "실행할 Track 또는 규칙을 하나 이상 선택하세요.", "규칙 확인",
                     MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
+            string trackCXls = TrackCXlsPathBox.Text.Trim().Trim('"');
+            if (runTrackC && (string.IsNullOrEmpty(trackCXls) || !File.Exists(trackCXls)))
+            {
+                MessageBox.Show(this, "Track C 결과 XLS 파일을 먼저 선택하세요.", "입력 확인",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            string referencesRoot = TrackCReferencesPathBox.Text.Trim().Trim('"');
+            if (runTrackC && !ValidateTrackCReferences(referencesRoot))
+            {
+                return;
+            }
+
             _cts = new CancellationTokenSource();
             SetRunning(true);
+            _lastTrackCOutputDir = null;
+            OpenTrackCOutputButton.IsEnabled = false;
             AppendLog("");
-            AppendLog("target: " + target);
-            AppendLog("jobs: " + jobs.Count);
+            if (runTrackA || runTrackB) AppendLog("target: " + target);
+            if (runTrackC) AppendLog("track-c xls: " + trackCXls);
+            AppendLog("jobs: " + (jobs.Count + (runTrackC ? 1 : 0)));
             AppendLog(new string('-', 72));
 
             try
@@ -96,6 +169,14 @@ namespace SparrowRunner.Gui
                     _cts.Token.ThrowIfCancellationRequested();
                     SummaryModeText.Text = job.Name + " 실행 중";
                     await RunJobAsync(job, _cts.Token);
+                }
+
+                if (runTrackC)
+                {
+                    _cts.Token.ThrowIfCancellationRequested();
+                    SummaryModeText.Text = "Track C XLS/LLM 검토 패키지 생성 중";
+                    _lastTrackCOutputDir = await RunTrackCAsync(trackCXls, referencesRoot, _cts.Token);
+                    OpenTrackCOutputButton.IsEnabled = Directory.Exists(_lastTrackCOutputDir);
                 }
 
                 StatusText.Text = "완료";
@@ -161,6 +242,18 @@ namespace SparrowRunner.Gui
             Process.Start(new ProcessStartInfo { FileName = dir, UseShellExecute = true });
         }
 
+        private void OpenTrackCOutputButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (string.IsNullOrEmpty(_lastTrackCOutputDir) || !Directory.Exists(_lastTrackCOutputDir))
+            {
+                MessageBox.Show(this, "열 수 있는 Track C 출력 폴더가 없습니다.", "안내",
+                    MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            Process.Start(new ProcessStartInfo { FileName = _lastTrackCOutputDir, UseShellExecute = true });
+        }
+
         private void ClearLogButton_Click(object sender, RoutedEventArgs e)
         {
             LogBox.Clear();
@@ -182,6 +275,11 @@ namespace SparrowRunner.Gui
         private List<RunnerJob> BuildJobs(string target)
         {
             var jobs = new List<RunnerJob>();
+            if (RunTrackASyntaxCheck.IsChecked != true && RunTrackBCheck.IsChecked != true)
+            {
+                return jobs;
+            }
+
             string logDir = ResolveTargetRoot(target);
             Directory.CreateDirectory(logDir);
 
@@ -315,6 +413,123 @@ namespace SparrowRunner.Gui
             }
         }
 
+        private async Task<string> RunTrackCAsync(string inputXls, string referencesRoot, CancellationToken cancellationToken)
+        {
+            string guidesDir = Path.Combine(referencesRoot, "checkers");
+            string promptPath = Path.Combine(referencesRoot, "triage", "triage-prompt.md");
+            string conventionsPath = Path.Combine(referencesRoot, "project-conventions.md");
+            string templatePath = Path.Combine(referencesRoot, "triage", "folder-instruction-template.md");
+
+            ExportOptions exportOptions = BuildTrackCExportOptions(inputXls);
+            string tracksValue = BuildTrackCTracksValue();
+            string? checkerValue = string.IsNullOrWhiteSpace(TrackCCheckerBox.Text) ? null : TrackCCheckerBox.Text.Trim();
+            string? severityValue = BuildTrackCSeverityValue();
+            int? maxValue = ParseNullableInt(TrackCMaxBox.Text);
+            var log = new DispatcherTextWriter(Dispatcher, AppendLog);
+
+            return await Task.Run(() =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                log.WriteLine("");
+                log.WriteLine(">>> Track C XLS/LLM 검토 패키지");
+                log.WriteLine("[1/2] XLS 파싱: items/index.csv/checkers.md 생성");
+                ExportResult parse = SparrowExporter.Run(exportOptions, log);
+
+                cancellationToken.ThrowIfCancellationRequested();
+                log.WriteLine("");
+                log.WriteLine("[2/2] LLM 검토 요청 조립: requests/worklist/unresolved/verdicts 생성");
+                var prepareOptions = new PrepareOptions
+                {
+                    IndexCsvPath = Path.Combine(parse.OutputDir, "index.csv"),
+                    ItemsDir = Path.Combine(parse.OutputDir, "items"),
+                    GuidesDir = guidesDir,
+                    PromptPath = promptPath,
+                    ConventionsPath = conventionsPath,
+                    TemplatePath = templatePath,
+                    OutDir = parse.OutputDir,
+                    Checker = checkerValue,
+                    Severity = severityValue,
+                    Tracks = tracksValue,
+                    Max = maxValue
+                };
+                TriagePreparer.Prepare(prepareOptions, log);
+                return parse.OutputDir;
+            }, cancellationToken);
+        }
+
+        private ExportOptions BuildTrackCExportOptions(string inputXls)
+        {
+            var severities = new HashSet<string>(StringComparer.Ordinal);
+            if (TrackCSevVeryHigh.IsChecked == true) severities.Add("매우위험");
+            if (TrackCSevHigh.IsChecked == true) severities.Add("높음");
+            if (TrackCSevRisk.IsChecked == true) severities.Add("위험");
+            if (TrackCSevMedium.IsChecked == true) severities.Add("보통");
+            if (TrackCSevLow.IsChecked == true) severities.Add("낮음");
+
+            var options = new ExportOptions
+            {
+                InputPath = inputXls,
+                Severities = severities,
+                Max = ParseNullableInt(TrackCMaxBox.Text)
+            };
+
+            string outDir = TrackCOutputPathBox.Text.Trim();
+            if (!string.IsNullOrEmpty(outDir)) options.OutDir = outDir;
+
+            string checker = TrackCCheckerBox.Text.Trim();
+            if (!string.IsNullOrEmpty(checker)) options.Checker = checker;
+
+            return options;
+        }
+
+        private string BuildTrackCTracksValue()
+        {
+            var tracks = new List<string> { "C" };
+            if (TrackCIncludeA.IsChecked == true) tracks.Add("A");
+            if (TrackCIncludeB.IsChecked == true) tracks.Add("B");
+            return string.Join(",", tracks);
+        }
+
+        private string? BuildTrackCSeverityValue()
+        {
+            var severities = new List<string>();
+            if (TrackCSevVeryHigh.IsChecked == true) severities.Add("매우위험");
+            if (TrackCSevHigh.IsChecked == true) severities.Add("높음");
+            if (TrackCSevRisk.IsChecked == true) severities.Add("위험");
+            if (TrackCSevMedium.IsChecked == true) severities.Add("보통");
+            if (TrackCSevLow.IsChecked == true) severities.Add("낮음");
+            return severities.Count == 0 ? null : string.Join(",", severities);
+        }
+
+        private static int? ParseNullableInt(string value)
+        {
+            return int.TryParse(value.Trim(), out int parsed) ? parsed : null;
+        }
+
+        private bool ValidateTrackCReferences(string referencesRoot)
+        {
+            if (string.IsNullOrEmpty(referencesRoot) || !Directory.Exists(referencesRoot))
+            {
+                MessageBox.Show(this, "Track C references 폴더를 찾을 수 없습니다.", "references 확인",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                return false;
+            }
+
+            string guidesDir = Path.Combine(referencesRoot, "checkers");
+            string promptPath = Path.Combine(referencesRoot, "triage", "triage-prompt.md");
+            string conventionsPath = Path.Combine(referencesRoot, "project-conventions.md");
+            string templatePath = Path.Combine(referencesRoot, "triage", "folder-instruction-template.md");
+            if (!Directory.Exists(guidesDir) || !File.Exists(promptPath) || !File.Exists(conventionsPath) || !File.Exists(templatePath))
+            {
+                MessageBox.Show(this,
+                    "Track C references 경로가 올바르지 않습니다.\n\n필요 항목:\n- checkers 폴더\n- triage/triage-prompt.md\n- triage/folder-instruction-template.md\n- project-conventions.md",
+                    "references 확인", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return false;
+            }
+
+            return true;
+        }
+
         private void InitializeRuleInfo()
         {
             AddRuleInfo(RunTrackASyntaxCheck, "Track A Roslyn",
@@ -427,6 +642,19 @@ namespace SparrowRunner.Gui
                 "체커: 독립된 줄의 주석 작성 권장/별표 블록 제한. 검토필요 커밋 대상입니다.",
                 "DoWork(); /* done */\r\n// ->\r\n// Done.\r\nDoWork();");
 
+            AddRuleInfo(RunTrackCCheck, "Track C XLS 검토 패키지 생성",
+                "Sparrow 결과 XLS를 파싱해 items/index.csv/checkers.md를 만들고, LLM 검토용 requests/worklist/verdicts 구조를 생성합니다.",
+                "Track C는 소스 자동수정이 아니라 폐쇄망 LLM 검토 입력을 만드는 결정론 패키징 단계입니다.",
+                "issues.xls\r\n// ->\r\nitems/\r\nindex.csv\r\nrequests/\r\nworklist.csv\r\nverdicts/");
+            AddRuleInfo(TrackCIncludeA, "Track C 요청에 Track A 가이드 포함",
+                "기본은 C 가이드만 요청으로 만듭니다. 이 옵션은 코드 규칙 Track A 항목도 LLM 요청에 포함합니다.",
+                "스패로우 스타일 항목까지 LLM 검토 대상으로 넘길 때만 켭니다.",
+                "Tracks=C\r\n// ->\r\nTracks=C,A");
+            AddRuleInfo(TrackCIncludeB, "Track C 요청에 Track B 가이드 포함",
+                "기본은 C 가이드만 요청으로 만듭니다. 이 옵션은 주석/레이아웃 Track B 항목도 LLM 요청에 포함합니다.",
+                "A/B는 GUI 자동수정이 우선이며, LLM 검토가 필요한 잔여 항목에만 포함하는 편이 안전합니다.",
+                "Tracks=C\r\n// ->\r\nTracks=C,B");
+
             AddRuleInfo(CommitCheck, "규칙별 커밋 생성",
                 "각 규칙 실행 후 변경된 .cs 파일을 규칙별 커밋으로 남깁니다.",
                 "검토필요 규칙은 커밋 메시지에 '! 검토필요'가 포함되도록 CLI가 처리합니다.",
@@ -518,19 +746,22 @@ namespace SparrowRunner.Gui
             int reviewNeeded = CountChecked(ASForeachCast, ASNullVar, ASObjectVarNarrowing, ASLocalConst,
                 ASArrayVarNarrowing, ASForHoist, BBlockPromote);
             int total = trackA + trackB;
+            bool trackC = RunTrackCCheck.IsChecked == true;
 
             string target = TargetPathBox.Text.Trim();
             SummaryTargetText.Text = string.IsNullOrEmpty(target)
-                ? "대상 경로가 필요합니다."
+                ? (trackC ? "Track C 단독 실행 가능" : "대상 경로가 필요합니다.")
                 : target;
-            SummaryRulesText.Text = $"선택된 규칙 {total}개";
+            SummaryRulesText.Text = trackC
+                ? $"선택된 규칙 {total}개 · Track C 포함"
+                : $"선택된 규칙 {total}개";
 
             string mode = DryRunCheck.IsChecked == true
                 ? "DryRun 모드: 파일을 변경하지 않고 후보만 확인합니다."
                 : CommitCheck.IsChecked == true
                     ? "규칙별 커밋 모드: 규칙 단위로 변경을 나눠 남깁니다."
                     : "수정만 적용: 커밋은 생성하지 않습니다.";
-            SummaryModeText.Text = $"{mode} / Track A {trackA}개 · Track B {trackB}개 · 검토필요 {reviewNeeded}개";
+            SummaryModeText.Text = $"{mode} / Track A {trackA}개 · Track B {trackB}개 · Track C {(trackC ? "ON" : "OFF")} · 검토필요 {reviewNeeded}개";
         }
 
         private static int CountChecked(params CheckBox[] boxes)
@@ -574,8 +805,14 @@ namespace SparrowRunner.Gui
             StopButton.IsEnabled = running;
             BrowseFileButton.IsEnabled = !running;
             BrowseFolderButton.IsEnabled = !running;
+            BrowseTrackCXlsButton.IsEnabled = !running;
+            BrowseTrackCOutputButton.IsEnabled = !running;
+            BrowseTrackCReferencesButton.IsEnabled = !running;
             RulesTabs.IsEnabled = !running;
             TargetPathBox.IsEnabled = !running;
+            TrackCXlsPathBox.IsEnabled = !running;
+            TrackCOutputPathBox.IsEnabled = !running;
+            TrackCReferencesPathBox.IsEnabled = !running;
             StatusText.Text = running ? "실행 중..." : "대기 중";
         }
 
@@ -601,6 +838,26 @@ namespace SparrowRunner.Gui
             public string Checker { get; }
             public string Before { get; }
             public string After { get; }
+        }
+
+        private sealed class DispatcherTextWriter : TextWriter
+        {
+            private readonly Dispatcher _dispatcher;
+            private readonly Action<string> _append;
+
+            public DispatcherTextWriter(Dispatcher dispatcher, Action<string> append)
+            {
+                _dispatcher = dispatcher;
+                _append = append;
+            }
+
+            public override Encoding Encoding => new UTF8Encoding(false);
+
+            public override void WriteLine(string? value)
+            {
+                string line = value ?? "";
+                _dispatcher.BeginInvoke(new Action(() => _append(line)));
+            }
         }
 
         private sealed class RunnerJob

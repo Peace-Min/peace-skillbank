@@ -28,12 +28,10 @@ When the user has manually fixed Sparrow findings in a closed network and wants 
 
 For normal one-shot local execution, prefer the `.cmd` launchers next to the PowerShell scripts:
 
-- `tools/Run-SparrowRunnerGui.cmd` for the integrated Track A/B/C Sparrow Helper GUI.
-- `tools/SparrowSyntaxFix/Run-SparrowSyntaxFix.cmd`
-- `tools/SparrowCommentFix/Run-SparrowCommentFix.cmd`
+- `tools/Run-SparrowRunnerGui.cmd` for the integrated Track A/B/C Sparrow Helper GUI. This is the normal user entrypoint.
 - `tools/Run-SparrowAll.cmd`
 
-The WPF wrapper is the single closed-network Sparrow Helper GUI. It lets the user choose a solution/project/folder, select Track A/B rules with checkboxes, choose commit/dry-run behavior, prepare Track C XLS/LLM repair-request packages, and view live logs. Keep Track A/B rewrite logic in the CLI scripts and keep Track C parsing/prepare logic in `SparrowXlsExport.Core`; future rule improvements should update the underlying deterministic tool first and the GUI should only expose/select those options. For Track C, the closed-network GUI output is the LLM handoff `requests/` folder only; parser indexes and worklist files are internal/debug artifacts and must not be presented as the normal LLM input.
+The WPF wrapper is the single closed-network Sparrow Helper GUI. It lets the user choose a solution/project/folder, select Track A/B rules with checkboxes, choose commit/dry-run behavior, prepare Track C XLS/LLM repair-request packages, and view live logs. Keep Track A/B rewrite logic in the internal CLI scripts under `tools/_internal/` and keep Track C parsing/prepare logic in `tools/_internal/SparrowXlsExport.Core`; future rule improvements should update the underlying deterministic tool first and the GUI should only expose/select those options. For Track C, the closed-network GUI output is the LLM handoff `requests/` folder only; parser indexes and worklist files are internal/debug artifacts and must not be presented as the normal LLM input.
 
 The `.cmd` launchers call the matching `.ps1` with `powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -NoExit -File ...`.
 This preserves the existing prompt flow (solution path, optional rules, commit choice) while preventing a newly opened PowerShell window from closing before the user can read errors or completion output.
@@ -44,17 +42,19 @@ Use raw `.ps1` files from an already-open PowerShell terminal, tests, or automat
 
 For code-rule fixes, use the one-shot runner UX. Do not ask the user to memorize `-Rules` values for normal operation.
 
-- Use `tools/SparrowSyntaxFix/Run-SparrowSyntaxFix.ps1`.
+- Prefer the integrated GUI: `tools/Run-SparrowRunnerGui.cmd`.
+- Advanced direct runner path: `tools/_internal/SparrowSyntaxFix/Run-SparrowSyntaxFix.ps1`.
 - If `-Rules` is omitted, the runner asks for the solution/folder path, optional review-needed rules, and commit choice.
 - Direct `-Rules` usage is reserved for tests, automation, and precise re-runs.
 
 ## Track B
 
-For comment/layout fixes, use `tools/SparrowCommentFix/Run-SparrowCommentFix.ps1`.
+For comment/layout fixes, prefer the integrated GUI: `tools/Run-SparrowRunnerGui.cmd`.
 
 - Default rules are safe comment rules.
 - `flatten` and layout rules are opt-in through the runner prompts.
 - Direct `-Rules` usage is reserved for tests, automation, and precise re-runs.
+- Advanced direct runner path: `tools/_internal/SparrowCommentFix/Run-SparrowCommentFix.ps1`.
 
 ## Track C
 

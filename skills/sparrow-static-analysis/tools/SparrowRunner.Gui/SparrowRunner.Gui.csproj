@@ -11,7 +11,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\SparrowXlsExport.Core\SparrowXlsExport.Core.csproj" />
+    <ProjectReference Include="..\_internal\SparrowXlsExport.Core\SparrowXlsExport.Core.csproj" />
   </ItemGroup>
 
 </Project>

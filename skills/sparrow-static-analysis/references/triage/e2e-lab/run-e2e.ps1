@@ -21,7 +21,7 @@ $Compare   = Join-Path $TriageDir 'Compare-Sparrow.ps1'
 $ParserExe = 'C:\Users\CEO\Desktop\dotnet-gcdump-offline\sparrow-xlsexport\win-x64\SparrowXlsExport.exe'
 
 if (-not (Test-Path -LiteralPath $ParserExe)) {
-    $parserProject = Join-Path $SkillDir 'tools\SparrowXlsExport\SparrowXlsExport.csproj'
+    $parserProject = Join-Path $SkillDir 'tools\_internal\SparrowXlsExport\SparrowXlsExport.csproj'
     $localParser = Join-Path (Split-Path -Parent $parserProject) 'bin\Release\net8.0\SparrowXlsExport.exe'
     if (-not (Test-Path -LiteralPath $localParser)) {
         & dotnet build $parserProject -c Release | Out-Null

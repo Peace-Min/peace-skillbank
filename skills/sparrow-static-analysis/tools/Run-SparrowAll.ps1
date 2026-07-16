@@ -52,8 +52,8 @@ catch {
 
 $ErrorActionPreference = 'Stop'
 $here = $PSScriptRoot
-$syntaxRunner  = Join-Path $here 'SparrowSyntaxFix\Run-SparrowSyntaxFix.ps1'
-$commentRunner = Join-Path $here 'SparrowCommentFix\Run-SparrowCommentFix.ps1'
+$syntaxRunner  = Join-Path $here '_internal\SparrowSyntaxFix\Run-SparrowSyntaxFix.ps1'
+$commentRunner = Join-Path $here '_internal\SparrowCommentFix\Run-SparrowCommentFix.ps1'
 foreach ($p in @($syntaxRunner, $commentRunner)) {
     if (-not (Test-Path -LiteralPath $p)) { throw "서브러너를 찾을 수 없습니다: $p" }
 }

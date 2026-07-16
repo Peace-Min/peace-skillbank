@@ -72,6 +72,6 @@ false-positive skip은 없다. `문맥 필요`는 스킵이 아니라 문맥 확
 ## 5. 도구
 
 - 통합 GUI: `tools/Run-SparrowRunnerGui.cmd`
-- XLS CLI: `tools/SparrowXlsExport`
+- XLS CLI: `tools/_internal/SparrowXlsExport`
 - 요청 조립 스크립트: `references/triage/Run-Triage.ps1 prepare`
 - 재분석 비교: `references/triage/Compare-Sparrow.ps1`

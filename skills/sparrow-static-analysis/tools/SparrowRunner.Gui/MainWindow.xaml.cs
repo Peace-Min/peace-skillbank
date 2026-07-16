@@ -14,13 +14,11 @@ using Microsoft.Win32;
 namespace SparrowRunner.Gui
 {
     /// <summary>
-    /// WPF wrapper for Track A/B PowerShell runners. The GUI only collects paths/options and streams process output;
-    /// all rewrite, commit, and git-hardening behavior stays in the existing CLI scripts.
+    /// WPF wrapper for Track A/B PowerShell runners. Rewrite logic stays in the existing CLI scripts.
     /// </summary>
     public partial class MainWindow : Window
     {
         private readonly string _skillRoot;
-        private readonly string _referencesDir;
         private readonly string _toolsDir;
         private readonly Dictionary<string, RuleInfo> _ruleInfos = new Dictionary<string, RuleInfo>(StringComparer.Ordinal);
         private CancellationTokenSource? _cts;
@@ -31,11 +29,11 @@ namespace SparrowRunner.Gui
             InitializeComponent();
 
             _skillRoot = ResolveSkillRoot();
-            _referencesDir = Path.Combine(_skillRoot, "references");
             _toolsDir = Path.Combine(_skillRoot, "tools");
             AppendLog("GUI 준비 완료");
             InitializeRuleInfo();
             ShowRuleInfo(nameof(ASObjectVarSafe));
+            Loaded += (_, _) => UpdateSummary();
         }
 
         private void BrowseFileButton_Click(object sender, RoutedEventArgs e)
@@ -96,22 +94,26 @@ namespace SparrowRunner.Gui
                 foreach (RunnerJob job in jobs)
                 {
                     _cts.Token.ThrowIfCancellationRequested();
+                    SummaryModeText.Text = job.Name + " 실행 중";
                     await RunJobAsync(job, _cts.Token);
                 }
 
                 StatusText.Text = "완료";
+                SummaryModeText.Text = "실행 완료. 빌드와 Sparrow 재분석으로 결과를 확인하세요.";
                 AppendLog(new string('-', 72));
                 AppendLog("완료");
             }
             catch (OperationCanceledException)
             {
                 StatusText.Text = "중지됨";
+                SummaryModeText.Text = "사용자가 실행을 중지했습니다.";
                 AppendLog(new string('-', 72));
                 AppendLog("사용자 중지");
             }
             catch (Exception ex)
             {
                 StatusText.Text = "실패";
+                SummaryModeText.Text = "실행 중 오류가 발생했습니다. 로그를 확인하세요.";
                 AppendLog(new string('-', 72));
                 AppendLog("오류: " + ex.Message);
                 MessageBox.Show(this, ex.Message, "실행 실패", MessageBoxButton.OK, MessageBoxImage.Error);
@@ -122,6 +124,7 @@ namespace SparrowRunner.Gui
                 _cts.Dispose();
                 _cts = null;
                 SetRunning(false);
+                UpdateSummary();
             }
         }
 
@@ -168,6 +171,12 @@ namespace SparrowRunner.Gui
             bool dryRun = DryRunCheck.IsChecked == true;
             CommitCheck.IsEnabled = !dryRun;
             if (dryRun) CommitCheck.IsChecked = false;
+            UpdateSummary();
+        }
+
+        private void TargetPathBox_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            UpdateSummary();
         }
 
         private List<RunnerJob> BuildJobs(string target)
@@ -196,7 +205,7 @@ namespace SparrowRunner.Gui
                 if (rules.Count > 0)
                 {
                     jobs.Add(new RunnerJob(
-                        "Track A 2차 Roslyn",
+                        "Track A Roslyn",
                         Path.Combine(_toolsDir, "SparrowSyntaxFix", "Run-SparrowSyntaxFix.ps1"),
                         rules,
                         logDir,
@@ -308,117 +317,117 @@ namespace SparrowRunner.Gui
 
         private void InitializeRuleInfo()
         {
-            AddRuleInfo(RunTrackASyntaxCheck, "Track A 2차 Roslyn",
-                "Run-SparrowSyntaxFix.ps1을 실행합니다. 현재 Track A의 주력 자동수정이며 Roslyn 구문 트리 기준으로 C# 파일을 수정합니다.",
-                "보완 체커: var, object initializer, 배열 초기화, foreach 루프 변수, 괄호, 다중 선언 등 코드 규칙 계열.",
-                "선택 시: 아래 Roslyn 규칙 중 체크된 항목만 -Rules로 전달합니다.");
-            AddRuleInfo(ASObjectVarSafe, "objectvar-safe",
+            AddRuleInfo(RunTrackASyntaxCheck, "Track A Roslyn",
+                "코드 규칙 자동수정을 실행합니다.",
+                "var, object initializer, 배열 초기화, foreach 루프 변수, 괄호, 다중 선언 계열을 처리합니다.",
+                "선택된 Track A 규칙만 -Rules로 전달됩니다.");
+            AddRuleInfo(ASObjectVarSafe, "객체 생성 명시 타입을 var로 변경",
                 "선언 타입과 생성 타입이 같은 지역변수를 var로 바꿉니다.",
-                "보완 체커: PRACTICE.OBJECT_INSTANTIATION.NOT_USED_IMPLICIT_TYPING. 정적 타입 축소가 없는 기본 안전 규칙입니다.",
+                "체커: PRACTICE.OBJECT_INSTANTIATION.NOT_USED_IMPLICIT_TYPING. 정적 타입 축소가 없는 기본 안전 규칙입니다.",
                 "Foo item = new Foo();\r\n// ->\r\nvar item = new Foo();");
-            AddRuleInfo(ASObviousVar, "obviousvar",
-                "리터럴, 캐스트, 명확한 생성/호출 결과처럼 타입 추론이 분명한 지역변수를 var로 바꿉니다.",
-                "보완 체커: PRACTICE.OBVIOUS_VARIABLE_TYPE.NOT_USED_IMPLICIT_TYPING.",
+            AddRuleInfo(ASObviousVar, "명확한 지역변수 타입을 var로 변경",
+                "리터럴, 캐스트, 명확한 생성 결과처럼 타입 추론이 분명한 지역변수를 var로 바꿉니다.",
+                "체커: PRACTICE.OBVIOUS_VARIABLE_TYPE.NOT_USED_IMPLICIT_TYPING.",
                 "string name = \"A\";\r\ndouble ratio = (double)20;\r\n// ->\r\nvar name = \"A\";\r\nvar ratio = (double)20;");
-            AddRuleInfo(ASArrayVarSafe, "arrayvar-safe",
+            AddRuleInfo(ASArrayVarSafe, "배열 초기화 문법 간소화",
                 "동일 배열 타입의 장황한 초기화 구문만 줄입니다.",
-                "보완 체커: PRACTICE.ARRAY_DECLARATION.COMPLICATED_SYNTAX. 선언 타입은 유지합니다.",
+                "체커: PRACTICE.ARRAY_DECLARATION.COMPLICATED_SYNTAX. 선언 타입은 유지합니다.",
                 "int[] values = new int[] { 1, 2, 3 };\r\n// ->\r\nint[] values = { 1, 2, 3 };");
-            AddRuleInfo(ASParens, "parens",
-                "&&와 ||가 섞인 조건식의 피연산자에 괄호를 추가합니다.",
-                "보완 체커: 복합 논리식 괄호 명확화 계열.",
+            AddRuleInfo(ASParens, "논리식 괄호 명확화",
+                "&&와 || 논리식의 모든 피연산자에 괄호를 추가합니다.",
+                "체커: MISSING_PARENTHESIS_IN_EXPRESSION. Sparrow 기준상 atom도 감쌉니다.",
                 "if (isReady && hasValue || forced)\r\n// ->\r\nif (((isReady) && (hasValue)) || (forced))");
-            AddRuleInfo(ASForeachCast, "foreachcast",
+            AddRuleInfo(ASForeachCast, "[검토필요] foreach Cast<T> + var",
                 "비제네릭 컬렉션 foreach의 명시 타입을 Cast<T>()와 var 조합으로 바꿉니다.",
-                "보완 체커: PRACTICE.LOOP_VARIABLE.NOT_USED_IMPLICIT_TYPING. 검토필요 커밋 대상입니다.",
+                "체커: PRACTICE.LOOP_VARIABLE.NOT_USED_IMPLICIT_TYPING. 검토필요 커밋 대상입니다.",
                 "foreach (XmlNode node in nodes)\r\n// ->\r\nforeach (var node in System.Linq.Enumerable.Cast<XmlNode>(nodes))");
-            AddRuleInfo(ASObjectInitializer, "objectinitializer",
+            AddRuleInfo(ASObjectInitializer, "연속 대입을 object initializer로 통합",
                 "객체 생성 직후 연속된 단순 속성/필드 대입을 initializer로 합칩니다.",
-                "보완 체커: PRACTICE.OBJECT_INITIALIZATION.NOT_USED_INITIALIZER. 연속 구간만 처리합니다.",
+                "체커: PRACTICE.OBJECT_INITIALIZATION.NOT_USED_INITIALIZER. 연속 구간만 처리합니다.",
                 "var item = new Foo();\r\nitem.A = 1;\r\nitem.B = text;\r\n// ->\r\nvar item = new Foo { A = 1, B = text };");
-            AddRuleInfo(ASNullVar, "nullvar",
+            AddRuleInfo(ASNullVar, "[검토필요] typed null var 초기화",
                 "초기값이 없거나 null인 명시 지역변수를 typed null var 형태로 바꿉니다.",
-                "보완 체커: 명확한 지역변수 var 권장 계열. 검토필요 커밋 대상입니다.",
+                "체커: 명확한 지역변수 var 권장 계열. 검토필요 커밋 대상입니다.",
                 "Foo item;\r\n// ->\r\nvar item = (Foo)null;");
-            AddRuleInfo(ASObjectVarNarrowing, "objectvar-narrowing",
+            AddRuleInfo(ASObjectVarNarrowing, "[검토필요] 상위 타입 선언을 var로 축소",
                 "인터페이스/상위 타입 선언을 실제 생성 타입 var로 바꿉니다.",
-                "보완 체커: 인스턴스 생성 시 var 권장. 정적 타입 축소가 발생하므로 검토필요 커밋 대상입니다.",
+                "정적 타입 축소가 발생하므로 검토필요 커밋 대상입니다.",
                 "IList<string> names = new List<string>();\r\n// ->\r\nvar names = new List<string>();");
-            AddRuleInfo(ASLocalConst, "localconst",
+            AddRuleInfo(ASLocalConst, "[검토필요] 지역 const를 var로 변경",
                 "지역 const 선언을 일반 var 지역변수로 바꿉니다.",
-                "보완 체커: 명확한 지역변수 var 권장 계열. 지역 const 의미가 중요한 경우 검토가 필요합니다.",
+                "지역 const 의미가 중요한 경우 검토가 필요합니다.",
                 "const string Code = \"A\";\r\n// ->\r\nvar Code = \"A\";");
-            AddRuleInfo(ASArrayVarNarrowing, "arrayvar-narrowing",
+            AddRuleInfo(ASArrayVarNarrowing, "[검토필요] 배열 선언을 var + new[]로 축소",
                 "선언 배열 타입을 var와 암시 배열 생성으로 줄입니다.",
-                "보완 체커: 배열 초기화 간소화/var 권장 계열. object[] 등 정적 타입 축소 가능성이 있어 검토필요 커밋 대상입니다.",
+                "object[] 등 정적 타입 축소 가능성이 있어 검토필요 커밋 대상입니다.",
                 "int[] values = new int[] { 1, 2, 3 };\r\n// ->\r\nvar values = new[] { 1, 2, 3 };");
-            AddRuleInfo(ASForVar, "forvar",
+            AddRuleInfo(ASForVar, "for 루프 초기화 변수를 var로 변경",
                 "for 초기화절의 명시 타입을 var로 바꿉니다.",
-                "보완 체커: 루프 변수 암시적 타입 사용 권장.",
+                "체커: 루프 변수 암시적 타입 사용 권장.",
                 "for (int i = 0; i < count; i++)\r\n// ->\r\nfor (var i = 0; i < count; i++)");
-            AddRuleInfo(ASFieldSplit, "fieldsplit",
+            AddRuleInfo(ASFieldSplit, "한 줄 다중 필드 선언 분리",
                 "한 줄에 여러 필드를 선언한 구문을 필드별 선언으로 나눕니다.",
-                "보완 체커: 한 줄에 하나의 선언문 배치.",
+                "체커: 한 줄에 하나의 선언문 배치.",
                 "private int x, y;\r\n// ->\r\nprivate int x;\r\nprivate int y;");
-            AddRuleInfo(ASEmptyStmt, "emptystmt",
+            AddRuleInfo(ASEmptyStmt, "불필요한 빈 문장 제거",
                 "불필요한 빈 문장 세미콜론을 제거합니다.",
-                "보완 체커: 한 줄에 하나의 구문/불필요 문장 계열.",
+                "체커: 한 줄에 하나의 구문/불필요 문장 계열.",
                 "DoWork();;\r\n// ->\r\nDoWork();");
-            AddRuleInfo(ASForHoist, "forhoist",
+            AddRuleInfo(ASForHoist, "[검토필요] for 다중 선언자 분리",
                 "for 초기화절의 다중 선언자를 루프 밖 선언으로 분리합니다.",
-                "보완 체커: 한 줄에 하나의 선언문 배치. 루프 스코프가 바뀌므로 검토필요 커밋 대상입니다.",
+                "루프 스코프가 바뀌므로 검토필요 커밋 대상입니다.",
                 "for (int i = 0, j = 0; i < n; i++)\r\n// ->\r\nvar j = 0;\r\nfor (var i = 0; i < n; i++)");
 
             AddRuleInfo(RunTrackBCheck, "Track B 주석/레이아웃",
-                "Run-SparrowCommentFix.ps1을 실행합니다. 주석 문장 규칙과 일부 레이아웃 규칙을 텍스트 기반으로 보정합니다.",
-                "보완 체커: COMMENT.*, BETWEEN_MEMBER_DEFINITION, ONE_DECLARATION/STATEMENT, LINQ alignment, continuation indentation 계열.",
-                "선택 시: 아래 Track B 규칙 중 체크된 항목만 -Rules로 전달합니다.");
-            AddRuleInfo(BTrailing, "trailing",
-                "코드 뒤에 붙은 주석을 코드 위의 독립 주석 줄로 이동하고 기본 문장 규칙을 맞춥니다.",
-                "보완 체커: 독립된 줄의 주석 작성 권장, 주석 앞 빈 줄 계열.",
+                "주석 문장 규칙과 일부 레이아웃 규칙을 텍스트 기반으로 보정합니다.",
+                "COMMENT.*, BETWEEN_MEMBER_DEFINITION, ONE_DECLARATION/STATEMENT, LINQ alignment, continuation indentation 계열.",
+                "선택된 Track B 규칙만 -Rules로 전달됩니다.");
+            AddRuleInfo(BTrailing, "코드 뒤 주석을 위 줄로 이동",
+                "코드 뒤에 붙은 주석을 코드 위의 독립 주석 줄로 이동하고 문장 규칙을 맞춥니다.",
+                "체커: 독립된 줄의 주석 작성 권장, 주석 앞 빈 줄 계열.",
                 "DoWork(); //done\r\n// ->\r\n// Done.\r\nDoWork();");
-            AddRuleInfo(BSpace, "space",
+            AddRuleInfo(BSpace, "주석 기호 뒤 공백 추가",
                 "주석 기호 뒤 공백을 보강합니다.",
-                "보완 체커: 주석 구분자 뒤 공백 누락.",
+                "체커: FORMATTING.COMMENT.MISSING_SPACE_AFTER_DELIMITER.",
                 "//done\r\n// ->\r\n// done");
-            AddRuleInfo(BPeriod, "period",
+            AddRuleInfo(BPeriod, "주석 끝 마침표 추가",
                 "일반 문장 주석 끝에 마침표를 추가합니다.",
-                "보완 체커: FORMATTING.COMMENT.MISSING_PERIOD. Doxygen line-form은 보호 대상입니다.",
+                "체커: FORMATTING.COMMENT.MISSING_PERIOD. Doxygen line-form은 보호 대상입니다.",
                 "// Done\r\n// ->\r\n// Done.");
-            AddRuleInfo(BCapitalize, "capitalize",
+            AddRuleInfo(BCapitalize, "주석 첫 영문 대문자화",
                 "주석 첫 ASCII 영문자를 대문자로 바꿉니다.",
-                "보완 체커: FORMATTING.COMMENT.LOWERCASE_FIRST_LETTER.",
+                "체커: FORMATTING.COMMENT.LOWERCASE_FIRST_LETTER.",
                 "// done.\r\n// ->\r\n// Done.");
-            AddRuleInfo(BFlatten, "flatten",
+            AddRuleInfo(BFlatten, "별표/Doxygen 블록 주석 평탄화",
                 "별표 블록/Doxygen 주석을 의미 보존이 가능한 한 줄 주석 형태로 평탄화합니다.",
-                "보완 체커: FORMATTING.COMMENT.BLOCK_OF_ASTERISK, Doxygen-style 주석 형식 계열.",
+                "체커: FORMATTING.COMMENT.BLOCK_OF_ASTERISK.",
                 "/** @brief delta marker */\r\n// ->\r\n// Delta marker.");
-            AddRuleInfo(BMemberBlank, "memberblank",
+            AddRuleInfo(BMemberBlank, "멤버 선언 사이 빈 줄 추가",
                 "메서드/프로퍼티/필드 등 멤버 선언 사이에 빈 줄을 추가합니다.",
-                "보완 체커: FORMATTING.BETWEEN_MEMBER_DEFINITION.MISSING_BLANK_LINE.",
+                "체커: FORMATTING.BETWEEN_MEMBER_DEFINITION.MISSING_BLANK_LINE.",
                 "public int A { get; set; }\r\npublic int B { get; set; }\r\n// ->\r\npublic int A { get; set; }\r\n\r\npublic int B { get; set; }");
-            AddRuleInfo(BOneDeclaration, "onedeclaration",
+            AddRuleInfo(BOneDeclaration, "한 줄 다중 선언 분리",
                 "한 줄에 여러 지역변수를 선언한 구문을 줄별 선언으로 나눕니다.",
-                "보완 체커: 한 줄에 하나의 선언문 배치.",
+                "체커: 한 줄에 하나의 선언문 배치.",
                 "int x = 1, y = 2;\r\n// ->\r\nint x = 1;\r\nint y = 2;");
-            AddRuleInfo(BOneStatement, "onestatement",
+            AddRuleInfo(BOneStatement, "한 줄 다중 구문 분리",
                 "한 줄에 여러 문장이 붙은 구문을 문장별 줄로 나눕니다.",
-                "보완 체커: 한 줄에 하나의 구문 배치.",
+                "체커: 한 줄에 하나의 구문 배치.",
                 "Start(); Stop();\r\n// ->\r\nStart();\r\nStop();");
-            AddRuleInfo(BContinuation, "continuation",
+            AddRuleInfo(BContinuation, "여러 줄 문장 들여쓰기 보정",
                 "여러 줄 문장의 continuation line 들여쓰기를 보정합니다.",
-                "보완 체커: FORMATTING.CONTINUATION_LINE.BAD_INDENTATION. 레이아웃 변경량이 클 수 있어 DryRun 확인을 권장합니다.",
+                "체커: FORMATTING.CONTINUATION_LINE.BAD_INDENTATION. 변경량이 클 수 있어 DryRun 확인을 권장합니다.",
                 "var value = Foo(\r\nx,\r\ny);\r\n// ->\r\nvar value = Foo(\r\n    x,\r\n    y);");
-            AddRuleInfo(BLinqAlign, "linqalign",
+            AddRuleInfo(BLinqAlign, "LINQ 쿼리 절 정렬",
                 "LINQ query expression의 from/where/select 절 정렬을 맞춥니다.",
-                "보완 체커: FORMATTING.LINQ.QUERY_CLAUSE_ALIGNMENT.",
+                "체커: FORMATTING.LINQ.QUERY_CLAUSE_ALIGNMENT.",
                 "var q = from x in xs\r\nwhere x.Enabled\r\nselect x;\r\n// ->\r\nvar q = from x in xs\r\n        where x.Enabled\r\n        select x;");
-            AddRuleInfo(BBlockPromote, "blockpromote",
+            AddRuleInfo(BBlockPromote, "[검토필요] inline block 주석 이동",
                 "코드 뒤 inline block comment를 코드 위 독립 주석으로 승격합니다.",
-                "보완 체커: 독립된 줄의 주석 작성 권장/별표 블록 제한. 검토필요 커밋 대상입니다.",
+                "체커: 독립된 줄의 주석 작성 권장/별표 블록 제한. 검토필요 커밋 대상입니다.",
                 "DoWork(); /* done */\r\n// ->\r\n// Done.\r\nDoWork();");
 
-            AddRuleInfo(CommitCheck, "규칙별 커밋",
+            AddRuleInfo(CommitCheck, "규칙별 커밋 생성",
                 "각 규칙 실행 후 변경된 .cs 파일을 규칙별 커밋으로 남깁니다.",
                 "검토필요 규칙은 커밋 메시지에 '! 검토필요'가 포함되도록 CLI가 처리합니다.",
                 "체크: 규칙별 자동 커밋\r\n해제: 파일만 수정하고 커밋하지 않음");
@@ -440,6 +449,8 @@ namespace SparrowRunner.Gui
             checkBox.MouseEnter += RuleControl_MouseEnter;
             checkBox.GotKeyboardFocus += RuleControl_FocusOrClick;
             checkBox.Click += RuleControl_FocusOrClick;
+            checkBox.Checked += RuleControl_CheckedChanged;
+            checkBox.Unchecked += RuleControl_CheckedChanged;
         }
 
         private void RuleControl_MouseEnter(object sender, MouseEventArgs e)
@@ -450,6 +461,12 @@ namespace SparrowRunner.Gui
         private void RuleControl_FocusOrClick(object sender, RoutedEventArgs e)
         {
             if (sender is CheckBox checkBox) ShowRuleInfo(checkBox.Name);
+            UpdateSummary();
+        }
+
+        private void RuleControl_CheckedChanged(object sender, RoutedEventArgs e)
+        {
+            UpdateSummary();
         }
 
         private void ShowRuleInfo(string key)
@@ -457,7 +474,7 @@ namespace SparrowRunner.Gui
             if (!_ruleInfos.TryGetValue(key, out RuleInfo? info))
             {
                 RuleInfoTitle.Text = "규칙 설명";
-                RuleInfoBody.Text = "체크박스에 마우스를 올리거나 선택하면 대응 체커와 변경 예시가 표시됩니다.";
+                RuleInfoBody.Text = "규칙을 선택하면 대응 체커와 변경 예시가 표시됩니다.";
                 RuleInfoExample.Text = "";
                 return;
             }
@@ -465,6 +482,42 @@ namespace SparrowRunner.Gui
             RuleInfoTitle.Text = info.Title;
             RuleInfoBody.Text = info.Summary + Environment.NewLine + info.Checker;
             RuleInfoExample.Text = info.Example;
+        }
+
+        private void UpdateSummary()
+        {
+            if (!IsLoaded) return;
+
+            int trackA = RunTrackASyntaxCheck.IsChecked == true
+                ? CountChecked(ASObjectVarSafe, ASObviousVar, ASArrayVarSafe, ASParens, ASForeachCast,
+                    ASObjectInitializer, ASNullVar, ASObjectVarNarrowing, ASLocalConst, ASArrayVarNarrowing,
+                    ASForVar, ASFieldSplit, ASEmptyStmt, ASForHoist)
+                : 0;
+            int trackB = RunTrackBCheck.IsChecked == true
+                ? CountChecked(BTrailing, BSpace, BPeriod, BCapitalize, BFlatten, BMemberBlank,
+                    BOneDeclaration, BOneStatement, BContinuation, BLinqAlign, BBlockPromote)
+                : 0;
+            int reviewNeeded = CountChecked(ASForeachCast, ASNullVar, ASObjectVarNarrowing, ASLocalConst,
+                ASArrayVarNarrowing, ASForHoist, BBlockPromote);
+            int total = trackA + trackB;
+
+            string target = TargetPathBox.Text.Trim();
+            SummaryTargetText.Text = string.IsNullOrEmpty(target)
+                ? "대상 경로가 필요합니다."
+                : target;
+            SummaryRulesText.Text = $"선택된 규칙 {total}개";
+
+            string mode = DryRunCheck.IsChecked == true
+                ? "DryRun 모드: 파일을 변경하지 않고 후보만 확인합니다."
+                : CommitCheck.IsChecked == true
+                    ? "규칙별 커밋 모드: 규칙 단위로 변경을 나눠 남깁니다."
+                    : "수정만 적용: 커밋은 생성하지 않습니다.";
+            SummaryModeText.Text = $"{mode}\nTrack A {trackA}개 · Track B {trackB}개 · 검토필요 {reviewNeeded}개";
+        }
+
+        private static int CountChecked(params CheckBox[] boxes)
+        {
+            return boxes.Count(b => b.IsChecked == true);
         }
 
         private static List<string> CollectRules(params (CheckBox CheckBox, string Rule)[] pairs)

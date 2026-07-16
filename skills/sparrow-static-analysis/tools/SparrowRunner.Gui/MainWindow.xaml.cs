@@ -871,12 +871,18 @@ namespace SparrowRunner.Gui
             for (int i = 0; dir != null && i < 12; i++, dir = dir.Parent)
             {
                 string skill = Path.Combine(dir.FullName, "SKILL.md");
-                string syntax = Path.Combine(dir.FullName, "tools", "SparrowSyntaxFix", "Run-SparrowSyntaxFix.ps1");
-                if (File.Exists(skill) && File.Exists(syntax)) return dir.FullName;
+                string runner = Path.Combine(dir.FullName, "tools", "Run-SparrowRunnerGui.cmd");
+                string syntax = Path.Combine(dir.FullName, "tools", "_internal", "SparrowSyntaxFix", "Run-SparrowSyntaxFix.ps1");
+                if (File.Exists(skill) && File.Exists(runner) && File.Exists(syntax)) return dir.FullName;
             }
 
             string fallback = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", ".."));
-            if (File.Exists(Path.Combine(fallback, "SKILL.md"))) return fallback;
+            if (File.Exists(Path.Combine(fallback, "SKILL.md")) &&
+                File.Exists(Path.Combine(fallback, "tools", "Run-SparrowRunnerGui.cmd")))
+            {
+                return fallback;
+            }
+
             throw new DirectoryNotFoundException("sparrow-static-analysis skill root를 찾을 수 없습니다.");
         }
 

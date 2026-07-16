@@ -28,6 +28,7 @@ When the user has manually fixed Sparrow findings in a closed network and wants 
 
 For normal one-shot local execution, prefer the `.cmd` launchers next to the PowerShell scripts:
 
+- `00-Run-Sparrow-GUI.cmd` at the skill root for users who open `skills/sparrow-static-analysis` directly.
 - `tools/Run-SparrowRunnerGui.cmd` for the integrated Track A/B/C Sparrow Helper GUI. This is the normal user entrypoint.
 - `tools/Run-SparrowAll.cmd`
 

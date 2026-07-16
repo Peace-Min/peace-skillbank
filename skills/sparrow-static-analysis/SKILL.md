@@ -26,10 +26,10 @@ When the user has manually fixed Sparrow findings in a closed network and wants 
 
 ## Windows Launcher UX
 
-For normal one-shot local execution, prefer the `.cmd` launchers next to the PowerShell scripts:
+For normal user operation, the first visible entrypoint should be the top-level GUI solution:
 
-- `00-Run-Sparrow-GUI.cmd` at the skill root for users who open `skills/sparrow-static-analysis` directly.
-- `tools/Run-SparrowRunnerGui.cmd` for the integrated Track A/B/C Sparrow Helper GUI. This is the normal user entrypoint.
+- `SparrowRunner.Gui/SparrowRunner.Gui.sln` for Visual Studio users. This directory intentionally contains only the solution file.
+- `tools/Run-SparrowRunnerGui.cmd` for command-line launch of the integrated Track A/B/C Sparrow Helper GUI.
 - `tools/Run-SparrowAll.cmd`
 
 The WPF wrapper is the single closed-network Sparrow Helper GUI. It lets the user choose a solution/project/folder, select Track A/B rules with checkboxes, choose commit/dry-run behavior, prepare Track C XLS/LLM repair-request packages, and view live logs. Keep Track A/B rewrite logic in the internal CLI scripts under `tools/_internal/` and keep Track C parsing/prepare logic in `tools/_internal/SparrowXlsExport.Core`; future rule improvements should update the underlying deterministic tool first and the GUI should only expose/select those options. For Track C, the closed-network GUI output is the LLM handoff `requests/` folder only; parser indexes and worklist files are internal/debug artifacts and must not be presented as the normal LLM input.

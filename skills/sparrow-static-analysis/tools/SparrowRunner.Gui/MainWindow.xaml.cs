@@ -33,9 +33,9 @@ namespace SparrowRunner.Gui
             _skillRoot = ResolveSkillRoot();
             _referencesDir = Path.Combine(_skillRoot, "references");
             _toolsDir = Path.Combine(_skillRoot, "tools");
-            AppendLog("skill root: " + _skillRoot);
+            AppendLog("GUI 준비 완료");
             InitializeRuleInfo();
-            ShowRuleInfo(nameof(RunTrackASyntaxCheck));
+            ShowRuleInfo(nameof(ASObjectVarSafe));
         }
 
         private void BrowseFileButton_Click(object sender, RoutedEventArgs e)

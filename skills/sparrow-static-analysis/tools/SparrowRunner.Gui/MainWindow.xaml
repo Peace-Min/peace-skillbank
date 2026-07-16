@@ -2,8 +2,8 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Sparrow Track A/B Runner"
-        Width="1120" Height="780"
-        MinWidth="960" MinHeight="680"
+        Width="1180" Height="820"
+        MinWidth="980" MinHeight="700"
         WindowStartupLocation="CenterScreen"
         FontFamily="Segoe UI, Malgun Gothic" FontSize="13">
 
@@ -37,13 +37,13 @@
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
-            <RowDefinition Height="190"/>
+            <RowDefinition Height="170"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
         <StackPanel Grid.Row="0" Margin="0,0,0,14">
             <TextBlock Text="Sparrow Track A/B Runner" FontSize="19" FontWeight="Bold"/>
-            <TextBlock Text="Track A/B PowerShell CLI를 호출하는 WPF 래퍼입니다. 체크박스를 선택하면 아래 설명 패널에서 대응 체커와 변경 예시를 확인할 수 있습니다."
+            <TextBlock Text="Track A/B PowerShell CLI를 호출하는 WPF 래퍼입니다. 체크박스를 선택하면 아래에서 대응 스패로우 체커와 변경 전/후 예시를 확인할 수 있습니다."
                        Style="{StaticResource HintText}"/>
         </StackPanel>
 
@@ -71,40 +71,44 @@
             <TabItem Header="Track A - 코딩규칙">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel Margin="12">
-                        <CheckBox x:Name="RunTrackAFormatCheck" Content="Track A 1차 dotnet format 실행 (Run-TrackA.ps1)"
-                                  IsChecked="False" FontWeight="SemiBold"/>
-                        <GroupBox Header="1차 dotnet format 규칙" Style="{StaticResource RuleGroup}">
+                        <CheckBox x:Name="RunTrackASyntaxCheck" Content="Track A 2차 Roslyn 자동수정 실행 (권장)"
+                                  IsChecked="True" FontWeight="SemiBold"/>
+                        <GroupBox Header="기본 자동수정 규칙" Style="{StaticResource RuleGroup}">
                             <WrapPanel>
-                                <CheckBox x:Name="A1Var" Content="var" IsChecked="True"/>
-                                <CheckBox x:Name="A1Parens" Content="parens" IsChecked="True"/>
-                                <CheckBox x:Name="A1Initializer" Content="initializer" IsChecked="True"/>
+                                <CheckBox x:Name="ASObjectVarSafe" Content="객체 생성 명시 타입을 var로 변경" IsChecked="True"/>
+                                <CheckBox x:Name="ASObviousVar" Content="명확한 지역변수 타입을 var로 변경" IsChecked="True"/>
+                                <CheckBox x:Name="ASArrayVarSafe" Content="배열 초기화 문법 간소화" IsChecked="True"/>
+                                <CheckBox x:Name="ASParens" Content="논리식 괄호 명확화" IsChecked="True"/>
+                            </WrapPanel>
+                        </GroupBox>
+                        <GroupBox Header="선택 자동수정 규칙" Style="{StaticResource RuleGroup}">
+                            <WrapPanel>
+                                <CheckBox x:Name="ASForeachCast" Content="[검토필요] foreach 명시 타입을 Cast&lt;T&gt; + var로 변경"/>
+                                <CheckBox x:Name="ASObjectInitializer" Content="객체 생성 후 연속 대입을 object initializer로 통합"/>
+                                <CheckBox x:Name="ASNullVar" Content="[검토필요] 명시 지역변수를 typed null var로 초기화"/>
+                                <CheckBox x:Name="ASObjectVarNarrowing" Content="[검토필요] 인터페이스/상위 타입 선언을 var로 축소"/>
+                                <CheckBox x:Name="ASLocalConst" Content="[검토필요] 지역 const를 var 지역변수로 변경"/>
+                                <CheckBox x:Name="ASArrayVarNarrowing" Content="[검토필요] 배열 선언을 var + new[]로 축소"/>
+                                <CheckBox x:Name="ASForVar" Content="for 루프 초기화 변수를 var로 변경"/>
+                                <CheckBox x:Name="ASFieldSplit" Content="한 줄 다중 필드 선언 분리"/>
+                                <CheckBox x:Name="ASEmptyStmt" Content="불필요한 빈 문장 세미콜론 제거"/>
+                                <CheckBox x:Name="ASForHoist" Content="[검토필요] for 다중 선언자를 루프 밖으로 분리"/>
                             </WrapPanel>
                         </GroupBox>
 
-                        <CheckBox x:Name="RunTrackASyntaxCheck" Content="Track A 2차 Roslyn 실행 (Run-SparrowSyntaxFix.ps1)"
-                                  IsChecked="True" FontWeight="SemiBold"/>
-                        <GroupBox Header="기본 규칙" Style="{StaticResource RuleGroup}">
-                            <WrapPanel>
-                                <CheckBox x:Name="ASObjectVarSafe" Content="objectvar-safe" IsChecked="True"/>
-                                <CheckBox x:Name="ASObviousVar" Content="obviousvar" IsChecked="True"/>
-                                <CheckBox x:Name="ASArrayVarSafe" Content="arrayvar-safe" IsChecked="True"/>
-                                <CheckBox x:Name="ASParens" Content="parens" IsChecked="True"/>
-                            </WrapPanel>
-                        </GroupBox>
-                        <GroupBox Header="검토필요/선택 규칙" Style="{StaticResource RuleGroup}">
-                            <WrapPanel>
-                                <CheckBox x:Name="ASForeachCast" Content="foreachcast"/>
-                                <CheckBox x:Name="ASObjectInitializer" Content="objectinitializer"/>
-                                <CheckBox x:Name="ASNullVar" Content="nullvar"/>
-                                <CheckBox x:Name="ASObjectVarNarrowing" Content="objectvar-narrowing"/>
-                                <CheckBox x:Name="ASLocalConst" Content="localconst"/>
-                                <CheckBox x:Name="ASArrayVarNarrowing" Content="arrayvar-narrowing"/>
-                                <CheckBox x:Name="ASForVar" Content="forvar"/>
-                                <CheckBox x:Name="ASFieldSplit" Content="fieldsplit"/>
-                                <CheckBox x:Name="ASEmptyStmt" Content="emptystmt"/>
-                                <CheckBox x:Name="ASForHoist" Content="forhoist"/>
-                            </WrapPanel>
-                        </GroupBox>
+                        <Expander Header="Track A 1차 dotnet format 보조 실행 (기본 비활성)" IsExpanded="False" Margin="0,0,0,12">
+                            <StackPanel Margin="0,8,0,0">
+                                <CheckBox x:Name="RunTrackAFormatCheck" Content="Run-TrackA.ps1 실행"
+                                          IsChecked="False" FontWeight="SemiBold"/>
+                                <GroupBox Header="1차 dotnet format 규칙" Style="{StaticResource RuleGroup}">
+                                    <WrapPanel>
+                                        <CheckBox x:Name="A1Var" Content="명시 타입을 var로 변경" IsChecked="True"/>
+                                        <CheckBox x:Name="A1Parens" Content="논리식 괄호 명확화" IsChecked="True"/>
+                                        <CheckBox x:Name="A1Initializer" Content="object initializer 적용" IsChecked="True"/>
+                                    </WrapPanel>
+                                </GroupBox>
+                            </StackPanel>
+                        </Expander>
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>
@@ -112,25 +116,25 @@
             <TabItem Header="Track B - 주석/레이아웃">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel Margin="12">
-                        <CheckBox x:Name="RunTrackBCheck" Content="Track B 실행 (Run-SparrowCommentFix.ps1)"
+                        <CheckBox x:Name="RunTrackBCheck" Content="Track B 주석/레이아웃 자동수정 실행"
                                   IsChecked="True" FontWeight="SemiBold"/>
                         <GroupBox Header="기본 주석 규칙" Style="{StaticResource RuleGroup}">
                             <WrapPanel>
-                                <CheckBox x:Name="BTrailing" Content="trailing" IsChecked="True"/>
-                                <CheckBox x:Name="BSpace" Content="space" IsChecked="True"/>
-                                <CheckBox x:Name="BPeriod" Content="period" IsChecked="True"/>
-                                <CheckBox x:Name="BCapitalize" Content="capitalize" IsChecked="True"/>
+                                <CheckBox x:Name="BTrailing" Content="코드 뒤 주석을 위 줄로 이동" IsChecked="True"/>
+                                <CheckBox x:Name="BSpace" Content="주석 기호 뒤 공백 추가" IsChecked="True"/>
+                                <CheckBox x:Name="BPeriod" Content="주석 끝 마침표 추가" IsChecked="True"/>
+                                <CheckBox x:Name="BCapitalize" Content="주석 첫 영문 대문자화" IsChecked="True"/>
                             </WrapPanel>
                         </GroupBox>
-                        <GroupBox Header="선택 규칙" Style="{StaticResource RuleGroup}">
+                        <GroupBox Header="선택 레이아웃/주석 규칙" Style="{StaticResource RuleGroup}">
                             <WrapPanel>
-                                <CheckBox x:Name="BFlatten" Content="flatten"/>
-                                <CheckBox x:Name="BMemberBlank" Content="memberblank"/>
-                                <CheckBox x:Name="BOneDeclaration" Content="onedeclaration"/>
-                                <CheckBox x:Name="BOneStatement" Content="onestatement"/>
-                                <CheckBox x:Name="BContinuation" Content="continuation"/>
-                                <CheckBox x:Name="BLinqAlign" Content="linqalign"/>
-                                <CheckBox x:Name="BBlockPromote" Content="blockpromote"/>
+                                <CheckBox x:Name="BFlatten" Content="별표/Doxygen 블록 주석을 한 줄 주석으로 평탄화"/>
+                                <CheckBox x:Name="BMemberBlank" Content="멤버 선언 사이 빈 줄 추가"/>
+                                <CheckBox x:Name="BOneDeclaration" Content="한 줄 다중 선언 분리"/>
+                                <CheckBox x:Name="BOneStatement" Content="한 줄 다중 구문 분리"/>
+                                <CheckBox x:Name="BContinuation" Content="여러 줄 문장 들여쓰기 보정"/>
+                                <CheckBox x:Name="BLinqAlign" Content="LINQ 쿼리 절 정렬"/>
+                                <CheckBox x:Name="BBlockPromote" Content="[검토필요] inline block 주석을 위 줄로 이동"/>
                             </WrapPanel>
                         </GroupBox>
                     </StackPanel>
@@ -151,7 +155,7 @@
             </TabItem>
         </TabControl>
 
-        <GroupBox Grid.Row="3" Header="선택 규칙 설명" Margin="0,12,0,0" Padding="10">
+        <GroupBox Grid.Row="3" Header="선택한 규칙의 변경 전/후 예시" Margin="0,12,0,0" Padding="10">
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
@@ -164,7 +168,7 @@
                 <TextBox x:Name="RuleInfoExample" Grid.Row="2"
                          IsReadOnly="True" IsUndoEnabled="False"
                          FontFamily="Consolas" FontSize="12"
-                         MinHeight="54" MaxHeight="84"
+                         MinHeight="62" MaxHeight="96"
                          VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
                          TextWrapping="NoWrap" Background="#F7F7F7" BorderBrush="#D0D0D0"
                          Padding="6"/>

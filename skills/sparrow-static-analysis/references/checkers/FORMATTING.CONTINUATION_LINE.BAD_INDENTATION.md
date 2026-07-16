@@ -3,7 +3,7 @@
 - **건수**: (실측 시 변동)  |  **심각도**: 낮음  |  **트랙**: B
 - **Sparrow 설명**: 하나의 문장이 여러 줄에 걸쳐 쓰여진 경우, 자동으로 들여쓰기가 되지 않았다면 하나의 탭(빈칸 4개)만큼 들여쓰기 해 주어야 합니다.
 
-> **대부분 Track A(dotnet format/SparrowSyntaxFix) 또는 Track B(SparrowCommentFix/dotnet format whitespace)가 자동 처리한다. 이 가이드는 도구가 못 고친 잔여를 LLM이 처리할 때 사용**한다.
+> **대부분 Track A(SparrowSyntaxFix/SparrowSyntaxFix) 또는 Track B(SparrowCommentFix/SparrowCommentFix layout)가 자동 처리한다. 이 가이드는 도구가 못 고친 잔여를 LLM이 처리할 때 사용**한다.
 
 ## 지켜야 할 규칙 (무엇을 왜 검출)
 하나의 문장이 여러 줄에 걸쳐 쓰인 경우, 연속 줄이 자동 들여쓰기되지 않았다면 **탭 정지 하나(공백 4개)만큼 들여써서** 이어지는 줄임을 드러내야 한다. **보안 결함이 아니라 스타일·가독성·표준(MSDN C# 코딩 규칙) 준수** 항목이다. 연속 줄을 앞줄과 같은 열에 두면 새 문장과 구분되지 않아 오독을 부른다. Sparrow는 `if`/`while` 조건 등 여러 줄에 걸친 문장의 연속 줄이 들여쓰기되지 않은 경우를 검출한다.

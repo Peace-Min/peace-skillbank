@@ -29,7 +29,6 @@ When the user has manually fixed Sparrow findings in a closed network and wants 
 For normal one-shot local execution, prefer the `.cmd` launchers next to the PowerShell scripts:
 
 - `tools/Run-SparrowRunnerGui.cmd` for the integrated Track A/B WPF wrapper.
-- `references/Run-TrackA.cmd`
 - `tools/SparrowSyntaxFix/Run-SparrowSyntaxFix.cmd`
 - `tools/SparrowCommentFix/Run-SparrowCommentFix.cmd`
 - `tools/Run-SparrowAll.cmd`
@@ -38,15 +37,14 @@ The WPF wrapper is a GUI shell over the existing CLI scripts. It lets the user c
 
 The `.cmd` launchers call the matching `.ps1` with `powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -NoExit -File ...`.
 This preserves the existing prompt flow (solution path, optional rules, commit choice) while preventing a newly opened PowerShell window from closing before the user can read errors or completion output.
-They also switch the console to UTF-8 and start from the launcher directory, so Korean `dotnet` output does not become mojibake and logs are not written to `C:\Windows\System32` when launched elevated.
+They also switch the console to UTF-8 and start from the launcher directory, so Korean console output does not become mojibake and logs are not written to `C:\Windows\System32` when launched elevated.
 Use raw `.ps1` files from an already-open PowerShell terminal, tests, or automation.
 
 ## Track A
 
 For code-rule fixes, use the one-shot runner UX. Do not ask the user to memorize `-Rules` values for normal operation.
 
-- First pass: `references/Run-TrackA.ps1`.
-- Roslyn expansion: `tools/SparrowSyntaxFix/Run-SparrowSyntaxFix.ps1`.
+- Use `tools/SparrowSyntaxFix/Run-SparrowSyntaxFix.ps1`.
 - If `-Rules` is omitted, the runner asks for the solution/folder path, optional review-needed rules, and commit choice.
 - Direct `-Rules` usage is reserved for tests, automation, and precise re-runs.
 

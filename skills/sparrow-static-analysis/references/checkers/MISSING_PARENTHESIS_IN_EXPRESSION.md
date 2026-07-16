@@ -3,7 +3,7 @@
 - **건수**: (실측 시 변동)  |  **심각도**: 낮음  |  **트랙**: A
 - **Sparrow 설명**: 표현식 안에서 명확한 절을 만들기 위해 괄호를 사용해야 합니다.
 
-> **대부분 Track A(dotnet format/SparrowSyntaxFix) 또는 Track B(SparrowCommentFix/dotnet format whitespace)가 자동 처리한다. 이 가이드는 도구가 못 고친 잔여를 LLM이 처리할 때 사용**한다.
+> **대부분 Track A(SparrowSyntaxFix/SparrowSyntaxFix) 또는 Track B(SparrowCommentFix/SparrowCommentFix layout)가 자동 처리한다. 이 가이드는 도구가 못 고친 잔여를 LLM이 처리할 때 사용**한다.
 
 ## 지켜야 할 규칙 (무엇을 왜 검출)
 서로 다른 우선순위의 연산자가 한 표현식에 섞여 있을 때, 연산자 우선순위에만 의존하지 말고 **괄호로 의도한 결합 순서를 명시**해야 한다. **보안 결함이 아니라 가독성·오독 방지·표준 준수** 항목이다. `a && b || c`, `a + b << c`, `x & y == z`처럼 &&/||, 비트/시프트/비교 혼용은 사람이 우선순위를 오독하기 쉬워 잠재적 논리 버그의 온상이 된다. 괄호는 컴파일 결과를 바꾸지 않으면서 의도를 드러낸다. Sparrow는 우선순위가 다른 이항 연산자가 괄호 없이 혼합된 수식을 검출한다. (Roslyn IDE0048과 동일 취지.)

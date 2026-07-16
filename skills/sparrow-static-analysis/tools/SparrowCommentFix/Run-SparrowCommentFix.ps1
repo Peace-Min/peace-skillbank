@@ -11,7 +11,7 @@
       - onedeclaration : 한 줄 여러 선언 분리
       - continuation   : 여러 줄 문장 continuation 들여쓰기 보정
       - linqalign      : LINQ query clause 정렬
-    Run-TrackA.ps1 / Run-SparrowSyntaxFix.ps1과 동일 UX: 솔루션/폴더 경로만 주면 동작(내부에서 exe 확보
+    Track A/B 원샷 UX: 솔루션/폴더 경로만 주면 동작(내부에서 exe 확보
     -> 규칙별 실행 -> 규칙별 커밋). -Commit/-DryRun 둘 다 없으면 커밋 여부를 물음. 단, SparrowCommentFix는
     디렉터리를 받지 않으므로(개별 .cs 경로 또는 --files-from CSV만) 러너가 PowerShell에서 .cs 재귀
     수집 + 생성/백업 파일 제외를 직접 수행한 뒤, 대상 전체경로를 임시 --files-from CSV로 툴에 넘긴다.
@@ -78,7 +78,7 @@ if (-not $Solution) {
 if ($Solution) { $Solution = $Solution.Trim().Trim('"').Trim("'").Trim() }
 if (-not $Solution) { throw "경로가 비었습니다. 솔루션(.sln) 또는 소스 폴더 경로가 필요합니다." }
 
-# 규칙 -> 커밋 라벨 (검수 가능한 단위로 규칙별 커밋; Run-TrackA / Run-SparrowSyntaxFix와 동일 방식)
+# 규칙 -> 커밋 라벨 (검수 가능한 단위로 규칙별 커밋; Track A/B 동일 방식)
 $labels = [ordered]@{
     flatten = '블록 주석 라인별 평탄화'
     trailing = '트레일링 주석 독립 줄 이동 및 보정'
@@ -321,7 +321,7 @@ try {
         Add-Content -LiteralPath $logPath -Value ("files-from(temp)=$tmpCsv")
     }
 
-    # 3) 규칙별 실행(+ -Commit이면 규칙별 커밋) — Run-TrackA / Run-SparrowSyntaxFix와 동일 패턴.
+    # 3) 규칙별 실행(+ -Commit이면 규칙별 커밋) — Track A/B 동일 패턴.
     #    native(dotnet/git) stderr가 EAP=Stop에서 throw되는 것을 막기 위해 이 구간은 Continue.
     $ErrorActionPreference = 'Continue'
     $failed = $false

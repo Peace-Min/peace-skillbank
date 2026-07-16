@@ -3,7 +3,7 @@
 - **건수**: (실측 시 변동)  |  **심각도**: 낮음  |  **트랙**: B
 - **Sparrow 설명**: 메소드나 프로퍼티 선언문들 사이에 한 줄 이상이 빈 줄이 있어야 합니다.
 
-> **대부분 Track A(dotnet format/SparrowSyntaxFix) 또는 Track B(SparrowCommentFix/dotnet format whitespace)가 자동 처리한다. 이 가이드는 도구가 못 고친 잔여를 LLM이 처리할 때 사용**한다.
+> **대부분 Track A(SparrowSyntaxFix/SparrowSyntaxFix) 또는 Track B(SparrowCommentFix/SparrowCommentFix layout)가 자동 처리한다. 이 가이드는 도구가 못 고친 잔여를 LLM이 처리할 때 사용**한다.
 
 ## 지켜야 할 규칙 (무엇을 왜 검출)
 메서드/프로퍼티 등 멤버 정의 사이에는 **빈 줄을 하나 이상** 넣어 시각적으로 구분해야 한다. **보안 결함이 아니라 스타일·가독성·표준(MSDN C# 코딩 규칙) 준수** 항목이다. 멤버가 빈 줄 없이 붙어 있으면 경계가 흐려져 판독성이 떨어진다. Sparrow는 앞 멤버의 닫는 `}` 다음 줄에 곧바로 다음 멤버 선언이 오는 경우를 검출한다.

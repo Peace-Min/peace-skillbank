@@ -1,5 +1,5 @@
 // SparrowSyntaxFix: deterministic Roslyn source rewriter for Sparrow (파수 정적분석) Track A code-rule
-// residuals that `dotnet format` does not fully clear on the legacy OSTES (.NET Framework 4.7.2) project.
+// residuals that `SparrowSyntaxFix` does not fully clear on the legacy OSTES (.NET Framework 4.7.2) project.
 //
 // RewriteEngine is the pure, IO-free core: parse source text with Roslyn syntax APIs, apply the enabled
 // CSharpSyntaxRewriter(s), and return the round-tripped text + per-rule edit counts. Roslyn guarantees

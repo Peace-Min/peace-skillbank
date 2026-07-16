@@ -3,7 +3,7 @@
 - **건수**: (실측 시 변동)  |  **심각도**: 낮음  |  **트랙**: B
 - **Sparrow 설명**: 주석 문장은 대문자로 시작해야 합니다.
 
-> **대부분 Track A(dotnet format/SparrowSyntaxFix) 또는 Track B(SparrowCommentFix/dotnet format whitespace)가 자동 처리한다. 이 가이드는 도구가 못 고친 잔여를 LLM이 처리할 때 사용**한다.
+> **대부분 Track A(SparrowSyntaxFix/SparrowSyntaxFix) 또는 Track B(SparrowCommentFix/SparrowCommentFix layout)가 자동 처리한다. 이 가이드는 도구가 못 고친 잔여를 LLM이 처리할 때 사용**한다.
 
 ## 지켜야 할 규칙 (무엇을 왜 검출)
 주석 문장은 **대문자로 시작**해야 한다. **보안 결함이 아니라 스타일·가독성·표준(MSDN C# 코딩 규칙) 준수** 항목이다. 첫 글자를 대문자로 통일하면 주석이 문장임이 드러나고 문서 스타일이 일관된다. Sparrow는 소문자로 시작하는 주석 문장을 검출한다.

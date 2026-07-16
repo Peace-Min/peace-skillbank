@@ -176,23 +176,6 @@ namespace SparrowRunner.Gui
             string logDir = ResolveTargetRoot(target);
             Directory.CreateDirectory(logDir);
 
-            if (RunTrackAFormatCheck.IsChecked == true)
-            {
-                var rules = CollectRules(
-                    (A1Var, "var"),
-                    (A1Parens, "parens"),
-                    (A1Initializer, "initializer"));
-                if (rules.Count > 0)
-                {
-                    jobs.Add(new RunnerJob(
-                        "Track A 1차 dotnet format",
-                        Path.Combine(_referencesDir, "Run-TrackA.ps1"),
-                        rules,
-                        logDir,
-                        includeGenerated: false));
-                }
-            }
-
             if (RunTrackASyntaxCheck.IsChecked == true)
             {
                 var rules = CollectRules(
@@ -325,23 +308,6 @@ namespace SparrowRunner.Gui
 
         private void InitializeRuleInfo()
         {
-            AddRuleInfo(RunTrackAFormatCheck, "Track A 1차 dotnet format",
-                "기존 Run-TrackA.ps1을 실행합니다. IDE/dotnet format 규칙 기반으로 var, 괄호, object initializer 일부를 처리합니다.",
-                "보완 체커: Track A 코드 규칙 일부. 최근 보완된 Roslyn 2차 규칙보다 범위가 거칠 수 있어 기본값은 꺼져 있습니다.",
-                "선택 시: 아래 1차 dotnet format 규칙 중 체크된 항목만 -Rules로 전달합니다.");
-            AddRuleInfo(A1Var, "1차 var",
-                "dotnet format 기반 var 선호 규칙입니다.",
-                "보완 체커: 명확한 타입/인스턴스 생성/루프 변수 var 권장 계열.",
-                "int count = 0;\r\n// ->\r\nvar count = 0;");
-            AddRuleInfo(A1Parens, "1차 parens",
-                "논리식의 의미를 명확히 하기 위해 괄호를 보강합니다.",
-                "보완 체커: 복합 논리식 괄호 명확화 계열.",
-                "if (a && b || c)\r\n// ->\r\nif ((a && b) || c)");
-            AddRuleInfo(A1Initializer, "1차 initializer",
-                "객체 생성 직후 이어지는 속성 대입을 object initializer로 합칩니다.",
-                "보완 체커: PRACTICE.OBJECT_INITIALIZATION.NOT_USED_INITIALIZER.",
-                "var item = new Foo();\r\nitem.Name = name;\r\n// ->\r\nvar item = new Foo { Name = name };");
-
             AddRuleInfo(RunTrackASyntaxCheck, "Track A 2차 Roslyn",
                 "Run-SparrowSyntaxFix.ps1을 실행합니다. 현재 Track A의 주력 자동수정이며 Roslyn 구문 트리 기준으로 C# 파일을 수정합니다.",
                 "보완 체커: var, object initializer, 배열 초기화, foreach 루프 변수, 괄호, 다중 선언 등 코드 규칙 계열.",
@@ -361,7 +327,7 @@ namespace SparrowRunner.Gui
             AddRuleInfo(ASParens, "parens",
                 "&&와 ||가 섞인 조건식의 피연산자에 괄호를 추가합니다.",
                 "보완 체커: 복합 논리식 괄호 명확화 계열.",
-                "if (isReady && hasValue || forced)\r\n// ->\r\nif ((isReady && hasValue) || forced)");
+                "if (isReady && hasValue || forced)\r\n// ->\r\nif (((isReady) && (hasValue)) || (forced))");
             AddRuleInfo(ASForeachCast, "foreachcast",
                 "비제네릭 컬렉션 foreach의 명시 타입을 Cast<T>()와 var 조합으로 바꿉니다.",
                 "보완 체커: PRACTICE.LOOP_VARIABLE.NOT_USED_IMPLICIT_TYPING. 검토필요 커밋 대상입니다.",

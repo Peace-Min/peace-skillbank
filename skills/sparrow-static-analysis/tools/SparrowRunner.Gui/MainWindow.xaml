@@ -35,7 +35,7 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
-            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="168"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="170"/>
             <RowDefinition Height="Auto"/>
@@ -71,7 +71,7 @@
             <TabItem Header="Track A - 코딩규칙">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel Margin="12">
-                        <CheckBox x:Name="RunTrackASyntaxCheck" Content="Track A 2차 Roslyn 자동수정 실행 (권장)"
+                        <CheckBox x:Name="RunTrackASyntaxCheck" Content="Track A Roslyn 자동수정 실행"
                                   IsChecked="True" FontWeight="SemiBold"/>
                         <GroupBox Header="기본 자동수정 규칙" Style="{StaticResource RuleGroup}">
                             <WrapPanel>
@@ -95,20 +95,6 @@
                                 <CheckBox x:Name="ASForHoist" Content="[검토필요] for 다중 선언자를 루프 밖으로 분리"/>
                             </WrapPanel>
                         </GroupBox>
-
-                        <Expander Header="Track A 1차 dotnet format 보조 실행 (기본 비활성)" IsExpanded="False" Margin="0,0,0,12">
-                            <StackPanel Margin="0,8,0,0">
-                                <CheckBox x:Name="RunTrackAFormatCheck" Content="Run-TrackA.ps1 실행"
-                                          IsChecked="False" FontWeight="SemiBold"/>
-                                <GroupBox Header="1차 dotnet format 규칙" Style="{StaticResource RuleGroup}">
-                                    <WrapPanel>
-                                        <CheckBox x:Name="A1Var" Content="명시 타입을 var로 변경" IsChecked="True"/>
-                                        <CheckBox x:Name="A1Parens" Content="논리식 괄호 명확화" IsChecked="True"/>
-                                        <CheckBox x:Name="A1Initializer" Content="object initializer 적용" IsChecked="True"/>
-                                    </WrapPanel>
-                                </GroupBox>
-                            </StackPanel>
-                        </Expander>
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>
@@ -159,16 +145,16 @@
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="42"/>
+                    <RowDefinition Height="72"/>
                 </Grid.RowDefinitions>
                 <TextBlock x:Name="RuleInfoTitle" FontWeight="SemiBold" FontSize="14"/>
                 <TextBlock x:Name="RuleInfoBody" Grid.Row="1" Margin="0,5,0,6"
-                           TextWrapping="Wrap" Foreground="#333333"/>
+                           TextWrapping="Wrap" TextTrimming="CharacterEllipsis"
+                           Foreground="#333333"/>
                 <TextBox x:Name="RuleInfoExample" Grid.Row="2"
                          IsReadOnly="True" IsUndoEnabled="False"
                          FontFamily="Consolas" FontSize="12"
-                         MinHeight="62" MaxHeight="96"
                          VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
                          TextWrapping="NoWrap" Background="#F7F7F7" BorderBrush="#D0D0D0"
                          Padding="6"/>

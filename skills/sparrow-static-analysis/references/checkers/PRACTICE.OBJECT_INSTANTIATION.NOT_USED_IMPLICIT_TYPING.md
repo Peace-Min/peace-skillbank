@@ -3,7 +3,7 @@
 - **건수**: (실측 시 변동)  |  **심각도**: 낮음  |  **트랙**: A
 - **Sparrow 설명**: 객체를 인스턴스화할 때, 간략한 형태인 암시적 타입을 사용해야 한다.
 
-> **대부분 Track A(dotnet format/SparrowSyntaxFix) 또는 Track B(SparrowCommentFix/dotnet format whitespace)가 자동 처리한다. 이 가이드는 도구가 못 고친 잔여를 LLM이 처리할 때 사용**한다.
+> **대부분 Track A(SparrowSyntaxFix/SparrowSyntaxFix) 또는 Track B(SparrowCommentFix/SparrowCommentFix layout)가 자동 처리한다. 이 가이드는 도구가 못 고친 잔여를 LLM이 처리할 때 사용**한다.
 
 ## 지켜야 할 규칙 (무엇을 왜 검출)
 `new T()`로 객체를 인스턴스화하는 지역 변수 선언은 좌변에 타입을 반복하지 말고 `var`(암시적 타입)로 간결하게 작성해야 한다. **보안 결함이 아니라 스타일·가독성·표준 준수** 항목이다. `TestClass tc = new TestClass();`처럼 좌우에 타입 이름이 두 번 나오는 형태는 중복이며, MSDN C# 코딩 규칙은 이런 경우 `var`를 권장한다. Sparrow는 우변이 `new 클래스이름(...)`인데 좌변이 명시 타입인 지역 변수 선언을 검출한다.

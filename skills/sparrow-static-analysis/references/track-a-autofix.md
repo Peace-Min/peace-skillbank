@@ -1,110 +1,47 @@
-﻿# Track A ??寃곗젙濡좎쟻 ?먮룞 ?뺣━ (LLM ?놁씠)
+# Track A 결정론적 자동수정
 
-## Track A 원샷 CLI 운영 원칙
+Track A는 Sparrow 코드 규칙 계열을 LLM 없이 자동수정하는 경로다. 현재 운영 기준은 **Roslyn 기반 `SparrowSyntaxFix` 단독 사용**이다.
 
-Track A 운영 문서는 사용자가 세부 `-Rules` 값을 외워 직접 호출하는 방식으로 안내하지 않는다. 일반 흐름은 `references/Run-TrackA.ps1`로 1차 dotnet format 계열을 실행하고, 잔여 Sparrow 코드 규칙은 `tools/SparrowSyntaxFix/Run-SparrowSyntaxFix.ps1`를 실행해 runner가 묻는 Y/N 질문으로 선택한다.
+## 운영 원칙
 
-- `Run-TrackA.ps1`: 솔루션/폴더 경로와 커밋 여부만 입력하는 원샷 흐름을 유지한다.
-- `Run-SparrowSyntaxFix.ps1`: 솔루션/폴더 경로 입력 후 `foreachcast`, `objectinitializer`, `nullvar`, `objectvar-narrowing`, `localconst`, `arrayvar-narrowing` 포함 여부를 Y/N으로 묻고, 마지막에 커밋 여부를 묻는다.
+- 사용자가 세부 `-Rules` 값을 외워 직접 호출하는 방식을 기본 운영으로 안내하지 않는다.
+- 일반 실행은 `tools/SparrowSyntaxFix/Run-SparrowSyntaxFix.ps1` 또는 통합 GUI `tools/Run-SparrowRunnerGui.cmd`를 사용한다.
+- GUI/CLI는 솔루션 또는 소스 폴더 경로, 선택 규칙, 커밋 여부만 받는다.
+- `-Rules` 직접 지정은 테스트, 자동화, 특정 규칙 재실행용 예외 경로다.
+- 검토필요 규칙은 커밋 메시지에 `! 검토필요`가 남도록 유지한다.
 
-> ## ⚠️ 중요: x64 프로젝트(OSTES 등)에서는 dotnet format(`Run-TrackA.ps1`)이 무력하다 — Roslyn 단독 사용
->
-> **실측(2026-07-15, OSTES 실행 로그)**: OSTES는 x64(AMD64) 빌드라, `dotnet format`이 솔루션을 로드할 때
-> **프로세서 아키텍처 불일치(MSIL vs AMD64) 에러 42건 + 프로젝트 로드 실패 39건**이 발생하고, 결과
-> **서식 지정 = var 0개 / 괄호 1개 / 이니셜라이저 0개 (714개 파일 중)** 로 사실상 아무것도 처리하지 못한다.
-> editorconfig 문제도, 사용자 실행 실수도 아니라 **dotnet format이 x64 참조(System.Data.SQLite 등)를 못 여는
-> 환경적 한계**다.
->
-> **따라서 OSTES(및 x64 대상)에서는 `Run-TrackA.ps1`(dotnet format)을 건너뛰고, var·괄호·이니셜라이저·배열·null·
-> foreach를 전부 `Run-SparrowSyntaxFix.ps1`(Roslyn) 단독으로 처리한다.** Roslyn은 MSBuild 프로젝트를 로드하지
-> 않고 소스 텍스트만 파싱하므로 아키텍처 문제가 없다(실제로 OSTES 소거는 전부 Roslyn 툴이 수행했다).
-> `Run-TrackA.ps1`은 AnyCPU/x86 SDK-style 프로젝트에서만 의미가 있다.
-- `-Rules`는 테스트, 자동화, 특정 규칙 재실행용 예외 경로다. 사용자 운영 안내의 기본값으로 쓰지 않는다.
-Sparrow 寃異?以?**?ㅽ????щ㎎ 怨꾩뿴(踰꾪궥1)** ? ?쏀븳 LLM?먭쾶 ?쒗궎吏 ?딅뒗?? Microsoft ?먯껜 ?댁껜??(Roslyn 遺꾩꽍湲?+ `.editorconfig`)??**?섎?蹂댁〈 肄붾뱶?쎌뒪**濡?寃곗젙濡좎쟻?쇰줈 泥섎━?쒕떎. 諛섏엯臾쇱?
-`bucket1-autofix.editorconfig`(?쒖닔 ?띿뒪?? **?섎굹肉?* ????`dotnet format`/VS)? ?먯뇙留앹뿉 ?대? ?덈떎.
+## 대상 체커
 
-> **2026-07 ?ш???*: ??臾몄꽌??Track A 1李?`dotnet format`/VS 肄붾뱶 ?뺣━) ?덉감?? 6869 ?щ텇??湲곗??쇰줈
-> ?붿떆?????怨꾩뿴 680嫄댁씠 ?⑥븘 ?덉뼱 Track A???꾨즺媛 ?꾨땲??**遺遺꾩셿猷?* ?곹깭?? ?ㅼ쓬 援ы쁽 ?뺤콉?
-> [`track-a-roslyn-policy.md`](track-a-roslyn-policy.md)瑜?湲곗??쇰줈 ?쒕떎.
-
-## ???(踰꾪궥1) ????5醫낅쭔
-| Sparrow 泥댁빱 | Roslyn 洹쒖튃 | ??|
+| Sparrow 체커 | Track A 규칙 | 대표 변경 |
 |---|---|---|
-| OBVIOUS_VARIABLE_TYPE / OBJECT_INSTANTIATION / LOOP_VARIABLE | IDE0007/0008 (`var`) | `int x=5;` ??`var x=5;` |
-| MISSING_PARENTHESIS_IN_EXPRESSION | IDE0048 | `a + b * c` ??`a + (b * c)` |
-| OBJECT_INITIALIZATION.NOT_USED_INITIALIZER | IDE0017 | `p.Name=..; p.Age=..;` ??`new P { Name=.., Age=.. }` |
+| `PRACTICE.OBJECT_INSTANTIATION.NOT_USED_IMPLICIT_TYPING` | `objectvar-safe` | `Foo x = new Foo();` -> `var x = new Foo();` |
+| `PRACTICE.OBVIOUS_VARIABLE_TYPE.NOT_USED_IMPLICIT_TYPING` | `obviousvar`, `nullvar`, `localconst` | `string s = "A";` -> `var s = "A";` |
+| `PRACTICE.LOOP_VARIABLE.NOT_USED_IMPLICIT_TYPING` | `forvar`, `foreachcast` | `foreach (XmlNode n in xs)` -> `foreach (var n in Enumerable.Cast<XmlNode>(xs))` |
+| `PRACTICE.OBJECT_INITIALIZATION.NOT_USED_INITIALIZER` | `objectinitializer` | 생성 직후 연속 대입을 object initializer로 통합 |
+| `PRACTICE.ARRAY_DECLARATION.COMPLICATED_SYNTAX` | `arrayvar-safe`, `arrayvar-narrowing` | `int[] a = new int[] { 1 };` -> `int[] a = { 1 };` 또는 `var a = new[] { 1 };` |
+| `MISSING_PARENTHESIS_IN_EXPRESSION` | `parens` | `a || b && c` -> `(a) || ((b) && (c))` |
+| 한 줄 다중 선언/구문 계열 | `fieldsplit`, `emptystmt`, `forhoist` | 다중 선언 분리, 빈 문장 제거, for 초기화절 hoist |
 
-**寃利앸맖(2026-07)**: net472 *?덇굅??non-SDK)* ?붾? ?꾨줈?앺듃?먯꽌 ??5醫??먮룞?섏젙 寃쎈줈 ?뺤씤.
-?ㅻ쭔 ?ㅻЪ 6869 ?щ텇?앹뿉??`OBJECT_INSTANTIATION`/`LOOP_VARIABLE`/`OBVIOUS_VARIABLE_TYPE` ?붿뿬媛 而ㅼ꽌,
-SparrowSyntaxFix 蹂닿컯???꾩슂?섎떎.
-**踰꾪궥1 諛?*: 二쇱꽍/?щ갚(~2,000, `dotnet format` 誘몄??????꾩닚??而ㅼ뒪?), 蹂댁븞쨌?덉쭏(~230 + OVERLY_CATCH
-139 ??LLM/?щ엺). ??臾몄꽌??踰꾪궥1 ?꾩슜.
-
-## ?ㅽ뻾 (沅뚯옣) ????踰덉쓽 CLI ?몄텧: `Run-TrackA.ps1`
-
-諛섏엯臾쇱? **?띿뒪??2媛?*肉?`Run-TrackA.ps1` + `bucket1-autofix.editorconfig`). ??`dotnet format`)? SDK
-?댁옣?대씪 諛섏엯 遺덊븘?? ????덊룷??**fix 釉뚮옖移?*?먯꽌:
+## 실행
 
 ```powershell
-# ?꾩껜(var,愿꾪샇,?대땲?쒕씪?댁?) + 洹쒖튃援곕퀎 ?먮룞 而ㅻ컠
-.\Run-TrackA.ps1 -Solution C:\Work\OSTES\OSTES.sln -Commit
-
-# 癒쇱? 臾댁뾿??諛붾붿?留?蹂닿린(蹂寃?????
-.\Run-TrackA.ps1 -Solution ...\OSTES.sln -DryRun
-
-# ?쇰? 洹쒖튃援곕쭔
-.\Run-TrackA.ps1 -Solution ...\OSTES.sln -Rules var,parens
+.\tools\SparrowSyntaxFix\Run-SparrowSyntaxFix.ps1
 ```
 
-> **`-Commit`/`-DryRun` ?????놁씠 ?ㅽ뻾?섎㈃** ?щ꼫媛 `洹쒖튃蹂꾨줈 而ㅻ컠?좉퉴?? (Y/N)` 臾쇱뼱遊낅땲???뚮옒洹?鍮쇰㉨???ㅼ닔
-> 諛⑹?). Y=洹쒖튃蹂?而ㅻ컠, N=?뚯씪留??섏젙. 鍮꾨??뷀삎(CI/?뚯씠???대㈃ ??臾쇱뼱蹂닿퀬 而ㅻ컠 ????
+또는 GUI:
 
-?щ꼫媛 ?섎뒗 ?? `.editorconfig` ?먮룞 諛곗튂(**湲곗〈 寃껋? `.pre-tracka-<?쒓컖>.bak`濡?諛깆뾽 ??理쒖떊 bucket1濡???뼱?** ??踰꾩쟾 瑗ъ엫/異⑸룎 諛⑹?. 湲곗〈 寃껋쓣 ?좎??섎젮硫?`-KeepEditorConfig`) ??洹쒖튃援곕퀎 `dotnet format style --diagnostics`
-??`-Commit`?대㈃ 洹쒖튃援곕쭏??`*.cs`留?而ㅻ컠(`.editorconfig`???뚰궧?뚯씪濡??④?) ??`dotnet format`???덇굅???꾨줈?앺듃瑜?紐??대㈃ 寃쎄퀬 ??VS 寃쎈줈 ?덈궡. **寃利앸맖: net472 ?덇굅???붾??먯꽌 5醫??먮룞?섏젙 + 洹쒖튃蹂?而ㅻ컠 3媛?**
-
-**肄섏넄=?붿빟 / 濡쒓렇=?꾩껜 吏꾨떒.** 洹쒖튃留덈떎 肄섏넄??`?붿빟`(蹂寃??뚯씪 ??쨌`濡쒕뱶寃쎄퀬`쨌`而ㅻ컠`(?먮뒗 "-Commit 誘몄?????而ㅻ컠 ????)??李띻퀬, **?꾩껜 吏꾨떒? ?ㅽ뻾 吏?먯쓽 `Run-TrackA.<?쒓컖>.log`** ?????`-LogDir`濡??꾩튂 蹂寃?. 而ㅻ컠?????섍굅???댁긽?섎㈃ 洹?濡쒓렇瑜??뺤씤/怨듭쑀. (湲곗〈 `.editorconfig`媛 ?대? ?덉쑝硫??곕━ 洹쒖튃????癒뱀뼱 蹂寃?0???????덉쑝?? 洹?寃쎄퀬媛 ?⑤㈃ 洹??뚯씪 ?댁슜遺???뺤씤.)
-
-> ???ㅽ뻾 ?꾩뿉??**?꾨옒 3) 寃利?鍮뚮뱶 + ?ㅽ뙣濡쒖슦 ?щ텇??? ?꾩닔**. ?щ꼫???섏젙留??섍퀬 "?ㅽ뙣濡쒖슦媛 吏?좊떎"瑜?> 蹂댁옣?섏? ?딆쓬(Roslyn 寃쎄퀎 != Sparrow 寃쎄퀎).
-
-**?뚰겕?ㅽ럹?댁뒪 濡쒕뱶 寃쎄퀬媛 ????*(?덇굅?쒖뿉???뷀븿): 移섎챸?곸씠吏??딆?留?*遺遺?濡쒕뱶=?섏젙 ?꾨씫* ?좏샇?????덉쑝??`-Verbosity diagnostic`?쇰줈 ?뺤껜瑜??뺤씤. "could not resolve / project could not be loaded"硫?遺遺?濡쒕뱶 ??**VS 寃쎈줈濡?*. 理쒖쥌 ?먮떒? exit code媛 ?꾨땲??**?ㅽ뙣濡쒖슦 ?щ텇????嫄댁닔**.
-
-```powershell
-.\Run-TrackA.ps1 -Solution ...\OSTES.sln -Rules var -DryRun -Verbosity diagnostic   # ?⑥? 濡쒕뱶 寃쎄퀬 ?몄텧
+```cmd
+tools\Run-SparrowRunnerGui.cmd
 ```
 
-?섎룞?쇰줈 ?섎젮硫??щ꼫 ?놁씠) ?꾨옒 ?덉감瑜?洹몃?濡?
+일반 사용자는 위처럼 실행한 뒤 화면/프롬프트에서 솔루션 또는 폴더 경로와 커밋 여부를 선택한다.
 
-## ?덉감 (?섎룞)
+## 검증
 
-### 0) ?ㅼ젙 諛곗튂
-`bucket1-autofix.editorconfig` 瑜??뺣━???꾨줈?앺듃/?붾（??猷⑦듃??**`.editorconfig`** ?쇰뒗 ?대쫫?쇰줈 蹂듭궗.
+자동수정 후 반드시 다음을 확인한다.
 
-### 1) ?ㅽ뻾 ???꾨줈?앺듃 ?뺤떇???곕씪
-- **?덇굅??援ъ떇 .csproj) = 湲곕낯 耳?댁뒪 ??Visual Studio** (媛???뺤떎):
-  - ?붾（???닿린 ??洹쒖튃蹂??꾧뎄(?뮕) ??**"?붾（?섏뿉??紐⑤몢 ?섏젙(Fix All in Solution)"**, ?먮뒗
-  - **遺꾩꽍 ??肄붾뱶 ?뺣━(Code Cleanup)** ?꾨줈?뚯씪???대떦 fixer留??ｊ퀬 ?ㅽ뻾.
-  - VS???덇굅???꾨줈?앺듃瑜??ㅼ씠?곕툕 濡쒕뱶?섎?濡???긽 ?숈옉.
-- **???CLI** (SDK媛 ?꾨줈?앺듃瑜?濡쒕뱶?섎㈃ ?숈옉 ??寃利??섍꼍?먯꽑 ?덇굅?쒕룄 濡쒕뱶?? ??SDK 踰꾩쟾쨌VS ?ㅼ튂 ?섏〈):
-  ```powershell
-  dotnet format style <proj-or-sln> --severity info --verbosity diagnostic
-  ```
-  濡쒕뱶 ?ㅽ뙣?섎㈃ ??VS 寃쎈줈濡?
+1. 대상 솔루션 빌드 통과.
+2. Sparrow 재분석에서 대상 체커 건수 감소.
+3. `! 검토필요` 커밋은 사람이 diff를 확인.
 
-### 2) 而ㅻ컠 ??**洹쒖튃 ?섎굹??*
-?꾩껜瑜???踰덉뿉 怨좎튂吏 留?寃? **洹쒖튃 1媛?Fix-All ??而ㅻ컠 ???ㅼ쓬 洹쒖튃**. 寃?섏옄媛 "var ?쇨큵 N嫄?
-??而ㅻ컠??*?⑦꽩*?쇰줈 寃??媛??(?섏쿇 ?뚯씪 ??而ㅻ컠? 寃??遺덇?).
-
-### 3) 寃利???**Sparrow ?щ텇??(?꾩닔)**
-`dotnet format`/VS媛 怨좎낀??!= Sparrow媛 洹?寃異쒖쓣 吏?좊떎. **Roslyn 洹쒖튃 寃쎄퀎 ??Sparrow 寃쎄퀎**?????덉쑝誘濡?
-- ?먮룞?섏젙 ??**?대떦 ?뚯씪/紐⑤뱢 Sparrow ?щ텇??* ??洹?泥댁빱 嫄댁닔媛 ?ㅼ젣濡?以꾩뿀?붿? ?뺤씤.
-- ?붿〈遺꾩씠 ?덉쑝硫? `var_elsewhere = false` 濡?醫곹엳嫄곕굹(怨쇱쟻???먯씤), ?⑥? 嫄??섎룞/媛쒕퀎 泥섎━.
-- 鍮뚮뱶 ?듦낵???④퍡 ?뺤씤(?먮룞?섏젙??而댄뙆?쇱쓣 源⑥? ?딆븯?붿?).
-
-## ?뺤쭅??寃쎄퀎
-- **churn ??*: 洹쒖튃蹂?diff媛 ?섎갚~?섏쿇 ?뚯씪 ??洹쒖튃蹂?而ㅻ컠 ?꾩닔(짠2). ?좊ː?깆떆???ъ떆??遺?댁쓣 洹쒖튃 ?⑥쐞濡?愿由?
-- **`var_elsewhere = true`(湲곕낯, broad)**: Sparrow媛 ???≪? 鍮?紐낅갚 ??낅룄 var?뷀븷 ???덉쓬. ??寃異쒕맂
-  寃껊쭔 ?먰븯硫?`false`. ?몃젅?대뱶?ㅽ봽: false硫??쇰? LOOP_VARIABLE(鍮꾨챸諛? ?붿〈 媛??
-- **1:1 蹂댁옣 ?놁쓬**: ??1李??덉감??紐⑹쟻? *"????먮룞 ?뚭굅"*?댁? 100% ?뚭굅媛 ?꾨땲?? 6869 湲곗??쇰줈
-  ?붿떆?????680嫄댁씠 ?⑥븯怨? 洹몄쨷 ?곷떦?섎뒗 CLI 蹂닿컯 ??곸쑝濡??뺤젙?덈떎. ?붿〈遺꾩쓣 怨㏃옣 Track C濡??섍린吏 留먭퀬
-  癒쇱? [`track-a-roslyn-policy.md`](track-a-roslyn-policy.md)??`objectvar-safe`/`foreachcast`/`obviousvar`/
-  `localconst`/`nullvar` ?뺤콉???곸슜?쒕떎.
+Roslyn 구문 경계와 Sparrow 검출 경계가 완전히 같지는 않다. 자동수정이 끝났다는 사실만으로 Sparrow 검출 소멸을 보장하지 않으므로 재분석 확인이 필수다.

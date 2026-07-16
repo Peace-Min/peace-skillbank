@@ -3,7 +3,7 @@
 - **건수**: (실측 시 변동)  |  **심각도**: 낮음  |  **트랙**: B
 - **Sparrow 설명**: 한 줄에 하나의 선언문만 있어야 합니다.
 
-> **대부분 Track A(dotnet format/SparrowSyntaxFix) 또는 Track B(SparrowCommentFix/dotnet format whitespace)가 자동 처리한다. 이 가이드는 도구가 못 고친 잔여를 LLM이 처리할 때 사용**한다.
+> **대부분 Track A(SparrowSyntaxFix/SparrowSyntaxFix) 또는 Track B(SparrowCommentFix/SparrowCommentFix layout)가 자동 처리한다. 이 가이드는 도구가 못 고친 잔여를 LLM이 처리할 때 사용**한다.
 
 ## 지켜야 할 규칙 (무엇을 왜 검출)
 한 줄에는 **선언을 하나만** 작성해야 한다. **보안 결함이 아니라 스타일·가독성·표준 준수** 항목이다. `int a, b, c;` 또는 `int x = 0; int y = 1;`처럼 한 줄에 여러 변수를 몰아 선언하면 각 변수의 초기값·타입·용도 파악이 어렵고 줄 단위 diff/디버깅이 나빠진다. Sparrow는 한 줄에 둘 이상의 선언이 있는 경우를 검출한다.

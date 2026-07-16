@@ -1,6 +1,6 @@
 # OSTES Sparrow 재분석 결과 분석 — 6827(원본) → 6869(3종 CLI 적용 후)
 
-**측정일**: 2026-07-14 · **입력**: `issues_OSTES_6827.xls`(원본) vs `issues_OSTES_6869.xls`(Run-TrackA +
+**측정일**: 2026-07-14 · **입력**: `issues_OSTES_6827.xls`(원본) vs `issues_OSTES_6869.xls`(Run-SparrowSyntaxFix +
 Run-SparrowSyntaxFix + SparrowCommentFix 적용 후) · **대조 도구**: SparrowXlsExport / 로컬 NPOI 프로브.
 
 ## 총계
@@ -25,18 +25,18 @@ Run-SparrowSyntaxFix + SparrowCommentFix 적용 후) · **대조 도구**: Sparr
 
 ### 1. Track A(var/괄호) = 대성공
 - **괄호(MISSING_PARENTHESIS) 741 → 0, 100% 소거.** SparrowSyntaxFix `parens`가 완전히 동작.
-- var 계열(OBVIOUS/LOOP/OBJECT_INSTANTIATION) 합계 ~3300 소거. nullcast + dotnet format 유효.
+- var 계열(OBVIOUS/LOOP/OBJECT_INSTANTIATION) 합계 ~3300 소거. nullcast + SparrowSyntaxFix 유효.
 
 ### 2. Track A 잔존(OBJECT_INSTANTIATION 515)의 정체 — 2종
 소스 샘플(6869)로 확인:
 - **(a) 정당한 판단 케이스(변환하면 안 됨, 올바르게 스킵)**:
   - `IDictionary<string,object> expando = new ExpandoObject();` — 선언타입≠생성타입 → var면 타입 변함.
   - `List<(string physical,string output)> x = new List<(string,string)>();` — 튜플 요소명 손실 위험.
-- **(b) 깨끗한 케이스인데 dotnet format이 놓침(변환됐어야 함)**:
+- **(b) 깨끗한 케이스인데 SparrowSyntaxFix이 놓침(변환됐어야 함)**:
   - `CPlayerObjectInfo parentData = new CPlayerObjectInfo();`
   - `ModelTreeData rootTree = new ModelTreeData(parentData, PlatformType.TARGET);`
-  - 모두 `MainTabView_ScenarioMngViewModel_.cs` 등 특정 파일 — **dotnet format이 레거시 프로젝트를 부분 로드해 이 파일들을 처리 못 함**(반복 확인된 dotnet format의 한계).
-- → **처방: var 변환을 dotnet format에서 SparrowSyntaxFix(Roslyn)로 이관**하면 (b)를 잡고 (a)는 규칙으로 스킵.
+  - 모두 `MainTabView_ScenarioMngViewModel_.cs` 등 특정 파일 — **SparrowSyntaxFix이 레거시 프로젝트를 부분 로드해 이 파일들을 처리 못 함**(반복 확인된 SparrowSyntaxFix의 한계).
+- → **처방: var 변환을 SparrowSyntaxFix에서 SparrowSyntaxFix(Roslyn)로 이관**하면 (b)를 잡고 (a)는 규칙으로 스킵.
   선언타입==생성타입일 때만 var(=`new` 타입과 동일), 인터페이스/기반타입/튜플명 상이는 스킵.
 
 ### 3. Track B(주석) = 동일 경로 기준 소거 0 (측정 위생 주의)
@@ -58,7 +58,7 @@ Run-SparrowSyntaxFix + SparrowCommentFix 적용 후) · **대조 도구**: Sparr
 
 1. **[높음] var 변환을 SparrowSyntaxFix Roslyn 규칙으로 이관**(`obviousvar`/`objinit`/`loopvar`).
    Rule 원문(`sparrow-official-rules/PRACTICE.*.md`)의 GoodCase 준수. 판단 케이스(선언타입≠생성타입/튜플명/인터페이스) 스킵.
-   → dotnet format 의존 제거, OBJECT_INSTANTIATION 잔존 515의 (b) 소거.
+   → SparrowSyntaxFix 의존 제거, OBJECT_INSTANTIATION 잔존 515의 (b) 소거.
 2. **[높음] SparrowCommentFix가 `/** */` 블록주석·Doxygen `@brief` 처리하도록 확장** + 생성/반입파일
    (`AssemblyInfo.cs`, `*.Designer.cs`, `*.xaml.cs` 중 생성분) 스캔 제외 여부를 운영자와 확정.
    실물 검출이 블록주석 위주임을 반영(현재 `//` 전용은 미스매치).
@@ -71,5 +71,5 @@ Run-SparrowSyntaxFix + SparrowCommentFix 적용 후) · **대조 도구**: Sparr
 ## 참고
 - Sparrow 공식 Rule 원문: [`sparrow-official-rules/`](sparrow-official-rules/)
 - 현재 도구: `tools/SparrowSyntaxFix`(nullcast+parens, Run-SparrowSyntaxFix.ps1), `tools/SparrowCommentFix`(space+period),
-  `references/Run-TrackA.ps1`(dotnet format).
+  `references/Run-SparrowSyntaxFix.ps1`(SparrowSyntaxFix).
 - 측정 재현: SparrowXlsExport 또는 로컬 프로브로 두 xls 체커별 tally(파일 매칭은 **반드시 전체 경로**로).

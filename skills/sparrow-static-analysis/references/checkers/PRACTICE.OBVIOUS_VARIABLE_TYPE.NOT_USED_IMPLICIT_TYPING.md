@@ -3,7 +3,7 @@
 - **건수**: (실측 시 변동)  |  **심각도**: 낮음  |  **트랙**: A
 - **Sparrow 설명**: 할당문을 통해 명확한 타입 유추가 가능하거나 타입이 중요하지 않을 때, 암시적 타입을 사용해야 합니다.
 
-> **대부분 Track A(dotnet format/SparrowSyntaxFix) 또는 Track B(SparrowCommentFix/dotnet format whitespace)가 자동 처리한다. 이 가이드는 도구가 못 고친 잔여를 LLM이 처리할 때 사용**한다.
+> **대부분 Track A(SparrowSyntaxFix/SparrowSyntaxFix) 또는 Track B(SparrowCommentFix/SparrowCommentFix layout)가 자동 처리한다. 이 가이드는 도구가 못 고친 잔여를 LLM이 처리할 때 사용**한다.
 
 ## 지켜야 할 규칙 (무엇을 왜 검출)
 할당문 오른쪽에서 변수 형식이 명확하거나(리터럴·형변환·캐스트 등) 정확한 형식이 중요하지 않은 지역 변수는 명시 타입 대신 `var`(암시적 타입)로 선언해야 한다. 이것은 **보안 결함이 아니라 스타일·가독성·표준(MSDN C# 코딩 규칙) 준수** 항목이다. 명시 타입을 중복 표기하면 좌우가 같은 타입을 반복하여 시각적 잡음이 늘고, 팀 코드 스타일과 어긋난다. Sparrow는 `string s = "..."`, `int n = 27`, `Int32 v = Convert.ToInt32(...)`처럼 할당 우변에서 타입이 자명한 명시 타입 지역 변수 선언을 검출한다.

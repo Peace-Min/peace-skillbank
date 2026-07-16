@@ -1,10 +1,10 @@
-﻿# Sparrow ?뺤쟻遺꾩꽍 泥섎━ ?뚯씠?꾨씪????HANDOFF (?몄뀡 ?멸퀎 留덉뒪??
+# Sparrow ?뺤쟻遺꾩꽍 泥섎━ ?뚯씠?꾨씪????HANDOFF (?몄뀡 ?멸퀎 留덉뒪??
 
 ## 0.1. 필수 운영 원칙: 원샷 CLI 우선
 
 추후 `sparrow-static-analysis` 작업은 사용자가 `-Rules foreachcast`처럼 세부 규칙 인자를 외워서 직접 호출하는 방식으로 설계하지 않는다. 일반 운영 UX는 항상 PowerShell runner를 실행한 뒤, runner가 경로와 선택 규칙 포함 여부를 Y/N으로 물어보는 원샷 CLI 흐름이다.
 
-- Track A 1차는 `references/Run-TrackA.ps1` 실행 후 솔루션/폴더 경로와 커밋 여부만 입력하는 흐름을 유지한다.
+- Track A 1차는 `references/Run-SparrowSyntaxFix.ps1` 실행 후 솔루션/폴더 경로와 커밋 여부만 입력하는 흐름을 유지한다.
 - Track A 2차는 `tools/SparrowSyntaxFix/Run-SparrowSyntaxFix.ps1` 실행 후 솔루션/폴더 경로, `foreachcast`/`objectinitializer`/`nullvar`/`objectvar-narrowing`/`localconst`/`arrayvar-narrowing` 포함 여부 Y/N, 커밋 여부 Y/N 순서로 진행한다.
 - Track B는 `tools/SparrowCommentFix/Run-SparrowCommentFix.ps1` 실행 후 솔루션/폴더 경로, `flatten` 포함 여부 Y/N, layout 계열 포함 여부 Y/N, 커밋 여부 Y/N 순서로 진행한다.
 - `-Rules`는 테스트, 자동화, 특정 규칙 재실행을 위한 예외 경로다. 사용자 안내와 운영 문서는 원샷 CLI 기준으로 작성한다.
@@ -26,8 +26,8 @@
 ## 2. 3-?몃옓 遺꾪븷 (遺??7,170 ??LLM? ~370)
 | ?몃옓 | ???泥댁빱) | 諛⑸쾿 | ?곹깭 |
 |---|---|---|---|
-| **A ?먮룞** | var쨌愿꾪샇쨌?대땲?쒕씪?댁? (~4,100) | **dotnet format + SparrowSyntaxFix(Roslyn)** | ?윩 **遺遺꾩셿猷? 愿꾪샇/nullcast???숈옉. 6869 ?щ텇??湲곗? ?붿떆?????680嫄??붿뿬 ??`references/track-a-roslyn-policy.md` ?ㅺ퀎?濡?CLI 蹂닿컯 ?꾩슂** |
-| **B 寃곗젙濡??먯옉)** | 二쇱꽍쨌?щ갚 (~2,700) | **SparrowCommentFix**(?먯옉 Roslyn, 二쇱꽍 trivia留? + `dotnet format whitespace` | ?윩 **SparrowCommentFix: space쨌period ?곸슜(?ㅻЪ寃利?. capitalize/blankline? ?ㅻЪ ?議?寃곌낵 遺?곹빀?쇰줈 ?꾧뎄?먯꽌 ?쒓굅(capitalize=?쒓?/湲고샇 寃곗젙濡좊텋媛, blankline=諛섎??源?, asterisk 蹂대쪟. ?щ갚? 誘몄갑??* |
+| **A ?먮룞** | var쨌愿꾪샇쨌?대땲?쒕씪?댁? (~4,100) | **SparrowSyntaxFix + SparrowSyntaxFix(Roslyn)** | ?윩 **遺遺꾩셿猷? 愿꾪샇/nullcast???숈옉. 6869 ?щ텇??湲곗? ?붿떆?????680嫄??붿뿬 ??`references/track-a-roslyn-policy.md` ?ㅺ퀎?濡?CLI 蹂닿컯 ?꾩슂** |
+| **B 寃곗젙濡??먯옉)** | 二쇱꽍쨌?щ갚 (~2,700) | **SparrowCommentFix**(?먯옉 Roslyn, 二쇱꽍 trivia留? + `SparrowCommentFix layout` | ?윩 **SparrowCommentFix: space쨌period ?곸슜(?ㅻЪ寃利?. capitalize/blankline? ?ㅻЪ ?議?寃곌낵 遺?곹빀?쇰줈 ?꾧뎄?먯꽌 ?쒓굅(capitalize=?쒓?/湲고샇 寃곗젙濡좊텋媛, blankline=諛섎??源?, asterisk 蹂대쪟. ?щ갚? 誘몄갑??* |
 | **C ?먮떒** | 蹂댁븞쨌?덉쭏 (~370: 留ㅼ슦?꾪뿕/?믪쓬/?꾪뿕 + OVERLY_BROAD_CATCH) | **LLM/?꾨줎?곗뼱 triage**, 泥댁빱蹂?媛?대뱶 | 燧?**誘몄갑??釉뚮━??짠6)** |
 ?꾩껜 28泥댁빱???몃옓 諛곗젙쨌嫄댁닔쨌?ш컖??= `references/checkers/_BACKLOG.md`.
 
@@ -35,7 +35,7 @@
 - **SparrowXlsExport** (xls?믫빆紐쯯d, NPOI, Excel/COM 遺덉궗??: `tools/SparrowXlsExport/`. 諛섏엯 = `dotnet-gcdump-offline` 踰덈뱾
   (`Install-SparrowXls.ps1`??C:\tools\SparrowXlsExport`, `Create-SparrowItems.ps1`). 異쒕젰: `items/{ID}_{泥댁빱??_{?뚯씪}_{?쇱씤}.md`
   + `index.csv`(BOM) + `checkers.md`(泥댁빱 ?뚰겕由ъ뒪??. **26泥댄겕 fixture**(validate `-IncludeSparrowE2E`). ?ㅻЪ 7,170??寃利?
-- **Track A 1李?*: `references/{Run-TrackA.ps1, bucket1-autofix.editorconfig, track-a-autofix.md}`. dotnet format?쇰줈 IDE0007/8(var)쨌
+- **Track A 1李?*: `references/{Run-SparrowSyntaxFix.ps1, SparrowSyntaxFix rules, track-a-autofix.md}`. SparrowSyntaxFix?쇰줈 IDE0007/8(var)쨌
   IDE0048(愿꾪샇)쨌IDE0017(?대땲?쒕씪?댁?) 洹쒖튃蹂??곸슜+而ㅻ컠. 肄섏넄=?붿빟/濡쒓렇=?꾩껜吏꾨떒(?ㅽ뻾吏??. net472 ?덇굅???붾? ?ㅼ쬆.
 - **Track A 2李?SparrowSyntaxFix)**: `tools/SparrowSyntaxFix/` ?꾩옱 援ы쁽? `nullcast` + `parens`. 6869 ?щ텇?앹뿉??  ?붿떆?????680嫄?`OBJECT_INSTANTIATION` 515, `LOOP_VARIABLE` 117, `OBVIOUS_VARIABLE_TYPE` 48)???⑥븘,
   `references/track-a-roslyn-policy.md` 湲곗??쇰줈 `objectvar-safe`/`foreachcast`/`obviousvar`/寃?좏븘??洹쒖튃??異붽??댁빞 ?쒕떎.
@@ -53,7 +53,7 @@
 - **Excel/COM 湲덉?** ??xls??NPOI濡?吏곸젒 ?뚯떛(SparrowXlsExport). xls?뭯lsx 蹂?섍린???쒖넀??媛숈? ?뚯떛+蹂吏덉???異붽?)??????
 - **?덇굅???ㅽ뻾 ?붾졊**: (1) `.csproj` ?꾨땲??**`.sln`?????*?쇰줈(??洹몃윭硫?李몄“ ?꾨줈?앺듃 ?꾨? skip). (2) **癒쇱? ?붾（??鍮뚮뱶**
   (李몄“ DLL ?앹꽦 ??"硫뷀??곗씠??李몄“ ?놁쓬" 諛섏そ濡쒕뱶 ?댁냼). (3) ???섎㈃ **VS "肄붾뱶 ?뺣━ / Fix All in Solution"**(媛숈? Roslyn ?쎌뒪).
-- **dotnet format留뚯쑝濡쒕뒗 Track A媛 ?앸굹吏 ?딆쓬** ???덇굅???꾨줈?앺듃 遺遺?濡쒕뱶? Sparrow/Roslyn 洹쒖튃 寃쎄퀎 李⑥씠 ?뚮Ц??var 怨꾩뿴 ?붿뿬媛 ?щ떎.
+- **SparrowSyntaxFix留뚯쑝濡쒕뒗 Track A媛 ?앸굹吏 ?딆쓬** ???덇굅???꾨줈?앺듃 遺遺?濡쒕뱶? Sparrow/Roslyn 洹쒖튃 寃쎄퀎 李⑥씠 ?뚮Ц??var 怨꾩뿴 ?붿뿬媛 ?щ떎.
   Track A???ㅼ쓬 ?곗꽑?쒖쐞???ㅼ틪 ?쒖쇅媛 ?꾨땲??**SparrowSyntaxFix??Roslyn 洹쒖튃 蹂닿컯**?대떎.
 - **Track A Roslyn 蹂닿컯 ?뺤콉**: `references/track-a-roslyn-policy.md`媛 理쒖떊 ?⑹쓽?? 湲곕낯 ?덉쟾 洹쒖튃(`objectvar-safe`,
   `foreachcast`, `obviousvar`)怨?寃?좏븘??洹쒖튃(`objectvar-narrowing`, `localconst`, `nullvar`)??洹쒖튃蹂?而ㅻ컠?쇰줈 遺꾨━?쒕떎.
@@ -61,10 +61,10 @@
 - **PS 5.1**: ?쒓? .ps1? **UTF-8 BOM ?꾩닔**. native(git/dotnet) stderr + `2>&1` + `EAP=Stop` = throw(autocrlf 寃쎄퀬) ??猷⑦봽??`EAP=Continue`.
 
 ## 5. ?⑥? ?묒뾽 釉뚮━????Track B (SparrowCommentFix, ?먯옉 Roslyn)
-**紐⑹쟻**: dotnet format??**二쇱꽍 *?댁슜*????嫄대뱶由?* ??二쇱꽍 洹쒖튃??寃곗젙濡좎쑝濡??뚭굅. ???泥댁빱(_BACKLOG??B):
+**紐⑹쟻**: SparrowSyntaxFix??**二쇱꽍 *?댁슜*????嫄대뱶由?* ??二쇱꽍 洹쒖튃??寃곗젙濡좎쑝濡??뚭굅. ???泥댁빱(_BACKLOG??B):
 `MISSING_SPACE_AFTER_DELIMITER`(`//x`??// x`, **?꾨즺=space**)쨌`FORMATTING.COMMENT.MISSING_PERIOD`(留덉묠?? **?꾨즺=period**)쨌
 `LOWERCASE_FIRST_LETTER`(泥リ????臾몄옄, **?쒓굅=capitalize**)쨌`MISSING_BLANK_LINE_BEFORE_COMMENT`(**?쒓굅=blankline**)쨌
-`BLOCK_OF_ASTERISK`(**蹂대쪟=asterisk**). ?щ갚(`CONTINUATION.BAD_INDENTATION` ??? `dotnet format whitespace`濡?
+`BLOCK_OF_ASTERISK`(**蹂대쪟=asterisk**). ?щ갚(`CONTINUATION.BAD_INDENTATION` ??? `SparrowCommentFix layout`濡?
 > **援ы쁽 ?곹깭**: ?ㅻЪ ?議???**?쒖꽦 2醫?space/period)** ?뺤젙쨌fixture 寃뚯씠???듦낵. capitalize/blankline? ?ㅻЪ 遺?곹빀?쇰줈
 > **?꾧뎄?먯꽌 ?쒓굅**(capitalize=?쒓?/湲고샇 ?臾몄옄??寃곗젙濡?遺덇?+二쇱꽍泥섎━ 肄붾뱶 ?ㅻ??? blankline=?ㅻЪ? ?몃젅?쇰쭅 二쇱꽍?대씪
 > 諛섎? ?源?, asterisk??**蹂대쪟**(Doxygen 釉붾줉=?ㅽ????먮떒). 3醫?紐⑤몢 `--rules` 吏????exit 2. ?대┛ 猷??덉??ㅽ듃由щ씪
@@ -76,7 +76,7 @@
 - ?덉쟾: 二쇱꽍? ?고????덉쟾 ?곹뼢 0 ???먮룞 OK. 泥リ????臾몄옄쨌留덉묠?쒕뒗 "湲??臾몄옣遺???놁쓣 ?뚮쭔" 媛??
 - **fixture 寃뚯씠??*(SparrowXlsExport ?⑦꽩): ?⑹꽦 .cs濡?媛?洹쒖튃 before/after + 硫깅벑??+ 臾몄옄????`//` 臾댁넀??寃利? validate??`-IncludeCommentE2E` opt-in.
 - 諛섏엯: `dotnet-gcdump-offline` 踰덈뱾??exe ?숇큺(SparrowXlsExport? ?숈씪 ?⑦꽩).
-- **?먯퐳 ?щ꼫**: `tools/SparrowCommentFix/Run-SparrowCommentFix.ps1`(Run-TrackA/Run-SparrowSyntaxFix? ?숈씪 CLI: -Solution留?二쇰㈃ ?숈옉, -Commit/-DryRun ?놁쑝硫?而ㅻ컠 ?щ? Y/N ?꾨＼?꾪듃, 洹쒖튃蹂?而ㅻ컠). ?댁씠 ?붾젆?곕━ 誘몄??먯씠???щ꼫媛 .cs ?ш?+?앹꽦/諛깆뾽 ?쒖쇅 ???꾩떆 --files-from CSV濡??꾨떖.
+- **?먯퐳 ?щ꼫**: `tools/SparrowCommentFix/Run-SparrowCommentFix.ps1`(Run-SparrowSyntaxFix/Run-SparrowSyntaxFix? ?숈씪 CLI: -Solution留?二쇰㈃ ?숈옉, -Commit/-DryRun ?놁쑝硫?而ㅻ컠 ?щ? Y/N ?꾨＼?꾪듃, 洹쒖튃蹂?而ㅻ컠). ?댁씠 ?붾젆?곕━ 誘몄??먯씠???щ꼫媛 .cs ?ш?+?앹꽦/諛깆뾽 ?쒖쇅 ???꾩떆 --files-from CSV濡??꾨떖.
   ?대뜑/.sln/.csproj瑜?二쇰㈃ ?щ꼫媛 `.cs` ?ш? ?섏쭛 + **?앹꽦/諛깆뾽 ?쒖쇅**(`\obj\`쨌`\bin\`쨌`*.g.cs`쨌`*.Designer.cs`쨌
   `AssemblyInfo.cs`쨌`蹂듭궗蹂? ?? ???꾩떆 `--files-from` CSV濡??댁뿉 ?섍꺼 space+period 1???ㅽ뻾(`-DryRun`/`-FilesFrom`/`-ExePath`).
 - **而ㅻ컠? peace-skillbank??* (OSTES ?꾨떂). SparrowXlsExport 而ㅻ컠 硫붿떆吏 李멸퀬.
@@ -94,7 +94,7 @@
 ## 7. ?뚯씪 ?꾩튂
 - ?ㅽ궗 猷⑦듃: `skills/sparrow-static-analysis/`  (SKILL.md ?놁쓬 = ?먮룞 ?몃━嫄??ㅽ궗 ?꾨떂, 李몄“ ?먯궛)
 - ?꾧뎄: `tools/SparrowXlsExport/`(?꾨즺), `tools/SparrowCommentFix/`(?좎꽕 ?덉젙)
-- Track A: `references/{Run-TrackA.ps1, bucket1-autofix.editorconfig, track-a-autofix.md, track-a-roslyn-policy.md}`
+- Track A: `references/{Run-SparrowSyntaxFix.ps1, SparrowSyntaxFix rules, track-a-autofix.md, track-a-roslyn-policy.md}`
 - Track C: `references/checkers/{_BACKLOG.md, _TEMPLATE.md, <泥댁빱??.md(?앹꽦 ?덉젙)}`
 - 諛섏엯 踰덈뱾: 蹂꾨룄 ?덊룷 `github.com/Peace-Min/dotnet-gcdump-offline`
 - 硫붾え由? `[[project-sparrow-static-analysis]]`, `[[reference-diagsession-netfx-capture]]`(媛숈? ?먯뇙留?諛섏엯 ?⑦꽩)

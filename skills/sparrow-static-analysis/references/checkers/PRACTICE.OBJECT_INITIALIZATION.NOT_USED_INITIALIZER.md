@@ -3,7 +3,7 @@
 - **건수**: (실측 시 변동)  |  **심각도**: 낮음  |  **트랙**: A
 - **Sparrow 설명**: 객체 생성을 간략화하기 위해, 객체 이니셜라이저를 사용해야 합니다.
 
-> **대부분 Track A(dotnet format/SparrowSyntaxFix) 또는 Track B(SparrowCommentFix/dotnet format whitespace)가 자동 처리한다. 이 가이드는 도구가 못 고친 잔여를 LLM이 처리할 때 사용**한다.
+> **대부분 Track A(SparrowSyntaxFix/SparrowSyntaxFix) 또는 Track B(SparrowCommentFix/SparrowCommentFix layout)가 자동 처리한다. 이 가이드는 도구가 못 고친 잔여를 LLM이 처리할 때 사용**한다.
 
 ## 지켜야 할 규칙 (무엇을 왜 검출)
 객체를 생성한 직후 여러 속성/필드에 연속으로 값을 대입하는 대신, **객체 이니셜라이저**(`new T { A = ..., B = ... }`)로 생성과 초기화를 한 문장으로 묶어 간결하게 작성해야 한다. **보안 결함이 아니라 스타일·가독성·표준 준수** 항목이다. 생성 후 개별 대입은 초기화가 여러 문장으로 흩어져 가독성이 낮고, "부분 초기화된 객체"가 잠깐 노출되는 형태가 된다. Sparrow는 `new T()` 직후 그 변수의 속성/필드에 연속 대입하는 패턴을 검출한다. (Roslyn IDE0017과 동일 취지.)

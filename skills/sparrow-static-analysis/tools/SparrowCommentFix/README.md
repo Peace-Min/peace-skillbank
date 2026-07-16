@@ -113,7 +113,7 @@ in PowerShell, then hands the resulting full paths to the tool via a temp `--fil
   can change documentation output or are best-effort structural rewrites.
 - Runs each selected rule in a fixed order (`flatten`, `trailing`, `space`, `period`, `onedeclaration`,
   `onestatement`, `memberblank`, `linqalign`, `continuation`), honoring `-DryRun`.
-- **Commit UX mirrors `Run-TrackA.ps1` / `Run-SparrowSyntaxFix.ps1`**: with `-Commit` it makes a per-rule
+- **Commit UX mirrors `Run-SparrowSyntaxFix.ps1` / `Run-SparrowSyntaxFix.ps1`**: with `-Commit` it makes a per-rule
   git commit (`sparrow: <label> (SparrowCommentFix)`, staging `*.cs`); with `-DryRun` it commits nothing;
   with neither, an interactive run **prompts** `규칙별로 커밋할까요? (Y/N)` (non-interactive → no commit).
   Writes a timestamped `.log` next to the working dir.

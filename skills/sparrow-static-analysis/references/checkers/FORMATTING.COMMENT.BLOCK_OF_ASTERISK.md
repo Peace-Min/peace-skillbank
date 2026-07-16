@@ -3,7 +3,7 @@
 - **건수**: (실측 시 변동)  |  **심각도**: 낮음  |  **트랙**: B
 - **Sparrow 설명**: 주석문장을 감싸는 별표(*) 블록을 사용하지 말아야 합니다.
 
-> **대부분 Track A(dotnet format/SparrowSyntaxFix) 또는 Track B(SparrowCommentFix/dotnet format whitespace)가 자동 처리한다. 이 가이드는 도구가 못 고친 잔여를 LLM이 처리할 때 사용**한다.
+> **대부분 Track A(SparrowSyntaxFix/SparrowSyntaxFix) 또는 Track B(SparrowCommentFix/SparrowCommentFix layout)가 자동 처리한다. 이 가이드는 도구가 못 고친 잔여를 LLM이 처리할 때 사용**한다.
 
 ## 지켜야 할 규칙 (무엇을 왜 검출)
 여러 줄 주석을 각 줄 앞에 별표(`*`)를 붙여 **별표 블록으로 서식화하지 말아야** 한다. **보안 결함이 아니라 스타일·가독성·표준(MSDN C# 코딩 규칙) 준수** 항목이다. 별표 블록은 편집 시 정렬 유지 부담이 크고 C# 관례가 아니다. Sparrow는 `/* ... * ... * ... */`처럼 내부 줄마다 `*`를 붙인 주석을 검출한다.

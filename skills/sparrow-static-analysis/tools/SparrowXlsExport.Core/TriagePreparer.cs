@@ -2,9 +2,8 @@
 //
 // Reads index.csv (UTF-8 with BOM; header md_file,ID,체커 키,위험도,파일명,라인,이슈 상태,체커명), and for
 // each row resolves the checker guide <GuidesDir>\<체커 키>.md (join on the verbatim 체커 키 column). If the
-// guide is present it writes a self-contained requests\{ID}_{체커키}.md (the triage prompt with {{GUIDE}} and
-// {{ITEM}} substituted), else it records the row in unresolved.csv. Also writes worklist.csv and creates an
-// empty verdicts\ folder.
+// guide is present it writes a self-contained requests\{ID}_{체커키}.md (the repair prompt with {{GUIDE}} and
+// {{ITEM}} substituted), else it records the row in unresolved.csv. Also writes worklist.csv.
 //
 // BYTE-IDENTICAL contract vs Run-Triage.ps1 prepare (PS is the reference — do not diverge):
 //  - request filename: {Get-SafeName idPart}_{Get-SafeName 체커키}.md
@@ -47,7 +46,7 @@ namespace SparrowXlsExport.Core
         /// <summary>Path to the folder-instruction-template.md (_작업지침.md 렌더 템플릿). Required.</summary>
         public string TemplatePath = "";
 
-        /// <summary>Output directory; gets requests\, worklist.csv, unresolved.csv, empty verdicts\. Required.</summary>
+        /// <summary>Output directory; gets requests\, worklist.csv, unresolved.csv. Required.</summary>
         public string OutDir = "";
 
         /// <summary>Exact-match filter on 체커 키; null =&gt; no checker filter.</summary>
@@ -84,7 +83,7 @@ namespace SparrowXlsExport.Core
     {
         /// <summary>
         /// Reproduce Run-Triage.ps1 prepare exactly: emit requests\{ID}_{체커키}.md (guide+item merged into the
-        /// prompt), worklist.csv, unresolved.csv, and an empty verdicts\ folder. Optionally streams the same
+        /// prompt), worklist.csv, and unresolved.csv. Optionally streams the same
         /// human summary lines the PS version prints to <paramref name="log"/>.
         /// </summary>
         public static PrepareResult Prepare(PrepareOptions opts, TextWriter? log = null)
@@ -123,13 +122,11 @@ namespace SparrowXlsExport.Core
                     opts.Tracks.Split(',').Select(x => x.Trim().ToUpperInvariant()).Where(x => x.Length > 0),
                     StringComparer.Ordinal);
 
-            // 출력 폴더 준비(멱등: prepare 산출물만 초기화, verdicts\는 보존).
+            // 출력 폴더 준비(멱등: prepare 산출물만 초기화).
             Directory.CreateDirectory(opts.OutDir);
             string reqDir = Path.Combine(opts.OutDir, "requests");
             if (Directory.Exists(reqDir)) Directory.Delete(reqDir, recursive: true);
             Directory.CreateDirectory(reqDir);
-            string verDir = Path.Combine(opts.OutDir, "verdicts");
-            Directory.CreateDirectory(verDir);   // 입력 폴더 — 있으면 보존
 
             var rows = ReadCsvNoBom(opts.IndexCsvPath);
 

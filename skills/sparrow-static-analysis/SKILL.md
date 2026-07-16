@@ -1,6 +1,6 @@
 ---
 name: sparrow-static-analysis
-description: Use when handling Sparrow static-analysis XLS findings for C#/.NET Framework 4.7.2, including Track A/B deterministic autofix runners and Track C local-Claude triage for exception, null, resource, TOCTOU, and encapsulation findings.
+description: Use when handling Sparrow static-analysis XLS findings for C#/.NET Framework 4.7.2, including Track A/B deterministic autofix runners and Track C local-Claude repair request packaging for exception, null, resource, TOCTOU, and encapsulation findings.
 ---
 
 # Sparrow Static Analysis
@@ -11,7 +11,7 @@ Use this skill for handling Sparrow static-analysis findings for the OSTES-style
 
 Work only inside `skills/sparrow-static-analysis` and the explicit Sparrow XLS/source inputs provided by the user. Do not inspect other skills unless the user explicitly asks.
 
-Track A and Track B are deterministic tooling tracks. Track C is not an autofix track; it is an LLM/human judgment workflow.
+Track A and Track B are deterministic tooling tracks. Track C is not an autofix track; it packages Sparrow XLS findings into self-contained LLM/human repair requests.
 
 ## Real Fix Pattern Corpus
 
@@ -33,7 +33,7 @@ For normal one-shot local execution, prefer the `.cmd` launchers next to the Pow
 - `tools/SparrowCommentFix/Run-SparrowCommentFix.cmd`
 - `tools/Run-SparrowAll.cmd`
 
-The WPF wrapper is the single closed-network Sparrow Helper GUI. It lets the user choose a solution/project/folder, select Track A/B rules with checkboxes, choose commit/dry-run behavior, prepare Track C XLS/LLM triage packages, and view live logs. Keep Track A/B rewrite logic in the CLI scripts and keep Track C parsing/prepare logic in `SparrowXlsExport.Core`; future rule improvements should update the underlying deterministic tool first and the GUI should only expose/select those options.
+The WPF wrapper is the single closed-network Sparrow Helper GUI. It lets the user choose a solution/project/folder, select Track A/B rules with checkboxes, choose commit/dry-run behavior, prepare Track C XLS/LLM repair-request packages, and view live logs. Keep Track A/B rewrite logic in the CLI scripts and keep Track C parsing/prepare logic in `SparrowXlsExport.Core`; future rule improvements should update the underlying deterministic tool first and the GUI should only expose/select those options.
 
 The `.cmd` launchers call the matching `.ps1` with `powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -NoExit -File ...`.
 This preserves the existing prompt flow (solution path, optional rules, commit choice) while preventing a newly opened PowerShell window from closing before the user can read errors or completion output.
@@ -62,20 +62,19 @@ Track C covers security/quality findings requiring judgment, including exception
 
 Required workflow:
 
-1. For GUI-based preparation, run `tools/Run-SparrowRunnerGui.cmd` and use the `Track C XLS/LLM 검토` tab to create `items`, `index.csv`, `requests`, `worklist.csv`, `unresolved.csv`, and `verdicts`.
+1. For GUI-based preparation, run `tools/Run-SparrowRunnerGui.cmd` and use the `Track C XLS/LLM 작업` tab to create `items`, `index.csv`, `requests`, `worklist.csv`, and `unresolved.csv`.
 2. Use `references/triage/triage-contract.md` as the workflow contract.
 3. Use `references/triage/triage-prompt.md` as the model prompt template.
 4. For each finding, read the exact checker guide at `references/checkers/<CHECKER_KEY>.md`.
 5. If the checker is `NULL_RETURN_STD`, also consult `references/dotnet-contracts/null-return-std.md`.
-6. Judge only from the checker guide and the finding/source context.
-7. If source context is missing, do not guess. Return `verdict = 보류`, `needs_context = true`, and list `missing_context`.
-8. Use `needs_frontier = true` only when enough context is present but the local model still cannot make a reliable decision.
-9. Do not auto-edit Track C target source code. Provide verdict JSON and fix guidance only.
+6. Write a concrete repair instruction from the checker guide and the finding/source context.
+7. If source context is missing, do not guess. Mark the request as `문맥 필요` in the Markdown output and list the exact missing files, symbols, or code ranges.
+8. Do not auto-edit Track C target source code from this skill. The request output guides the closed-network developer/LLM working against the real source tree.
 
-Track C verdicts must classify each item as either `진성` or `보류` (this project fixes every finding — there is no false-positive skip):
+Track C requests must end in either `수정 가능` or `문맥 필요`:
 
-- `진성`: true positive; include concrete `fix.before` and `fix.after` guidance using C# 7.3-compatible syntax.
-- `보류`: cannot fix yet (missing source/exception-list context); set `needs_context = true` + `missing_context`, or `needs_frontier = true` when enough context is present but the local model cannot decide. 보류 is NOT a skip — it is a pending state that MUST be fixed once the context is obtained.
+- `수정 가능`: include concrete Before/After guidance using C# 7.3-compatible syntax.
+- `문맥 필요`: list the missing source/exception/ownership context. This is not a skip; it is pending until the context is obtained.
 
 전건 수정 정책: every Sparrow finding is fixed. Do not drop items as false positives.
 
@@ -91,7 +90,7 @@ Use sources in this order:
 6. Local reference tables such as `references/dotnet-contracts`.
 7. External official references only when local materials are insufficient.
 
-Local .NET reference XML documentation can help `OVERLY_BROAD_CATCH` triage when its `<exception>` tags are used to list possible exception types from calls inside a `try` block. Treat those lists as supporting evidence, not as a final verdict; still check the source context, boundary-handler role, and checker guide.
+Local .NET reference XML documentation can help `OVERLY_BROAD_CATCH` handling when its `<exception>` tags are used to list possible exception types from calls inside a `try` block. Treat those lists as supporting evidence; still check the source context, boundary-handler role, and checker guide.
 
 ## Validation
 

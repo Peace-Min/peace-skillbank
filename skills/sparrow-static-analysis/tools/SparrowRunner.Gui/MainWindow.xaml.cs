@@ -40,6 +40,15 @@ namespace SparrowRunner.Gui
             Loaded += (_, _) => UpdateSummary();
         }
 
+        private void RulesTabs_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (!ReferenceEquals(e.OriginalSource, RulesTabs)) return;
+            if (RulesTabs.SelectedItem == TrackCTab)
+            {
+                ShowRuleInfo(nameof(RunTrackCCheck));
+            }
+        }
+
         private void BrowseFileButton_Click(object sender, RoutedEventArgs e)
         {
             var dlg = new OpenFileDialog
@@ -174,7 +183,7 @@ namespace SparrowRunner.Gui
                 if (runTrackC)
                 {
                     _cts.Token.ThrowIfCancellationRequested();
-                    SummaryModeText.Text = "Track C XLS/LLM 검토 패키지 생성 중";
+                    SummaryModeText.Text = "Track C XLS/LLM 작업 패키지 생성 중";
                     _lastTrackCOutputDir = await RunTrackCAsync(trackCXls, referencesRoot, _cts.Token);
                     OpenTrackCOutputButton.IsEnabled = Directory.Exists(_lastTrackCOutputDir);
                 }
@@ -431,13 +440,13 @@ namespace SparrowRunner.Gui
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 log.WriteLine("");
-                log.WriteLine(">>> Track C XLS/LLM 검토 패키지");
+                log.WriteLine(">>> Track C XLS/LLM 작업 패키지");
                 log.WriteLine("[1/2] XLS 파싱: items/index.csv/checkers.md 생성");
                 ExportResult parse = SparrowExporter.Run(exportOptions, log);
 
                 cancellationToken.ThrowIfCancellationRequested();
                 log.WriteLine("");
-                log.WriteLine("[2/2] LLM 검토 요청 조립: requests/worklist/unresolved/verdicts 생성");
+                log.WriteLine("[2/2] LLM 작업 요청 조립: requests/worklist/unresolved 생성");
                 var prepareOptions = new PrepareOptions
                 {
                     IndexCsvPath = Path.Combine(parse.OutputDir, "index.csv"),
@@ -642,17 +651,17 @@ namespace SparrowRunner.Gui
                 "체커: 독립된 줄의 주석 작성 권장/별표 블록 제한. 검토필요 커밋 대상입니다.",
                 "DoWork(); /* done */\r\n// ->\r\n// Done.\r\nDoWork();");
 
-            AddRuleInfo(RunTrackCCheck, "Track C XLS 검토 패키지 생성",
-                "Sparrow 결과 XLS를 파싱해 items/index.csv/checkers.md를 만들고, LLM 검토용 requests/worklist/verdicts 구조를 생성합니다.",
-                "Track C는 소스 자동수정이 아니라 폐쇄망 LLM 검토 입력을 만드는 결정론 패키징 단계입니다.",
-                "issues.xls\r\n// ->\r\nitems/\r\nindex.csv\r\nrequests/\r\nworklist.csv\r\nverdicts/");
+            AddRuleInfo(RunTrackCCheck, "Track C XLS 작업 패키지 생성",
+                "Sparrow 결과 XLS를 파싱해 items/index.csv/checkers.md를 만들고, LLM 작업용 requests/worklist 구조를 생성합니다.",
+                "Track C는 소스 자동수정이 아니라 폐쇄망 LLM이 바로 수정 방향을 잡도록 입력을 정리하는 결정론 패키징 단계입니다.",
+                "issues.xls\r\n// ->\r\nitems/\r\nindex.csv\r\nrequests/\r\nworklist.csv");
             AddRuleInfo(TrackCIncludeA, "Track C 요청에 Track A 가이드 포함",
                 "기본은 C 가이드만 요청으로 만듭니다. 이 옵션은 코드 규칙 Track A 항목도 LLM 요청에 포함합니다.",
-                "스패로우 스타일 항목까지 LLM 검토 대상으로 넘길 때만 켭니다.",
+                "스패로우 스타일 항목까지 LLM 작업 요청으로 넘길 때만 켭니다.",
                 "Tracks=C\r\n// ->\r\nTracks=C,A");
             AddRuleInfo(TrackCIncludeB, "Track C 요청에 Track B 가이드 포함",
                 "기본은 C 가이드만 요청으로 만듭니다. 이 옵션은 주석/레이아웃 Track B 항목도 LLM 요청에 포함합니다.",
-                "A/B는 GUI 자동수정이 우선이며, LLM 검토가 필요한 잔여 항목에만 포함하는 편이 안전합니다.",
+                "A/B는 GUI 자동수정이 우선이며, LLM 작업 요청이 필요한 잔여 항목에만 포함하는 편이 안전합니다.",
                 "Tracks=C\r\n// ->\r\nTracks=C,B");
 
             AddRuleInfo(CommitCheck, "규칙별 커밋 생성",

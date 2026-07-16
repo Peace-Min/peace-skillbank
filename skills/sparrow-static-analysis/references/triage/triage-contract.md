@@ -1,182 +1,90 @@
-# Track C 트리아지 파이프라인 계약 (triage-contract)
+# Track C 작업 패키지 계약
 
-Sparrow(파수) 정적분석 **Track C**(의미/자원/널 계열, 사람·모델 판단이 필요한 체커) 항목을
-"결정론 기계작업"과 "LLM/사람 판단"으로 **엄격히 분리**해 처리하는 파이프라인의 사양서다.
+Sparrow(파수) 정적분석 **Track C** 항목을 폐쇄망 LLM/사람이 실제 소스 수정에 바로 사용할 수 있도록
+결정론적으로 패키징하는 사양이다.
 
-> 핵심 원칙: **판단 없는 기계적 작업 = 결정론 툴(.ps1). 판단만 LLM/사람.**
-> 스크립트는 절대 진성/보류를 스스로 판정하지 않는다. 스크립트는 매칭·조립·집계·게이트만 한다.
+> 핵심 원칙: GUI/스크립트는 판단하지 않는다. XLS를 안정적으로 분해하고, 체커 가이드와 항목을 합쳐
+> self-contained 수정 요청 md를 만든다. 기본 워크플로우는 요청 md를 실제 소스 수정 작업으로 바로 연결한다.
 
 ---
 
 ## 0. 대상과 전제
 
-- 대상 코드베이스: **C# / .NET Framework 4.7.2**. 문서·프롬프트·수정 예시의 C#는 **C# 7.3** 문법만
-  사용한다(`using (...) { }` 블록, using 선언 금지, switch 식 금지, nullable 참조형 금지).
-- 실제 처리 대상은 **Track A/B 적용 후 잔여 항목**이다(A=결정론 자동수정, B=반자동). Track C는 그 나머지.
-- 입력 산출물은 `SparrowXlsExport.exe`가 Sparrow 결과 `.xls`에서 뽑은:
-  - `items/{ID}_{체커키}_{파일}_{라인}.md` — 항목별 md
-  - `index.csv` — **UTF-8 with BOM**, 헤더 `md_file,ID,체커 키,위험도,파일명,라인,이슈 상태,체커명`
-  - `checkers.md` — 체커별 요약
-- 체커 가이드: `references/checkers/<체커키>.md` (Track C 13종). **파일명 == 체커 키(verbatim)**.
-  각 가이드 섹션: `## 지켜야 할 규칙` · `## 표준 매핑` · `## 진성 판별 기준` ·
-  `## 이렇게 보여도 넘기지 말 것` · `## 수정 패턴 (C# 예시)` · `## 검증 확인 조건 (G2)` · `## 기본 처리 분류`.
-
-> **체커 키 조인은 index.csv의 `체커 키` 컬럼(verbatim, 무제한 길이)** 을 쓴다.
-> 항목 md의 **파일명(`_`로 40자 절단·치환된 sanitized 이름)** 이 아니다.
+- 대상 코드베이스: C# / .NET Framework 4.7.2.
+- 수정 예시는 C# 7.3 문법만 사용한다.
+  - `using (...) { }` 블록 문법 사용.
+  - using 선언, switch 식, nullable reference type 문법 금지.
+- 실제 처리 대상은 Track A/B 적용 후 잔여 항목이다.
+- 체커 가이드는 `references/checkers/<체커키>.md`를 사용한다.
+- 체커 키 조인은 `index.csv`의 `체커 키` 컬럼 값을 그대로 사용한다.
 
 ---
 
-## 1. 파이프라인 (단계별 = 결정론 / 판단 / 사람)
+## 1. 기본 파이프라인
 
-```
- [입력]  items/*.md  +  index.csv   (SparrowXlsExport 산출물)
-    │
-    ▼  ── [결정론] Run-Triage.ps1 prepare ─────────────────────────────
-    │      index.csv 각 행의 `체커 키`로  references/checkers/<체커키>.md 사전조회.
-    │      가이드 있음 → 요청 조립 requests/{ID}_{체커키}.md = 프롬프트 + 가이드 + 항목 (self-contained).
-    │      가이드 없음 → unresolved.csv 기록 후 skip (Track A/B 소관 또는 무가이드).
-    │      worklist.csv(상태=TODO) + 빈 verdicts/ 디렉터리 생성.
-    │
-    ▼  ── [판단] LLM 또는 사람 ───────────────────────────────────────
-    │      requests/{...}.md 하나를 읽고 triage-prompt 규칙대로 판정.
-    │      근거는 **반드시 가이드의 진성판별/`이렇게 보여도 넘기지 말 것` 기준에서** 인용.
-    │      출력 = verdict JSON 하나 → verdicts/{ID}.json.
-    │      확신 없으면 지어내지 말고 verdict=보류.
-    │      소스 문맥 부족은 needs_context=true + missing_context로 기록.
-    │      자료는 충분하지만 로컬 모델 판단이 어려운 경우만 needs_frontier=true.
-    │
-    ▼  ── [결정론] Run-Triage.ps1 collect ─────────────────────────────
-    │      verdicts/*.json 검증(키·enum·조건부 필드) → triage-ledger.csv(원장) 집계.
-    │      by-checker/<체커>.md = 그 체커의 진성 수정목록(커밋 단위 후보)+보류.
-    │      형식 위반 verdict → invalid.csv.
-    │
-    ▼  ── [사람 + OSTES 코드측] 수정 적용 ─────────────────────────────
-    │      진성 항목만 가이드 수정패턴대로 실제 코드 수정(= OSTES 레포측 작업).
-    │      체커 단위로 묶어 G0~G3 게이트 통과 후 커밋.
-    │
-    ▼  ── [게이트 G0~G3] ──────────────────────────────────────────────
-           G2 재검사는 사람이 Sparrow GUI로 재스캔 → 새 xls 공급 → Compare-Sparrow.ps1.
+```text
+[입력] Sparrow 결과 xls/xlsx
+   |
+   v
+[결정론] SparrowXlsExport.Core
+   - items/*.md
+   - index.csv
+   - checkers.md
+   |
+   v
+[결정론] Track C prepare
+   - requests/<체커>/<ID>_<체커>.md
+   - requests/<체커>/_작업지침.md
+   - worklist.csv
+   - unresolved.csv
+   |
+   v
+[LLM/사람] requests md를 읽고 실제 소스 수정
+   - 수정 가능: Before/After 기준으로 실제 코드 수정
+   - 문맥 필요: 필요한 파일/심볼/호출부/예외 후보를 확보한 뒤 재작업
+   |
+   v
+[사람] 빌드 + Sparrow 재분석 + Compare-Sparrow로 검출 감소 확인
 ```
 
-### 무엇이 결정론 / 판단 / 사람인가 (명확히)
+## 2. 산출물 의미
 
-| 단계 | 주체 | 성격 |
-|---|---|---|
-| 체커키 → 가이드 사전조회, 요청 조립 | `Run-Triage.ps1 prepare` | **결정론** (판단 0) |
-| 진성/보류 판정, 수정 코드 작성 | LLM 또는 사람 | **판단** |
-| verdict 검증·원장 집계·커밋단위 묶기 | `Run-Triage.ps1 collect` | **결정론** |
-| 실제 코드 수정 적용 / 빌드 / 재스캔 | **OSTES 코드측(사람/개발자)** | 사람 |
-| G2 재스캔용 새 xls 생성(Sparrow GUI) | **사람** | 사람 |
-| before/after xls 비교·검출소멸 판정 | `Compare-Sparrow.ps1` | **결정론** |
-| G3 최종 승인 | **사람** | 사람 |
+- `items/`: XLS의 각 검출 항목을 Markdown으로 분해한 원본 근거.
+- `index.csv`: 항목 목록과 체커 키, 파일, 라인을 정리한 색인.
+- `checkers.md`: XLS 내 체커별 요약.
+- `requests/`: LLM/사람에게 전달할 self-contained 수정 요청.
+- `requests/<체커>/_작업지침.md`: 체커 단위 처리 기준.
+- `worklist.csv`: 요청 목록과 TODO 상태.
+- `unresolved.csv`: 체커 가이드나 항목 md를 찾지 못해 요청을 만들지 못한 항목.
 
----
+## 3. 요청 md 처리 기준
 
-## 2. Verdict JSON 스키마 (판정 1건 = JSON 1개)
+각 `requests/<체커>/<ID>_<체커>.md`는 다음을 포함한다.
 
-키는 아래를 **정확히** 사용한다. `collect`가 이 스키마로 검증한다.
+- 체커 가이드 전문.
+- Sparrow 검출 항목 전문.
+- 프로젝트 공통 처리 정책.
+- 체커별 프로젝트 의무.
 
-```json
-{
-  "id": "string", "checker": "string", "file": "string", "line": "string",
-  "verdict": "진성|보류",
-  "rationale": "가이드 기준을 인용한 판정 근거",
-  "fix": { "lines": "string", "before": "C# 코드", "after": "C# 코드" },
-  "hold_reason": "보류일 때만",
-  "needs_context": false,
-  "missing_context": ["필요한 추가 문맥"],
-  "needs_frontier": false,
-  "cwe": "CWE-476", "weapon_item": "미매핑(187 추출 후 기입)"
-}
-```
+LLM/사람은 요청 md를 읽고 다음 형식의 Markdown 수정 지시를 작성한다.
 
-조건부 필드(collect가 강제):
-- `verdict = 진성` ⇒ `fix.before` / `fix.after` 채움. `hold_reason`은 빈값.
-- `verdict = 보류` ⇒ `hold_reason` 채움. 소스 문맥 부족이면 `needs_context=true` 및 `missing_context` 채움.
-  자료는 충분하지만 상위 모델 판단이 필요한 경우만 `needs_frontier=true`. `fix`는 비움.
-  (보류는 스킵이 아니라 **문맥 확보 후 반드시 수정**하는 대기 상태다. 전건 수정 — false-positive 스킵 없음.)
+- `수정 가능`: 실제 소스에서 적용할 최소 Before/After를 작성한다.
+- `문맥 필요`: 지금 수정할 수 없는 이유와 필요한 추가 문맥을 쓴다.
 
----
+false-positive skip은 없다. `문맥 필요`는 스킵이 아니라 문맥 확보 후 수정해야 하는 대기 상태다.
 
-## 3. G0~G3 게이트 체크리스트
+## 4. 게이트
 
-체커 단위로 수정·커밋하기 전, 각 체커 배치에 대해 순서대로 통과시킨다.
+- G0 diff 스코프: 해당 체커가 가리키는 파일 중심으로 변경한다.
+- G1 빌드: net472 솔루션 빌드 성공.
+- G2 Sparrow 재분석: 대상 체커 검출 감소/소멸과 신규 검출 여부 확인.
+- G3 사람 승인: 수정 의도, 영향 범위, 잔여 문맥 필요 항목을 확인한 뒤 커밋.
 
-- **G0 — diff 스코프**: 이번 커밋의 변경 파일이 **해당 체커가 가리키는 파일들로만** 한정.
-  다른 체커/무관 파일이 섞이면 실패(트리아지 격리 원칙). (사람이 `git diff --name-only`로 확인.)
-- **G1 — 빌드 통과**: 수정 후 net472 솔루션 빌드 성공(경고 증가 없음 권장). (OSTES 코드측.)
-- **G2 — 검출 소멸 + 신규 0**: 사람이 Sparrow GUI로 **재스캔** → 새 `.xls` 산출 →
-  `Compare-Sparrow.ps1 -Before <원본.xls> -After <재스캔.xls> -Checker <체커키>`가 **PASS**.
-  PASS 조건 = 그 체커 after-count **0(검출 소멸)** AND **신규 검출 0(전체)**.
-- **G3 — 사람 승인**: 진성 판정·수정·보류(문맥 확보 계획)을 사람이 최종 검토·승인 후 커밋.
+## 5. 도구
 
-> 커밋은 **체커 단위**로. 커밋 메시지 예: `sparrow(C): FORWARD_NULL n건 수정 (CWE-476)`.
+- 통합 GUI: `tools/Run-SparrowRunnerGui.cmd`
+- XLS CLI: `tools/SparrowXlsExport`
+- 요청 조립 스크립트: `references/triage/Run-Triage.ps1 prepare`
+- 재분석 비교: `references/triage/Compare-Sparrow.ps1`
 
----
-
-## 4. 사용 워크스루
-
-전제: `SparrowXlsExport.exe`로 이미 `out\index.csv` + `out\items\`가 만들어져 있음.
-경로는 예시이며 환경에 맞게 바꾼다. (스크립트는 이 `triage/` 폴더에 있음.)
-
-```powershell
-# 1) [결정론] 요청 조립 — 특정 체커·심각도만 골라 최대 N건
-.\Run-Triage.ps1 prepare `
-    -Index    C:\Work\sparrow\out\index.csv `
-    -ItemsDir C:\Work\sparrow\out\items `
-    -GuidesDir ..\checkers `
-    -Out      C:\Work\sparrow\triage `
-    -Checker  FORWARD_NULL `
-    -Severity 매우위험,높음 `
-    -Max      50
-#  → triage\requests\{ID}_FORWARD_NULL.md (self-contained),
-#    triage\worklist.csv, triage\unresolved.csv, 빈 triage\verdicts\
-
-# 2) [판단] 사람 또는 LLM이 requests\*.md 를 읽고 판정 → triage\verdicts\{ID}.json
-#    (needs_context=true 이면 먼저 missing_context를 보강하고, needs_frontier=true 인 항목만 상위 모델에 이관)
-
-# 3) [결정론] verdict 수거·검증·집계
-.\Run-Triage.ps1 collect `
-    -VerdictsDir C:\Work\sparrow\triage\verdicts `
-    -Worklist    C:\Work\sparrow\triage\worklist.csv `
-    -Out         C:\Work\sparrow\triage
-#  → triage\triage-ledger.csv(원장), triage\by-checker\<체커>.md, triage\invalid.csv
-
-# 4) [사람/OSTES] 진성만 가이드 수정패턴대로 실제 코드 수정 → 빌드(G1) → 체커단위 커밋
-
-# 5) [사람] Sparrow GUI 재스캔으로 after.xls 생성 후 G2 게이트
-.\Compare-Sparrow.ps1 `
-    -Before C:\Work\sparrow\before.xls `
-    -After  C:\Work\sparrow\after.xls `
-    -Checker FORWARD_NULL `
-    -Exe    C:\Users\CEO\Desktop\dotnet-gcdump-offline\sparrow-xlsexport\win-x64\SparrowXlsExport.exe
-#  → 체커별 before/after 표 + PASS/FAIL (exit 0=PASS). PASS면 G3 승인 후 커밋 확정.
-```
-
-`prepare`/`collect`는 **멱등**하다(재실행 시 산출물을 깨끗이 덮어씀; `verdicts/`는 입력이라 보존).
-
----
-
-## 5. 표준 매핑 메모
-
-- 무기체계 보안약점 점검 목록 **187 항목은 CWE 기반**이며 **100% 적용(설정 확정)**.
-- 따라서 매핑 기준은 **CWE**다(각 체커 가이드의 `## 표준 매핑` 참조; 예 FORWARD_NULL=CWE-476,
-  RESOURCE_LEAK=CWE-772). verdict JSON의 `cwe`에 이를 기입한다.
-- **187 항목번호(weapon_item)** 는 Sparrow 체커 ↔ 표준 매핑 추출이 끝난 뒤 기입한다.
-  그전까지 verdict의 `weapon_item`은 `미매핑(187 추출 후 기입)`으로 둔다.
-
----
-
-## 6. 파일 목록 (이 폴더)
-
-- `triage-contract.md` — 본 사양서(앵커).
-- `triage-prompt.md` — 판단 단계용 프롬프트 템플릿(`{{GUIDE}}`/`{{ITEM}}` 자리표시자 + JSON 스키마).
-- `Run-Triage.ps1` — 결정론 오케스트레이터(`prepare`/`collect`).
-- `Compare-Sparrow.ps1` — G2 게이트 툴(before/after xls 비교).
-- `fixtures/` — 합성 픽스처 + `run-validate.ps1`(파이프라인 자체 검증).
-
-### 검증 한계
-
-- `Compare-Sparrow.ps1`은 **실제 Sparrow `.xls` 2개(전/후)** 가 있어야 스모크 테스트가 된다.
-  `fixtures/run-validate.ps1`은 xls가 없으므로 Compare-Sparrow를 **건너뛴다**(문서화된 한계).
-  Compare-Sparrow는 실제 재스캔 xls가 확보되면 별도로 스모크한다.
+`Run-Triage.ps1 collect`는 과거 JSON 판정 기반 흐름과의 호환용이다. 기본 GUI/스킬 워크플로우에서는 사용하지 않는다.

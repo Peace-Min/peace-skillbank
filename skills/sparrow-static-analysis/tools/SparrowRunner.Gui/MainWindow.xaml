@@ -154,14 +154,14 @@
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
             <StackPanel>
-                <TextBlock Text="Sparrow Runner" FontSize="24" FontWeight="Bold"
+                <TextBlock Text="Sparrow Helper" FontSize="24" FontWeight="Bold"
                            Foreground="{StaticResource TextPrimaryBrush}"/>
                 <TextBlock Text="스패로우 코드 규칙과 주석/레이아웃 자동수정을 한 화면에서 선택하고 실행합니다."
                            Foreground="{StaticResource TextSecondaryBrush}" Margin="0,4,0,0"/>
             </StackPanel>
             <Border Grid.Column="1" Background="#E8F2FF" CornerRadius="18"
                     Padding="14,8" VerticalAlignment="Top">
-                <TextBlock Text="Roslyn 기반" Foreground="{StaticResource AccentBrush}"
+                <TextBlock Text="A/B/C 통합" Foreground="{StaticResource AccentBrush}"
                            FontWeight="SemiBold" FontSize="12"/>
             </Border>
         </Grid>
@@ -195,7 +195,7 @@
             <Border Background="{StaticResource PanelBrush}" CornerRadius="18"
                     BorderBrush="{StaticResource LineBrush}" BorderThickness="1"
                     Padding="18" Margin="0,0,18,0">
-                <TabControl x:Name="RulesTabs" BorderThickness="0" Background="Transparent">
+                <TabControl x:Name="RulesTabs" BorderThickness="0" Background="Transparent" SelectionChanged="RulesTabs_SelectionChanged">
                     <TabItem Header="Track A 코드 규칙">
                         <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="0,16,0,0">
                             <StackPanel>
@@ -259,76 +259,137 @@
                         </ScrollViewer>
                     </TabItem>
 
-                    <TabItem Header="Track C XLS/LLM 검토">
+                    <TabItem x:Name="TrackCTab" Header="Track C XLS/LLM 작업">
                         <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="0,16,0,0">
                             <StackPanel>
+                                <Grid Margin="0,0,0,18">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="10"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="10"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Border Background="#F8FAFB" BorderBrush="#E5E8EB" BorderThickness="1" CornerRadius="12" Padding="14">
+                                        <StackPanel>
+                                            <TextBlock Text="1" Foreground="{StaticResource AccentBrush}" FontWeight="Bold" FontSize="18"/>
+                                            <TextBlock Text="XLS 읽기" Foreground="{StaticResource TextPrimaryBrush}" FontWeight="SemiBold" Margin="0,6,0,3"/>
+                                            <TextBlock Text="Sparrow 결과를 items와 index로 분해합니다." Style="{StaticResource MutedText}" TextWrapping="Wrap"/>
+                                        </StackPanel>
+                                    </Border>
+                                    <Border Grid.Column="2" Background="#F8FAFB" BorderBrush="#E5E8EB" BorderThickness="1" CornerRadius="12" Padding="14">
+                                        <StackPanel>
+                                            <TextBlock Text="2" Foreground="{StaticResource AccentBrush}" FontWeight="Bold" FontSize="18"/>
+                                            <TextBlock Text="요청 생성" Foreground="{StaticResource TextPrimaryBrush}" FontWeight="SemiBold" Margin="0,6,0,3"/>
+                                            <TextBlock Text="체커 가이드와 항목을 합쳐 requests를 만듭니다." Style="{StaticResource MutedText}" TextWrapping="Wrap"/>
+                                        </StackPanel>
+                                    </Border>
+                                    <Border Grid.Column="4" Background="#F8FAFB" BorderBrush="#E5E8EB" BorderThickness="1" CornerRadius="12" Padding="14">
+                                        <StackPanel>
+                                            <TextBlock Text="3" Foreground="{StaticResource AccentBrush}" FontWeight="Bold" FontSize="18"/>
+                                            <TextBlock Text="수정 작업" Foreground="{StaticResource TextPrimaryBrush}" FontWeight="SemiBold" Margin="0,6,0,3"/>
+                                            <TextBlock Text="요청 md를 열고 실제 소스 수정에 바로 사용합니다." Style="{StaticResource MutedText}" TextWrapping="Wrap"/>
+                                        </StackPanel>
+                                    </Border>
+                                </Grid>
+
                                 <CheckBox x:Name="RunTrackCCheck"
-                                          Content="Track C XLS 검토 패키지 생성"
+                                          Content="Track C 패키지 생성 실행"
                                           FontWeight="SemiBold"
                                           Style="{StaticResource RuleCheck}"/>
 
-                                <TextBlock Text="Sparrow 결과 XLS" Style="{StaticResource SectionTitle}" Margin="0,14,0,8"/>
-                                <Grid Margin="0,0,0,12">
+                                <Grid Margin="0,10,0,16">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <TextBox x:Name="TrackCXlsPathBox" Style="{StaticResource InputBox}" IsReadOnly="True"/>
-                                    <Button x:Name="BrowseTrackCXlsButton" Grid.Column="1" Content="XLS 선택"
-                                            Margin="8,0,0,0" Click="BrowseTrackCXlsButton_Click"/>
-                                </Grid>
-
-                                <TextBlock Text="출력 폴더" Style="{StaticResource SectionTitle}" Margin="0,4,0,8"/>
-                                <Grid Margin="0,0,0,4">
-                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="14"/>
                                         <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
-                                    <TextBox x:Name="TrackCOutputPathBox" Style="{StaticResource InputBox}"/>
-                                    <Button x:Name="BrowseTrackCOutputButton" Grid.Column="1" Content="폴더 선택"
-                                            Margin="8,0,0,0" Click="BrowseTrackCOutputButton_Click"/>
-                                </Grid>
-                                <TextBlock Text="비우면 XLS 옆 &lt;파일명&gt;.items 폴더에 생성합니다."
-                                           Style="{StaticResource MutedText}" Margin="0,0,0,14"/>
-
-                                <TextBlock Text="필터" Style="{StaticResource SectionTitle}" Margin="0,4,0,8"/>
-                                <UniformGrid Columns="2" Margin="0,0,0,10">
-                                    <StackPanel Margin="0,0,12,0">
-                                        <TextBlock Text="체커 키" Style="{StaticResource MutedText}" Margin="0,0,0,4"/>
-                                        <TextBox x:Name="TrackCCheckerBox" Style="{StaticResource InputBox}"/>
-                                    </StackPanel>
                                     <StackPanel>
-                                        <TextBlock Text="최대 건수" Style="{StaticResource MutedText}" Margin="0,0,0,4"/>
-                                        <TextBox x:Name="TrackCMaxBox" Style="{StaticResource InputBox}"/>
+                                        <TextBlock Text="입력" Style="{StaticResource SectionTitle}" Margin="0,0,0,8"/>
+                                        <TextBlock Text="Sparrow 결과 XLS" Style="{StaticResource MutedText}" Margin="0,0,0,4"/>
+                                        <Grid Margin="0,0,0,10">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBox x:Name="TrackCXlsPathBox" Style="{StaticResource InputBox}" IsReadOnly="True"/>
+                                            <Button x:Name="BrowseTrackCXlsButton" Grid.Column="1" Content="XLS 선택"
+                                                    Margin="8,0,0,0" Click="BrowseTrackCXlsButton_Click"/>
+                                        </Grid>
+
+                                        <TextBlock Text="references 경로" Style="{StaticResource MutedText}" Margin="0,0,0,4"/>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBox x:Name="TrackCReferencesPathBox" Style="{StaticResource InputBox}"/>
+                                            <Button x:Name="BrowseTrackCReferencesButton" Grid.Column="1" Content="폴더 선택"
+                                                    Margin="8,0,0,0" Click="BrowseTrackCReferencesButton_Click"/>
+                                        </Grid>
                                     </StackPanel>
-                                </UniformGrid>
 
-                                <TextBlock Text="심각도" Style="{StaticResource SectionTitle}" Margin="0,4,0,8"/>
-                                <UniformGrid Columns="5" Margin="0,0,0,12">
-                                    <CheckBox x:Name="TrackCSevVeryHigh" Content="매우위험" Style="{StaticResource RuleCheck}"/>
-                                    <CheckBox x:Name="TrackCSevHigh" Content="높음" Style="{StaticResource RuleCheck}"/>
-                                    <CheckBox x:Name="TrackCSevRisk" Content="위험" Style="{StaticResource RuleCheck}"/>
-                                    <CheckBox x:Name="TrackCSevMedium" Content="보통" Style="{StaticResource RuleCheck}"/>
-                                    <CheckBox x:Name="TrackCSevLow" Content="낮음" Style="{StaticResource RuleCheck}"/>
-                                </UniformGrid>
+                                    <StackPanel Grid.Column="2">
+                                        <TextBlock Text="산출물" Style="{StaticResource SectionTitle}" Margin="0,0,0,8"/>
+                                        <TextBlock Text="출력 폴더" Style="{StaticResource MutedText}" Margin="0,0,0,4"/>
+                                        <Grid Margin="0,0,0,8">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBox x:Name="TrackCOutputPathBox" Style="{StaticResource InputBox}"/>
+                                            <Button x:Name="BrowseTrackCOutputButton" Grid.Column="1" Content="폴더 선택"
+                                                    Margin="8,0,0,0" Click="BrowseTrackCOutputButton_Click"/>
+                                        </Grid>
+                                        <TextBlock Text="비우면 XLS 옆 &lt;파일명&gt;.items 폴더에 생성합니다." Style="{StaticResource MutedText}" TextWrapping="Wrap"/>
+                                        <Border Background="#EEF6FF" CornerRadius="10" Padding="12" Margin="0,12,0,0">
+                                            <TextBlock Text="생성: items · index.csv · checkers.md · requests · worklist.csv · unresolved.csv"
+                                                       Foreground="{StaticResource AccentBrush}" FontSize="12" TextWrapping="Wrap"/>
+                                        </Border>
+                                    </StackPanel>
+                                </Grid>
 
-                                <TextBlock Text="요청 생성 트랙" Style="{StaticResource SectionTitle}" Margin="0,4,0,8"/>
-                                <UniformGrid Columns="2">
-                                    <CheckBox x:Name="TrackCIncludeA" Content="Track A 가이드 포함" Style="{StaticResource RuleCheck}"/>
-                                    <CheckBox x:Name="TrackCIncludeB" Content="Track B 가이드 포함" Style="{StaticResource RuleCheck}"/>
-                                </UniformGrid>
-                                <TextBlock Text="Track C 가이드는 항상 포함합니다. A/B는 스타일 항목까지 LLM 요청으로 넘길 때만 켭니다."
-                                           Style="{StaticResource MutedText}" Margin="0,0,0,14"/>
-
-                                <TextBlock Text="references 경로" Style="{StaticResource SectionTitle}" Margin="0,4,0,8"/>
                                 <Grid>
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="14"/>
+                                        <ColumnDefinition Width="*"/>
                                     </Grid.ColumnDefinitions>
-                                    <TextBox x:Name="TrackCReferencesPathBox" Style="{StaticResource InputBox}"/>
-                                    <Button x:Name="BrowseTrackCReferencesButton" Grid.Column="1" Content="폴더 선택"
-                                            Margin="8,0,0,0" Click="BrowseTrackCReferencesButton_Click"/>
+                                    <StackPanel>
+                                        <TextBlock Text="필터" Style="{StaticResource SectionTitle}" Margin="0,0,0,8"/>
+                                        <UniformGrid Columns="2" Margin="0,0,0,10">
+                                            <StackPanel Margin="0,0,10,0">
+                                                <TextBlock Text="체커 키" Style="{StaticResource MutedText}" Margin="0,0,0,4"/>
+                                                <TextBox x:Name="TrackCCheckerBox" Style="{StaticResource InputBox}"/>
+                                            </StackPanel>
+                                            <StackPanel>
+                                                <TextBlock Text="최대 건수" Style="{StaticResource MutedText}" Margin="0,0,0,4"/>
+                                                <TextBox x:Name="TrackCMaxBox" Style="{StaticResource InputBox}"/>
+                                            </StackPanel>
+                                        </UniformGrid>
+
+                                        <TextBlock Text="심각도" Style="{StaticResource MutedText}" Margin="0,0,0,6"/>
+                                        <UniformGrid Columns="3">
+                                            <CheckBox x:Name="TrackCSevVeryHigh" Content="매우위험" Style="{StaticResource RuleCheck}"/>
+                                            <CheckBox x:Name="TrackCSevHigh" Content="높음" Style="{StaticResource RuleCheck}"/>
+                                            <CheckBox x:Name="TrackCSevRisk" Content="위험" Style="{StaticResource RuleCheck}"/>
+                                            <CheckBox x:Name="TrackCSevMedium" Content="보통" Style="{StaticResource RuleCheck}"/>
+                                            <CheckBox x:Name="TrackCSevLow" Content="낮음" Style="{StaticResource RuleCheck}"/>
+                                        </UniformGrid>
+                                    </StackPanel>
+
+                                    <StackPanel Grid.Column="2">
+                                        <TextBlock Text="요청 범위" Style="{StaticResource SectionTitle}" Margin="0,0,0,8"/>
+                                        <Border Background="#F8FAFB" BorderBrush="#E5E8EB" BorderThickness="1" CornerRadius="12" Padding="14">
+                                            <StackPanel>
+                                                <TextBlock Text="Track C 가이드는 항상 포함합니다." Foreground="{StaticResource TextPrimaryBrush}" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                                                <CheckBox x:Name="TrackCIncludeA" Content="Track A 가이드 포함" Style="{StaticResource RuleCheck}"/>
+                                                <CheckBox x:Name="TrackCIncludeB" Content="Track B 가이드 포함" Style="{StaticResource RuleCheck}"/>
+                                                <TextBlock Text="A/B는 자동수정 후 남은 스타일 항목까지 요청 md로 넘길 때만 선택합니다."
+                                                           Style="{StaticResource MutedText}" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                                            </StackPanel>
+                                        </Border>
+                                    </StackPanel>
                                 </Grid>
                             </StackPanel>
                         </ScrollViewer>

@@ -274,21 +274,21 @@
                                         <StackPanel>
                                             <TextBlock Text="1" Foreground="{StaticResource AccentBrush}" FontWeight="Bold" FontSize="18"/>
                                             <TextBlock Text="XLS 읽기" Foreground="{StaticResource TextPrimaryBrush}" FontWeight="SemiBold" Margin="0,6,0,3"/>
-                                            <TextBlock Text="Sparrow 결과를 items와 index로 분해합니다." Style="{StaticResource MutedText}" TextWrapping="Wrap"/>
+                                            <TextBlock Text="Sparrow 결과 XLS를 내부에서만 읽습니다." Style="{StaticResource MutedText}" TextWrapping="Wrap"/>
                                         </StackPanel>
                                     </Border>
                                     <Border Grid.Column="2" Background="#F8FAFB" BorderBrush="#E5E8EB" BorderThickness="1" CornerRadius="12" Padding="14">
                                         <StackPanel>
                                             <TextBlock Text="2" Foreground="{StaticResource AccentBrush}" FontWeight="Bold" FontSize="18"/>
                                             <TextBlock Text="요청 생성" Foreground="{StaticResource TextPrimaryBrush}" FontWeight="SemiBold" Margin="0,6,0,3"/>
-                                            <TextBlock Text="체커 가이드와 항목을 합쳐 requests를 만듭니다." Style="{StaticResource MutedText}" TextWrapping="Wrap"/>
+                                            <TextBlock Text="체커 가이드와 검출 항목을 합쳐 requests를 만듭니다." Style="{StaticResource MutedText}" TextWrapping="Wrap"/>
                                         </StackPanel>
                                     </Border>
                                     <Border Grid.Column="4" Background="#F8FAFB" BorderBrush="#E5E8EB" BorderThickness="1" CornerRadius="12" Padding="14">
                                         <StackPanel>
                                             <TextBlock Text="3" Foreground="{StaticResource AccentBrush}" FontWeight="Bold" FontSize="18"/>
                                             <TextBlock Text="수정 작업" Foreground="{StaticResource TextPrimaryBrush}" FontWeight="SemiBold" Margin="0,6,0,3"/>
-                                            <TextBlock Text="요청 md를 열고 실제 소스 수정에 바로 사용합니다." Style="{StaticResource MutedText}" TextWrapping="Wrap"/>
+                                            <TextBlock Text="requests 폴더만 LLM에게 전달합니다." Style="{StaticResource MutedText}" TextWrapping="Wrap"/>
                                         </StackPanel>
                                     </Border>
                                 </Grid>
@@ -341,9 +341,9 @@
                                             <Button x:Name="BrowseTrackCOutputButton" Grid.Column="1" Content="폴더 선택"
                                                     Margin="8,0,0,0" Click="BrowseTrackCOutputButton_Click"/>
                                         </Grid>
-                                        <TextBlock Text="비우면 XLS 옆 &lt;파일명&gt;.items 폴더에 생성합니다." Style="{StaticResource MutedText}" TextWrapping="Wrap"/>
+                                        <TextBlock Text="비우면 XLS 옆 &lt;파일명&gt;.requests 폴더에 생성합니다." Style="{StaticResource MutedText}" TextWrapping="Wrap"/>
                                         <Border Background="#EEF6FF" CornerRadius="10" Padding="12" Margin="0,12,0,0">
-                                            <TextBlock Text="생성: items · index.csv · checkers.md · requests · worklist.csv · unresolved.csv"
+                                            <TextBlock Text="생성: requests 폴더만. 내부 파싱 산출물은 GUI 출력에 남기지 않습니다."
                                                        Foreground="{StaticResource AccentBrush}" FontSize="12" TextWrapping="Wrap"/>
                                         </Border>
                                     </StackPanel>

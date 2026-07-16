@@ -33,7 +33,7 @@ For normal one-shot local execution, prefer the `.cmd` launchers next to the Pow
 - `tools/SparrowCommentFix/Run-SparrowCommentFix.cmd`
 - `tools/Run-SparrowAll.cmd`
 
-The WPF wrapper is the single closed-network Sparrow Helper GUI. It lets the user choose a solution/project/folder, select Track A/B rules with checkboxes, choose commit/dry-run behavior, prepare Track C XLS/LLM repair-request packages, and view live logs. Keep Track A/B rewrite logic in the CLI scripts and keep Track C parsing/prepare logic in `SparrowXlsExport.Core`; future rule improvements should update the underlying deterministic tool first and the GUI should only expose/select those options.
+The WPF wrapper is the single closed-network Sparrow Helper GUI. It lets the user choose a solution/project/folder, select Track A/B rules with checkboxes, choose commit/dry-run behavior, prepare Track C XLS/LLM repair-request packages, and view live logs. Keep Track A/B rewrite logic in the CLI scripts and keep Track C parsing/prepare logic in `SparrowXlsExport.Core`; future rule improvements should update the underlying deterministic tool first and the GUI should only expose/select those options. For Track C, the closed-network GUI output is the LLM handoff `requests/` folder only; parser indexes and worklist files are internal/debug artifacts and must not be presented as the normal LLM input.
 
 The `.cmd` launchers call the matching `.ps1` with `powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -NoExit -File ...`.
 This preserves the existing prompt flow (solution path, optional rules, commit choice) while preventing a newly opened PowerShell window from closing before the user can read errors or completion output.
@@ -62,7 +62,7 @@ Track C covers security/quality findings requiring judgment, including exception
 
 Required workflow:
 
-1. For GUI-based preparation, run `tools/Run-SparrowRunnerGui.cmd` and use the `Track C XLS/LLM 작업` tab to create `items`, `index.csv`, `requests`, `worklist.csv`, and `unresolved.csv`.
+1. For GUI-based preparation, run `tools/Run-SparrowRunnerGui.cmd` and use the `Track C XLS/LLM 작업` tab to create the `requests/` folder only. This folder is the unit handed to the closed-network LLM.
 2. Use `references/triage/triage-contract.md` as the workflow contract.
 3. Use `references/triage/triage-prompt.md` as the model prompt template.
 4. For each finding, read the exact checker guide at `references/checkers/<CHECKER_KEY>.md`.

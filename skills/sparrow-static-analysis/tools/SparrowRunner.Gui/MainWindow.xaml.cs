@@ -429,7 +429,7 @@ namespace SparrowRunner.Gui
             string conventionsPath = Path.Combine(referencesRoot, "project-conventions.md");
             string templatePath = Path.Combine(referencesRoot, "triage", "folder-instruction-template.md");
 
-            ExportOptions exportOptions = BuildTrackCExportOptions(inputXls);
+            string finalOutputRoot = ResolveTrackCOutputRoot(inputXls, TrackCOutputPathBox.Text);
             string tracksValue = BuildTrackCTracksValue();
             string? checkerValue = string.IsNullOrWhiteSpace(TrackCCheckerBox.Text) ? null : TrackCCheckerBox.Text.Trim();
             string? severityValue = BuildTrackCSeverityValue();
@@ -438,35 +438,64 @@ namespace SparrowRunner.Gui
 
             return await Task.Run(() =>
             {
+                string tempRoot = Path.Combine(Path.GetTempPath(), "sparrow-trackc-" + Guid.NewGuid().ToString("N"));
                 cancellationToken.ThrowIfCancellationRequested();
-                log.WriteLine("");
-                log.WriteLine(">>> Track C XLS/LLM 작업 패키지");
-                log.WriteLine("[1/2] XLS 파싱: items/index.csv/checkers.md 생성");
-                ExportResult parse = SparrowExporter.Run(exportOptions, log);
-
-                cancellationToken.ThrowIfCancellationRequested();
-                log.WriteLine("");
-                log.WriteLine("[2/2] LLM 작업 요청 조립: requests/worklist/unresolved 생성");
-                var prepareOptions = new PrepareOptions
+                try
                 {
-                    IndexCsvPath = Path.Combine(parse.OutputDir, "index.csv"),
-                    ItemsDir = Path.Combine(parse.OutputDir, "items"),
-                    GuidesDir = guidesDir,
-                    PromptPath = promptPath,
-                    ConventionsPath = conventionsPath,
-                    TemplatePath = templatePath,
-                    OutDir = parse.OutputDir,
-                    Checker = checkerValue,
-                    Severity = severityValue,
-                    Tracks = tracksValue,
-                    Max = maxValue
-                };
-                TriagePreparer.Prepare(prepareOptions, log);
-                return parse.OutputDir;
+                    ExportOptions exportOptions = BuildTrackCExportOptions(inputXls, tempRoot);
+
+                    log.WriteLine("");
+                    log.WriteLine(">>> Track C XLS/LLM requests 생성");
+                    log.WriteLine("[1/3] XLS 내부 파싱: GUI 출력에는 중간 산출물을 남기지 않습니다.");
+                    ExportResult parse = SparrowExporter.Run(exportOptions, null);
+
+                    cancellationToken.ThrowIfCancellationRequested();
+                    log.WriteLine("[2/3] LLM 작업 요청 조립: requests만 최종 산출물로 사용합니다.");
+                    var prepareOptions = new PrepareOptions
+                    {
+                        IndexCsvPath = Path.Combine(parse.OutputDir, "index.csv"),
+                        ItemsDir = Path.Combine(parse.OutputDir, "items"),
+                        GuidesDir = guidesDir,
+                        PromptPath = promptPath,
+                        ConventionsPath = conventionsPath,
+                        TemplatePath = templatePath,
+                        OutDir = parse.OutputDir,
+                        Checker = checkerValue,
+                        Severity = severityValue,
+                        Tracks = tracksValue,
+                        Max = maxValue
+                    };
+                    PrepareResult prepare = TriagePreparer.Prepare(prepareOptions, null);
+
+                    cancellationToken.ThrowIfCancellationRequested();
+                    log.WriteLine("[3/3] 최종 폴더 정리: requests 폴더만 복사합니다.");
+                    string sourceRequestsDir = Path.Combine(parse.OutputDir, "requests");
+                    if (!Directory.Exists(sourceRequestsDir))
+                    {
+                        throw new DirectoryNotFoundException("requests 폴더가 생성되지 않았습니다: " + sourceRequestsDir);
+                    }
+
+                    Directory.CreateDirectory(finalOutputRoot);
+                    string finalRequestsDir = Path.Combine(finalOutputRoot, "requests");
+                    if (Directory.Exists(finalRequestsDir))
+                    {
+                        Directory.Delete(finalRequestsDir, recursive: true);
+                    }
+
+                    CopyDirectory(sourceRequestsDir, finalRequestsDir);
+                    log.WriteLine("요청 생성수: " + prepare.RequestCount);
+                    log.WriteLine("미해결수    : " + prepare.UnresolvedCount);
+                    log.WriteLine("LLM 전달 폴더: " + finalRequestsDir);
+                    return finalRequestsDir;
+                }
+                finally
+                {
+                    TryDeleteDirectory(tempRoot);
+                }
             }, cancellationToken);
         }
 
-        private ExportOptions BuildTrackCExportOptions(string inputXls)
+        private ExportOptions BuildTrackCExportOptions(string inputXls, string outputDir)
         {
             var severities = new HashSet<string>(StringComparer.Ordinal);
             if (TrackCSevVeryHigh.IsChecked == true) severities.Add("매우위험");
@@ -478,17 +507,60 @@ namespace SparrowRunner.Gui
             var options = new ExportOptions
             {
                 InputPath = inputXls,
+                OutDir = outputDir,
                 Severities = severities,
                 Max = ParseNullableInt(TrackCMaxBox.Text)
             };
-
-            string outDir = TrackCOutputPathBox.Text.Trim();
-            if (!string.IsNullOrEmpty(outDir)) options.OutDir = outDir;
 
             string checker = TrackCCheckerBox.Text.Trim();
             if (!string.IsNullOrEmpty(checker)) options.Checker = checker;
 
             return options;
+        }
+
+        private static string ResolveTrackCOutputRoot(string inputXls, string configuredOutput)
+        {
+            string trimmed = configuredOutput.Trim().Trim('"');
+            if (!string.IsNullOrEmpty(trimmed))
+            {
+                return Path.GetFullPath(trimmed);
+            }
+
+            string inputFullPath = Path.GetFullPath(inputXls);
+            string parent = Path.GetDirectoryName(inputFullPath) ?? Environment.CurrentDirectory;
+            string name = Path.GetFileNameWithoutExtension(inputFullPath) + ".requests";
+            return Path.Combine(parent, name);
+        }
+
+        private static void CopyDirectory(string sourceDir, string destinationDir)
+        {
+            Directory.CreateDirectory(destinationDir);
+            foreach (string file in Directory.GetFiles(sourceDir))
+            {
+                string destination = Path.Combine(destinationDir, Path.GetFileName(file));
+                File.Copy(file, destination, overwrite: true);
+            }
+
+            foreach (string directory in Directory.GetDirectories(sourceDir))
+            {
+                string destination = Path.Combine(destinationDir, Path.GetFileName(directory));
+                CopyDirectory(directory, destination);
+            }
+        }
+
+        private static void TryDeleteDirectory(string path)
+        {
+            try
+            {
+                if (Directory.Exists(path))
+                {
+                    Directory.Delete(path, recursive: true);
+                }
+            }
+            catch
+            {
+                // Temporary parse output is best-effort cleanup only.
+            }
         }
 
         private string BuildTrackCTracksValue()
@@ -652,9 +724,9 @@ namespace SparrowRunner.Gui
                 "DoWork(); /* done */\r\n// ->\r\n// Done.\r\nDoWork();");
 
             AddRuleInfo(RunTrackCCheck, "Track C XLS 작업 패키지 생성",
-                "Sparrow 결과 XLS를 파싱해 items/index.csv/checkers.md를 만들고, LLM 작업용 requests/worklist 구조를 생성합니다.",
-                "Track C는 소스 자동수정이 아니라 폐쇄망 LLM이 바로 수정 방향을 잡도록 입력을 정리하는 결정론 패키징 단계입니다.",
-                "issues.xls\r\n// ->\r\nitems/\r\nindex.csv\r\nrequests/\r\nworklist.csv");
+                "Sparrow 결과 XLS를 읽고 폐쇄망 LLM에게 넘길 self-contained requests 폴더만 생성합니다.",
+                "Track C는 소스 자동수정이 아니라 폐쇄망 LLM이 바로 수정 방향을 잡도록 입력을 정리하는 결정론 패키징 단계입니다. GUI 출력에는 items/index/checkers/worklist 같은 내부 산출물을 남기지 않습니다.",
+                "issues.xls\r\n// ->\r\nrequests/\r\n  FORWARD_NULL/\r\n    5001_FORWARD_NULL.md");
             AddRuleInfo(TrackCIncludeA, "Track C 요청에 Track A 가이드 포함",
                 "기본은 C 가이드만 요청으로 만듭니다. 이 옵션은 코드 규칙 Track A 항목도 LLM 요청에 포함합니다.",
                 "스패로우 스타일 항목까지 LLM 작업 요청으로 넘길 때만 켭니다.",

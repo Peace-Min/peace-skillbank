@@ -16,7 +16,7 @@ $ErrorActionPreference = "Stop"
 $dotnet = Get-Command dotnet -ErrorAction SilentlyContinue
 if (-not $dotnet) { Write-Host "dotnet SDK not found; skipping Sparrow XLS export E2E."; return }
 
-$toolDir = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\SparrowXlsExport"
+$toolDir = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\_internal\SparrowXlsExport"
 $toolProj = Join-Path $toolDir "SparrowXlsExport.csproj"
 $fixtureProj = Join-Path $toolDir "FixtureGen\FixtureGen.csproj"
 foreach ($p in @($toolProj, $fixtureProj)) { if (-not (Test-Path -LiteralPath $p)) { throw "missing project: $p" } }

@@ -313,7 +313,7 @@ namespace SparrowRunner.Gui
                 {
                     jobs.Add(new RunnerJob(
                         "Track A Roslyn",
-                        Path.Combine(_toolsDir, "SparrowSyntaxFix", "Run-SparrowSyntaxFix.ps1"),
+                        Path.Combine(_toolsDir, "_internal", "SparrowSyntaxFix", "Run-SparrowSyntaxFix.ps1"),
                         rules,
                         logDir,
                         includeGenerated: false));
@@ -338,7 +338,7 @@ namespace SparrowRunner.Gui
                 {
                     jobs.Add(new RunnerJob(
                         "Track B 주석/레이아웃",
-                        Path.Combine(_toolsDir, "SparrowCommentFix", "Run-SparrowCommentFix.ps1"),
+                        Path.Combine(_toolsDir, "_internal", "SparrowCommentFix", "Run-SparrowCommentFix.ps1"),
                         rules,
                         logDir,
                         includeGenerated: IncludeGeneratedCheck.IsChecked == true));

@@ -22,7 +22,7 @@ $ErrorActionPreference = "Stop"
 $dotnet = Get-Command dotnet -ErrorAction SilentlyContinue
 if (-not $dotnet) { Write-Host "dotnet SDK not found; skipping SparrowCommentFix E2E."; return }
 
-$toolDir = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\SparrowCommentFix"
+$toolDir = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\_internal\SparrowCommentFix"
 $toolProj = Join-Path $toolDir "SparrowCommentFix.csproj"
 if (-not (Test-Path -LiteralPath $toolProj)) { throw "missing project: $toolProj" }
 

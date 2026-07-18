@@ -20,7 +20,7 @@ $ErrorActionPreference = "Stop"
 $dotnet = Get-Command dotnet -ErrorAction SilentlyContinue
 if (-not $dotnet) { Write-Host "dotnet SDK not found; skipping SparrowSyntaxFix E2E."; return }
 
-$toolDir = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\SparrowSyntaxFix"
+$toolDir = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\_internal\SparrowSyntaxFix"
 $toolProj = Join-Path $toolDir "SparrowSyntaxFix.csproj"
 $fixtureProj = Join-Path $toolDir "FixtureTests\FixtureTests.csproj"
 foreach ($p in @($toolProj, $fixtureProj)) { if (-not (Test-Path -LiteralPath $p)) { throw "missing project: $p" } }
@@ -206,7 +206,7 @@ try {
     Check "--rules nullvar leaves parens alone" { $selText.Contains("if (nIndex > 0 && nIndex <= nCount - 1)") }
 
     # 5) one-call runner parses cleanly (Run-TrackA.ps1 대응 러너)
-    $runner = Join-Path $PSScriptRoot "..\skills\sparrow-static-analysis\tools\SparrowSyntaxFix\Run-SparrowSyntaxFix.ps1"
+    $runner = Join-Path $PSScriptRoot "..\skills\sparrow-static-analysis\tools\_internal\SparrowSyntaxFix\Run-SparrowSyntaxFix.ps1"
     Check "Run-SparrowSyntaxFix.ps1 exists" { Test-Path -LiteralPath $runner }
     Check "Run-SparrowSyntaxFix.ps1 parses (no syntax error)" {
         $perr = $null

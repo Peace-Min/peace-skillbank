@@ -27,12 +27,12 @@ $ErrorActionPreference = "Stop"
 $dotnet = Get-Command dotnet -ErrorAction SilentlyContinue
 if (-not $dotnet) { Write-Host "dotnet SDK not found; skipping Sparrow real-pattern tests."; return }
 
-$commentProj = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\SparrowCommentFix\SparrowCommentFix.csproj"
-$syntaxProj  = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\SparrowSyntaxFix\SparrowSyntaxFix.csproj"
+$commentProj = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\_internal\SparrowCommentFix\SparrowCommentFix.csproj"
+$syntaxProj  = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\_internal\SparrowSyntaxFix\SparrowSyntaxFix.csproj"
 foreach ($p in @($commentProj, $syntaxProj)) { if (-not (Test-Path -LiteralPath $p)) { throw "missing project: $p" } }
 
-$commentDll = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\SparrowCommentFix\bin\Release\net8.0\SparrowCommentFix.dll"
-$syntaxDll  = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\SparrowSyntaxFix\bin\Release\net8.0\SparrowSyntaxFix.dll"
+$commentDll = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\_internal\SparrowCommentFix\bin\Release\net8.0\SparrowCommentFix.dll"
+$syntaxDll  = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\_internal\SparrowSyntaxFix\bin\Release\net8.0\SparrowSyntaxFix.dll"
 
 # canonical runner rule sets (the runner's order): SyntaxFix = SAFE rules + foreachcast (NO narrowing/localconst/
 # objectinitializer -- narrowing would break the IDictionary<>=ExpandoObject case that is left compiling on purpose).

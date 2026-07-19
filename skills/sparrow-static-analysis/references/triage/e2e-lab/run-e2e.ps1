@@ -18,7 +18,7 @@ $SkillDir  = Split-Path -Parent $RefsDir                        # skills\sparrow
 $Checkers  = Join-Path $RefsDir 'checkers'
 $RunTriage = Join-Path $TriageDir 'Run-Triage.ps1'
 $Compare   = Join-Path $TriageDir 'Compare-Sparrow.ps1'
-$ParserExe = 'C:\Users\CEO\Desktop\dotnet-gcdump-offline\sparrow-xlsexport\win-x64\SparrowXlsExport.exe'
+$ParserExe = Join-Path $SkillDir 'tools\_internal\SparrowXlsExport\bin\Release\net8.0\SparrowXlsExport.exe'
 
 if (-not (Test-Path -LiteralPath $ParserExe)) {
     $parserProject = Join-Path $SkillDir 'tools\_internal\SparrowXlsExport\SparrowXlsExport.csproj'

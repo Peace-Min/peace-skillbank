@@ -147,11 +147,11 @@ Track C 실행 시점의 Sparrow XLS는 Track A/B 자동수정 실행 후에도 
 - 최신 Sparrow XLS를 넣어도 포맷/행 수 변화만으로 실패하지 않는다.
 - PS/Core 불일치, request 누락, unresolved 손실은 계속 잡는다.
 
-### P2-4. `ExceptionAnalyzer` 고유 명칭을 정책 문서에서 제거한다
+### P2-4. 특정 예외 분석 도구 고유 명칭을 정책 문서에서 제거한다
 
 문제:
 
-- `project-conventions.md`에 폐기하기로 한 `ExceptionAnalyzer` 명칭과 전용 로그 표현이 남아 있다.
+- `project-conventions.md`에 폐기하기로 한 특정 예외 분석 도구 명칭과 전용 로그 표현이 남아 있다.
 - Track C request에 이 명칭이 포함되어 로컬 LLM이 특정 프로젝트/도구를 전제로 오해할 수 있다.
 
 수정 방향:
@@ -161,7 +161,7 @@ Track C 실행 시점의 Sparrow XLS는 Track A/B 자동수정 실행 후에도 
 
 완료 기준:
 
-- `ExceptionAnalyzer` 문자열이 Track C request에 포함되지 않는다.
+- 특정 예외 분석 도구 문자열이 Track C request에 포함되지 않는다.
 - 예외 후보의 출처가 로컬 .NET DLL/XML 문서라는 점이 명확하다.
 
 ## 후속 구현 순서
@@ -171,7 +171,7 @@ Track C 실행 시점의 Sparrow XLS는 Track A/B 자동수정 실행 후에도 
 3. P1-1 request prompt를 실제 수정 작업 지향으로 변경.
 4. P2-1 checker filter 일관화.
 5. P2-2 target line 문구 완화.
-6. P2-4 ExceptionAnalyzer 명칭 제거.
+6. P2-4 특정 예외 분석 도구 명칭 제거.
 7. P2-3 CoreTests 실제 XLS 고정값 제거.
 
 ## 검증 기준
@@ -199,3 +199,12 @@ powershell -ExecutionPolicy Bypass -File .\skills\sparrow-static-analysis\refere
 - 실제 최신 Sparrow XLS로 GUI Track C를 실행한다.
 - 최종 `requests/` 아래 체커별 폴더와 `_UNRESOLVED` 항목을 확인한다.
 - A/B/C 체커가 옵션 없이 모두 request 후보가 되었는지 확인한다.
+
+## 반영 결과
+
+- GUI Track C의 A/B 포함 옵션을 제거하고, prepare 호출은 항상 `Tracks=A,B,C`로 고정한다.
+- `Run-Triage.ps1 prepare`와 `TriagePreparer`는 정상 요청 조립 실패 행을 `unresolved.csv`에만 남기지 않고 `requests/_UNRESOLVED/` md로도 생성한다.
+- checker 필터는 `SparrowExporter`, `Run-Triage.ps1`, `TriagePreparer` 모두 체커 키 대소문자 무시 부분검색으로 맞춘다.
+- 항목 md의 대상 라인 표시는 `FIX THIS LINE`이 아니라 `ANCHOR`로 바꾸고, 최소 인접 범위 수정을 허용하도록 문구를 조정한다.
+- Track C 프롬프트는 "지시서 작성" 중심에서 "실제 소스 수정 우선, 불가 시 patch/문맥 필요" 구조로 바꾼다.
+- CoreTests는 fixture-only를 기본으로 하고, 실제 XLS는 인자로 제공된 경우에만 고정 건수 없이 PS/Core 동일성 중심으로 검증한다.

@@ -382,10 +382,8 @@
                                         <TextBlock Text="요청 범위" Style="{StaticResource SectionTitle}" Margin="0,0,0,8"/>
                                         <Border Background="#F8FAFB" BorderBrush="#E5E8EB" BorderThickness="1" CornerRadius="12" Padding="14">
                                             <StackPanel>
-                                                <TextBlock Text="Track C 가이드는 항상 포함합니다." Foreground="{StaticResource TextPrimaryBrush}" FontWeight="SemiBold" Margin="0,0,0,8"/>
-                                                <CheckBox x:Name="TrackCIncludeA" Content="Track A 가이드 포함" Style="{StaticResource RuleCheck}"/>
-                                                <CheckBox x:Name="TrackCIncludeB" Content="Track B 가이드 포함" Style="{StaticResource RuleCheck}"/>
-                                                <TextBlock Text="A/B는 자동수정 후 남은 스타일 항목까지 요청 md로 넘길 때만 선택합니다."
+                                                <TextBlock Text="Track A/B/C 전체 검출을 LLM 요청으로 생성합니다." Foreground="{StaticResource TextPrimaryBrush}" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                                                <TextBlock Text="Track C는 Track A/B 자동수정 후 남은 엣지 케이스까지 사람이 판단할 수 있도록 범위를 나누지 않습니다."
                                                            Style="{StaticResource MutedText}" TextWrapping="Wrap" Margin="0,4,0,0"/>
                                             </StackPanel>
                                         </Border>

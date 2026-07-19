@@ -8,7 +8,7 @@
       .\Run-Triage.ps1 prepare -Index out\index.csv -ItemsDir out\items -GuidesDir ..\checkers -Out triage `
                                [-Checker FORWARD_NULL] [-Severity 매우위험,높음] [-Tracks C] [-Max 50] [-PromptPath triage-prompt.md]
       # -Tracks: 요청을 생성할 가이드 트랙 집합(쉼표구분, 기본 C만). 예) -Tracks A,B,C 로 Track A/B 체커도 포함.
-    산출물(prepare): Out\requests\{체커키}\{ID}_{체커키}.md · Out\worklist.csv · Out\unresolved.csv
+    산출물(prepare): Out\requests\{체커키}\{ID}_{체커키}.md · Out\requests\_UNRESOLVED\*.md · Out\worklist.csv · Out\unresolved.csv
     멱등: 재실행 시 prepare 산출물을 깨끗이 덮어씀.
 #>
 param(
@@ -88,6 +88,47 @@ function ConvertTo-CsvField {
         return '"' + ($s -replace '"', '""') + '"'
     }
     return $s
+}
+
+function Write-UnresolvedRequests {
+    param(
+        [string]$RequestDir,
+        [System.Collections.IEnumerable]$Rows
+    )
+    $rowsArray = @($Rows)
+    if ($rowsArray.Count -eq 0) { return }
+
+    $unresolvedDir = Join-Path $RequestDir '_UNRESOLVED'
+    [void](New-Item -ItemType Directory -Force -Path $unresolvedDir)
+    Write-Utf8Lf -Path (Join-Path $unresolvedDir '_작업지침.md') -Content @"
+# _UNRESOLVED
+
+- 이 폴더는 Track C 요청 md로 정상 조립하지 못한 Sparrow XLS 행입니다.
+- 원본 XLS, 실제 소스 파일, 주변 문맥을 확인해 결함 제거 작업을 계속합니다.
+- 항목 md가 없거나 체커 키가 비어 있어도 Sparrow 검출 행이므로 임의로 무시하지 않습니다.
+"@
+
+    for ($i = 0; $i -lt $rowsArray.Count; $i++) {
+        $row = $rowsArray[$i]
+        $checkerPart = if ($row.Checker -and $row.Checker.Trim().Length -gt 0) { Get-SafeName $row.Checker } else { 'NO_CHECKER' }
+        $name = ('{0}_{1}_{2}.md' -f (($i + 1).ToString('D5')), (Get-SafeName $row.Id), $checkerPart)
+        $text = @"
+# 미해결 Sparrow 항목
+
+- ID: $($row.Id)
+- 체커 키: $($row.Checker)
+- 위험도: $($row.Severity)
+- 파일명: $($row.File)
+- 라인: $($row.Line)
+- item_md: $($row.Item)
+- 사유: $($row.Reason)
+
+## 작업 지시
+
+이 항목은 자동 조립이 실패했지만 Sparrow 검출 행입니다. 실제 소스 파일의 대상 라인과 최소 인접 문맥을 확인해 결함을 제거하고, 수정이 불가능하면 필요한 추가 문맥을 명시합니다.
+"@
+        Write-Utf8Lf -Path (Join-Path $unresolvedDir $name) -Content $text
+    }
 }
 
 # project-conventions.md 를 '## <이름>' 섹션 사전으로 파싱. 값 = 헤더 다음~다음 '## '까지 본문(Trim).
@@ -221,6 +262,7 @@ function Invoke-Prepare {
     $worklist.Add('id,체커키,위험도,파일명,라인,item_md,guide,상태')
     $unresolved = New-Object System.Collections.Generic.List[string]
     $unresolved.Add('id,체커키,위험도,파일명,라인,item_md,사유')
+    $unresolvedRequests = New-Object System.Collections.Generic.List[object]
 
     $requestCount = 0
     $unresolvedCount = 0
@@ -241,8 +283,8 @@ function Invoke-Prepare {
         $mdField = [string]$row.'md_file'
         $checkerName = [string]$row.'체커명'
 
-        # 필터(AND). checker=정확 일치(체커 키), severity=집합 포함.
-        if ($Checker -and ($checkerKey -ne $Checker)) { continue }
+        # 필터(AND). checker는 SparrowExporter와 동일하게 체커 키 대소문자 무시 부분검색.
+        if ($Checker -and $checkerKey.IndexOf($Checker, [System.StringComparison]::OrdinalIgnoreCase) -lt 0) { continue }
         if ($sevSet.Count -gt 0 -and ($sevSet -notcontains $sev.Trim())) { continue }
         if ($Max -gt 0 -and $requestCount + $unresolvedCount -ge $Max) { break }
 
@@ -260,6 +302,9 @@ function Invoke-Prepare {
                         (ConvertTo-CsvField $file), (ConvertTo-CsvField $line), (ConvertTo-CsvField $itemLeaf),
                         (ConvertTo-CsvField '체커 키 없음')
                     ) -join ','))
+            [void]$unresolvedRequests.Add([pscustomobject]@{
+                    Id = $idPart; Checker = $checkerKey; Severity = $sev; File = $file; Line = $line; Item = $itemLeaf; Reason = '체커 키 없음'
+                })
             continue
         }
 
@@ -287,6 +332,9 @@ function Invoke-Prepare {
                         (ConvertTo-CsvField $file), (ConvertTo-CsvField $line), (ConvertTo-CsvField $itemLeaf),
                         (ConvertTo-CsvField ('항목 md 없음: ' + $itemLeaf))
                     ) -join ','))
+            [void]$unresolvedRequests.Add([pscustomobject]@{
+                    Id = $idPart; Checker = $checkerKey; Severity = $sev; File = $file; Line = $line; Item = $itemLeaf; Reason = ('항목 md 없음: ' + $itemLeaf)
+                })
             continue
         }
 
@@ -343,6 +391,8 @@ function Invoke-Prepare {
             Replace('{{CHECKER_MANDATE}}', $mandate)
         Write-Utf8Lf -Path (Join-Path (Join-Path $reqDir $safeChecker) '_작업지침.md') -Content $instr
     }
+
+    Write-UnresolvedRequests -RequestDir $reqDir -Rows $unresolvedRequests
 
     Write-Utf8Lf -Path (Join-Path $Out 'worklist.csv') -Content (($worklist -join "`n") + "`n")
     Write-Utf8Lf -Path (Join-Path $Out 'unresolved.csv') -Content (($unresolved -join "`n") + "`n")

@@ -20,7 +20,7 @@
 ## 수정 대상
 - 파일: `Bar.cs`
 - 라인: `17`
-- 지시: **이 라인과 이 라인에서 직접 드러난 결함만 수정한다. 주변 문맥은 판단용이며 임의 수정 금지.**
+- 지시: **이 라인은 수정 기준점(anchor)이다. 결함 제거에 필요한 최소 인접 범위까지 수정하되, 무관한 주변 코드는 임의 수정하지 않는다.**
 - 대상 코드: `  17: DoRiskyWork(input);`
 
 ## 소스 코드
@@ -29,5 +29,5 @@
 ```text
   15: var input = GetInput();
   16: // Sparrow checker guide is not registered yet.
-  17: DoRiskyWork(input);    <<< TARGET LINE 17 - FIX THIS LINE >>>
+  17: DoRiskyWork(input);    <<< TARGET LINE 17 - ANCHOR >>>
 ```

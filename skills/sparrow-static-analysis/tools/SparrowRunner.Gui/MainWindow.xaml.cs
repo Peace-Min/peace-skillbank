@@ -565,10 +565,7 @@ namespace SparrowRunner.Gui
 
         private string BuildTrackCTracksValue()
         {
-            var tracks = new List<string> { "C" };
-            if (TrackCIncludeA.IsChecked == true) tracks.Add("A");
-            if (TrackCIncludeB.IsChecked == true) tracks.Add("B");
-            return string.Join(",", tracks);
+            return "A,B,C";
         }
 
         private string? BuildTrackCSeverityValue()
@@ -727,15 +724,6 @@ namespace SparrowRunner.Gui
                 "Sparrow 결과 XLS를 읽고 폐쇄망 LLM에게 넘길 self-contained requests 폴더만 생성합니다.",
                 "Track C는 소스 자동수정이 아니라 폐쇄망 LLM이 바로 수정 방향을 잡도록 입력을 정리하는 결정론 패키징 단계입니다. GUI 출력에는 items/index/checkers/worklist 같은 내부 산출물을 남기지 않습니다.",
                 "issues.xls\r\n// ->\r\nrequests/\r\n  FORWARD_NULL/\r\n    5001_FORWARD_NULL.md");
-            AddRuleInfo(TrackCIncludeA, "Track C 요청에 Track A 가이드 포함",
-                "기본은 C 가이드만 요청으로 만듭니다. 이 옵션은 코드 규칙 Track A 항목도 LLM 요청에 포함합니다.",
-                "스패로우 스타일 항목까지 LLM 작업 요청으로 넘길 때만 켭니다.",
-                "Tracks=C\r\n// ->\r\nTracks=C,A");
-            AddRuleInfo(TrackCIncludeB, "Track C 요청에 Track B 가이드 포함",
-                "기본은 C 가이드만 요청으로 만듭니다. 이 옵션은 주석/레이아웃 Track B 항목도 LLM 요청에 포함합니다.",
-                "A/B는 GUI 자동수정이 우선이며, LLM 작업 요청이 필요한 잔여 항목에만 포함하는 편이 안전합니다.",
-                "Tracks=C\r\n// ->\r\nTracks=C,B");
-
             AddRuleInfo(CommitCheck, "규칙별 커밋 생성",
                 "각 규칙 실행 후 변경된 .cs 파일을 규칙별 커밋으로 남깁니다.",
                 "검토필요 규칙은 커밋 메시지에 '! 검토필요'가 포함되도록 CLI가 처리합니다.",

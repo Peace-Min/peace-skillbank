@@ -51,7 +51,7 @@ namespace SparrowXlsExport.Core
         /// <summary>Output directory; gets requests\, worklist.csv, unresolved.csv. Required.</summary>
         public string OutDir = "";
 
-        /// <summary>Exact-match filter on 체커 키; null =&gt; no checker filter.</summary>
+        /// <summary>Case-insensitive substring filter on 체커 키; null =&gt; no checker filter.</summary>
         public string? Checker;
 
         /// <summary>Comma-separated severity set (each trimmed); null/empty =&gt; no severity filter.</summary>
@@ -134,6 +134,7 @@ namespace SparrowXlsExport.Core
 
             var worklist = new List<string> { "id,체커키,위험도,파일명,라인,item_md,guide,상태" };
             var unresolved = new List<string> { "id,체커키,위험도,파일명,라인,item_md,사유" };
+            var unresolvedRequests = new List<UnresolvedRow>();
 
             int requestCount = 0;
             int unresolvedCount = 0;
@@ -152,8 +153,8 @@ namespace SparrowXlsExport.Core
                 string line = Field(row, "라인");
                 string mdField = Field(row, "md_file");
 
-                // 필터(AND). checker=정확 일치(체커 키), severity=집합 포함.
-                if (opts.Checker != null && checkerKey != opts.Checker) continue;
+                // 필터(AND). checker=대소문자 무시 부분검색(체커 키), severity=집합 포함.
+                if (opts.Checker != null && checkerKey.IndexOf(opts.Checker, StringComparison.OrdinalIgnoreCase) < 0) continue;
                 if (sevSet.Count > 0 && !sevSet.Contains(sev.Trim())) continue;
                 // Max caps the number of processed items (requests + unresolved) among the filtered rows,
                 // matching Run-Triage.ps1 prepare (guard: `$Max -gt 0`). Break before processing the (Max+1)th.
@@ -175,6 +176,7 @@ namespace SparrowXlsExport.Core
                         CsvField(idPart), CsvField(checkerKey), CsvField(sev),
                         CsvField(file), CsvField(line), CsvField(itemLeaf), CsvField("체커 키 없음"),
                     }));
+                    unresolvedRequests.Add(new UnresolvedRow(idPart, checkerKey, sev, file, line, itemLeaf, "체커 키 없음"));
                     continue;
                 }
 
@@ -206,6 +208,7 @@ namespace SparrowXlsExport.Core
                         CsvField(idPart), CsvField(checkerKey), CsvField(sev),
                         CsvField(file), CsvField(line), CsvField(itemLeaf), CsvField("항목 md 없음: " + itemLeaf),
                     }));
+                    unresolvedRequests.Add(new UnresolvedRow(idPart, checkerKey, sev, file, line, itemLeaf, "항목 md 없음: " + itemLeaf));
                     continue;
                 }
 
@@ -263,6 +266,8 @@ namespace SparrowXlsExport.Core
                 WriteUtf8Lf(Path.Combine(reqDir, safeChecker, "_작업지침.md"), instr);
             }
 
+            WriteUnresolvedRequests(reqDir, unresolvedRequests);
+
             WriteUtf8Lf(Path.Combine(opts.OutDir, "worklist.csv"), string.Join("\n", worklist) + "\n");
             WriteUtf8Lf(Path.Combine(opts.OutDir, "unresolved.csv"), string.Join("\n", unresolved) + "\n");
 
@@ -300,6 +305,60 @@ namespace SparrowXlsExport.Core
                 PerChecker = perCheckerOrdered,
                 OutDir = Path.GetFullPath(opts.OutDir),
             };
+        }
+
+        private sealed class UnresolvedRow
+        {
+            public UnresolvedRow(string id, string checker, string severity, string file, string line, string item, string reason)
+            {
+                Id = id;
+                Checker = checker;
+                Severity = severity;
+                File = file;
+                Line = line;
+                Item = item;
+                Reason = reason;
+            }
+
+            public string Id { get; }
+            public string Checker { get; }
+            public string Severity { get; }
+            public string File { get; }
+            public string Line { get; }
+            public string Item { get; }
+            public string Reason { get; }
+        }
+
+        private static void WriteUnresolvedRequests(string reqDir, IReadOnlyList<UnresolvedRow> rows)
+        {
+            if (rows.Count == 0) return;
+
+            string unresolvedDir = Path.Combine(reqDir, "_UNRESOLVED");
+            Directory.CreateDirectory(unresolvedDir);
+            WriteUtf8Lf(Path.Combine(unresolvedDir, "_작업지침.md"),
+                "# _UNRESOLVED\n\n" +
+                "- 이 폴더는 Track C 요청 md로 정상 조립하지 못한 Sparrow XLS 행입니다.\n" +
+                "- 원본 XLS, 실제 소스 파일, 주변 문맥을 확인해 결함 제거 작업을 계속합니다.\n" +
+                "- 항목 md가 없거나 체커 키가 비어 있어도 Sparrow 검출 행이므로 임의로 무시하지 않습니다.");
+
+            for (int i = 0; i < rows.Count; i++)
+            {
+                var row = rows[i];
+                string checkerPart = string.IsNullOrWhiteSpace(row.Checker) ? "NO_CHECKER" : SafeName(row.Checker);
+                string name = (i + 1).ToString("D5", CultureInfo.InvariantCulture) + "_" + SafeName(row.Id) + "_" + checkerPart + ".md";
+                var sb = new StringBuilder();
+                sb.Append("# 미해결 Sparrow 항목\n\n");
+                sb.Append("- ID: ").Append(row.Id).Append('\n');
+                sb.Append("- 체커 키: ").Append(row.Checker).Append('\n');
+                sb.Append("- 위험도: ").Append(row.Severity).Append('\n');
+                sb.Append("- 파일명: ").Append(row.File).Append('\n');
+                sb.Append("- 라인: ").Append(row.Line).Append('\n');
+                sb.Append("- item_md: ").Append(row.Item).Append('\n');
+                sb.Append("- 사유: ").Append(row.Reason).Append("\n\n");
+                sb.Append("## 작업 지시\n\n");
+                sb.Append("이 항목은 자동 조립이 실패했지만 Sparrow 검출 행입니다. 실제 소스 파일의 대상 라인과 최소 인접 문맥을 확인해 결함을 제거하고, 수정이 불가능하면 필요한 추가 문맥을 명시합니다.");
+                WriteUtf8Lf(Path.Combine(unresolvedDir, name), sb.ToString());
+            }
         }
 
         // --- text I/O (Read-TextNoBom / Write-Utf8Lf equivalents) ---

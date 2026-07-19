@@ -55,6 +55,16 @@ skills/sparrow-static-analysis/
 - Track C는 전용 체커 가이드가 없는 항목도 버리지 않는다. XLS의 체커명/체커 설명/소스 코드/파일/라인을 근거로 fallback request를 생성한다. 반복 검출되는 fallback 체커는 전용 md로 승격한다.
 - 폐쇄망 실제 코드를 학습 자료로 남길 때는 `references/real-fix-patterns/`에 최소 before/after 형태만 익명화해서 기록한다.
 
+## Track C 검수 기록
+
+Track C의 P1/P2 보완 계획은 `skills/sparrow-static-analysis/references/triage/track-c-review-plan-20260719.md`에 기록한다.
+
+핵심 결정:
+
+- Track C 실행 시점의 Track A/B 잔여 체커는 자동화가 놓친 엣지케이스이므로 LLM/사람에게 무조건 전달한다.
+- GUI의 Track A/B 포함 옵션은 제거 대상이다.
+- Track C GUI는 최종 `requests/` 안에서 unresolved 항목까지 확인 가능해야 한다.
+
 ## 기본 검증
 
 ```powershell

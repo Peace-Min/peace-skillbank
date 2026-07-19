@@ -1,7 +1,7 @@
 # Track C 수정 작업 프롬프트
 
 > 이 파일은 `Run-Triage.ps1 prepare`와 통합 GUI의 Track C 탭이 사용하는 요청 템플릿이다.
-> `{{GUIDE}}`는 해당 체커 가이드 전문으로, `{{ITEM}}`은 Sparrow 검출 항목 md 전문으로 치환된다.
+> `[체커 가이드]`에는 해당 체커 가이드 전문이, `[검출 항목]`에는 Sparrow 검출 항목 md 전문이 들어간다.
 > 생성된 `requests/<체커>/<ID>_<체커>.md` 하나가 곧 LLM/사람에게 전달할 self-contained 작업 요청이다.
 
 ---

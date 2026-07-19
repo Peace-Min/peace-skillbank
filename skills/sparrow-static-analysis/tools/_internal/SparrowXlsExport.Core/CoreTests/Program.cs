@@ -32,7 +32,9 @@ internal static class Program
     {
         try { Console.OutputEncoding = new UTF8Encoding(false); } catch { }
 
-        string realXls = args.Length > 0 ? args[0] : @"C:\Users\CEO\Downloads\issues_OSTES_6827.xls";
+        bool fixturesOnly = args.Any(a => string.Equals(a, "--fixtures-only", StringComparison.OrdinalIgnoreCase));
+        string? realXlsArg = args.FirstOrDefault(a => !a.StartsWith("--", StringComparison.Ordinal));
+        string realXls = realXlsArg ?? @"C:\Users\CEO\Downloads\issues_OSTES_6827.xls";
 
         string? skillRoot = FindSkillRoot(AppContext.BaseDirectory);
         if (skillRoot == null) { Console.Error.WriteLine("skill root (references\\triage\\triage-prompt.md) not found"); return 3; }
@@ -45,7 +47,7 @@ internal static class Program
         string runTriage = Path.Combine(references, "triage", "Run-Triage.ps1");
         string fixturesIndex = Path.Combine(references, "triage", "fixtures", "index.csv");
         string fixturesItems = Path.Combine(references, "triage", "fixtures", "items");
-        string consoleExe = Path.Combine(skillRoot, "tools", "SparrowXlsExport", "bin", "Release", "net8.0", "SparrowXlsExport.exe");
+        string consoleExe = Path.Combine(skillRoot, "tools", "_internal", "SparrowXlsExport", "bin", "Release", "net8.0", "SparrowXlsExport.exe");
 
         string work = Path.Combine(Path.GetTempPath(), "sparrow-coretests-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(work);
@@ -61,12 +63,21 @@ internal static class Program
         try
         {
             Check(File.Exists(consoleExe), "precondition: console exe exists", consoleExe);
-            Check(File.Exists(realXls), "precondition: real xls exists", realXls);
+            if (!fixturesOnly) Check(File.Exists(realXls), "precondition: real xls exists", realXls);
             Check(File.Exists(runTriage), "precondition: Run-Triage.ps1 exists", runTriage);
             Check(File.Exists(promptPath), "precondition: triage-prompt.md exists", promptPath);
             Check(File.Exists(conventionsPath), "precondition: project-conventions.md exists", conventionsPath);
             Check(File.Exists(templatePath), "precondition: folder-instruction-template.md exists", templatePath);
             if (_fails > 0) return Done();
+
+            if (fixturesOnly)
+            {
+                Console.WriteLine("\n==== C. Core.Prepare == Run-Triage.ps1 prepare (fixtures only) ====");
+                ComparePrepare("C1 fixtures", runTriage, promptPath, conventionsPath, templatePath,
+                    fixturesIndex, fixturesItems, guidesDir, work, "C1",
+                    checker: null, severity: null, max: null);
+                return Done();
+            }
 
             // ================================================================ A
             Console.WriteLine("\n==== A. Console parse identical (real xls) ====");

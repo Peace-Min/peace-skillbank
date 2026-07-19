@@ -52,6 +52,7 @@ skills/sparrow-static-analysis/
 - Roslyn 구문 트리 또는 trivia 범위 안에서 수정하고, 문자열 리터럴 같은 비대상 영역은 건드리지 않는다.
 - 판단이 필요한 보안/품질 항목은 자동수정하지 않고 Markdown 요청으로 만든다.
 - 새 체커를 추가할 때는 `references/checkers/<CHECKER_KEY>.md`에 조치 기준, 예시, C# 7.3/.NET Framework 4.7.2 제약을 적는다.
+- Track C는 전용 체커 가이드가 없는 항목도 버리지 않는다. XLS의 체커명/체커 설명/소스 코드/파일/라인을 근거로 fallback request를 생성한다. 반복 검출되는 fallback 체커는 전용 md로 승격한다.
 - 폐쇄망 실제 코드를 학습 자료로 남길 때는 `references/real-fix-patterns/`에 최소 before/after 형태만 익명화해서 기록한다.
 
 ## 기본 검증

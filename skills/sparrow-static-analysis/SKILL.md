@@ -62,10 +62,11 @@ Required workflow:
 2. Generate the `requests/` folder. This folder is the normal handoff unit for the closed-network LLM.
 3. Use `references/triage/triage-contract.md` as the workflow contract.
 4. Use `references/triage/triage-prompt.md` as the model prompt template.
-5. For each finding, read `references/checkers/<CHECKER_KEY>.md`.
-6. If the checker is `NULL_RETURN_STD`, also read `references/dotnet-contracts/null-return-std.md`.
-7. Produce concrete C# 7.3-compatible repair guidance when enough context exists.
-8. If context is missing, mark the request as `context required` and list the exact missing files, symbols, or code ranges.
+5. For each finding, read `references/checkers/<CHECKER_KEY>.md` when it exists.
+6. If a checker guide is missing, do not drop the row. The packager creates a fallback request from the XLS checker name, description, source, file, and line; use that request as the working guide.
+7. If the checker is `NULL_RETURN_STD`, also read `references/dotnet-contracts/null-return-std.md`.
+8. Produce concrete C# 7.3-compatible repair guidance when enough context exists.
+9. If context is missing, mark the request as `context required` and list the exact missing files, symbols, or code ranges.
 
 Do not auto-edit target source code for judgment-required findings from this skill. The output is a repair request for the developer or LLM working against the real source tree.
 

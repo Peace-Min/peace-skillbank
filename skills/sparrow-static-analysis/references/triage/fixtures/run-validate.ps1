@@ -44,8 +44,10 @@ Write-Host "[prepare]"
 & $runTriage prepare -Index $index -ItemsDir $items -GuidesDir $guidesDir -Out $out -PromptPath $promptPath | Out-Null
 $reqFwd = Join-Path $out 'requests\FORWARD_NULL\5001_FORWARD_NULL.md'
 $reqLeak = Join-Path $out 'requests\RESOURCE_LEAK\5002_RESOURCE_LEAK.md'
+$reqUnknown = Join-Path $out 'requests\UNKNOWN_RULE\5003_UNKNOWN_RULE.md'
 Assert (Test-Path -LiteralPath $reqFwd) "요청 생성: FORWARD_NULL\5001_FORWARD_NULL.md"
 Assert (Test-Path -LiteralPath $reqLeak) "요청 생성: RESOURCE_LEAK\5002_RESOURCE_LEAK.md"
+Assert (Test-Path -LiteralPath $reqUnknown) "fallback 요청 생성: UNKNOWN_RULE\5003_UNKNOWN_RULE.md"
 
 $fwdText = ReadAll $reqFwd
 Assert ($fwdText -match 'CWE-476') "요청에 가이드 병합됨 (CWE-476)"
@@ -58,15 +60,22 @@ $leakText = ReadAll $reqLeak
 Assert ($leakText -match 'CWE-772') "RESOURCE_LEAK 요청에 가이드 병합 (CWE-772)"
 Assert ($leakText -match 'SqlConnection') "RESOURCE_LEAK 요청에 항목 소스 병합"
 
+$unknownText = ReadAll $reqUnknown
+Assert ($unknownText -match 'XLS 기반 자동 생성') "UNKNOWN_RULE 요청에 fallback 가이드 병합"
+Assert ($unknownText -match 'DoRiskyWork') "UNKNOWN_RULE 요청에 항목 소스 병합"
+Assert ($unknownText -match '가이드가 없다는 이유로 false-positive 처리하거나 스킵하지 않는다') "fallback 가이드가 스킵 금지 명시"
+
 # 체커별 _작업지침.md
 $instrFwd = Join-Path $out 'requests\FORWARD_NULL\_작업지침.md'
 $instrLeak = Join-Path $out 'requests\RESOURCE_LEAK\_작업지침.md'
+$instrUnknown = Join-Path $out 'requests\UNKNOWN_RULE\_작업지침.md'
 Assert (Test-Path -LiteralPath $instrFwd) "작업지침 생성: FORWARD_NULL\_작업지침.md"
 Assert (Test-Path -LiteralPath $instrLeak) "작업지침 생성: RESOURCE_LEAK\_작업지침.md"
+Assert (Test-Path -LiteralPath $instrUnknown) "작업지침 생성: UNKNOWN_RULE\_작업지침.md"
 Assert ((ReadAll $instrFwd) -match '전건') "작업지침에 공통 정책 렌더됨"
 
 $wlLines = DataLines (ReadAll (Join-Path $out 'worklist.csv'))
-Assert (($wlLines | Where-Object { $_ -match ',TODO$' }).Count -eq 2) "worklist TODO 2건"
+Assert (($wlLines | Where-Object { $_ -match ',TODO$' }).Count -eq 3) "worklist TODO 3건"
 $unresLines = DataLines (ReadAll (Join-Path $out 'unresolved.csv'))
 Assert ($unresLines.Count -eq 1) "unresolved 데이터행 0 (헤더만; 모두 해결)"
 

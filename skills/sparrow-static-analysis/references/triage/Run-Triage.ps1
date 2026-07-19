@@ -147,6 +147,35 @@ function Get-GuideTrack {
     return 'C'
 }
 
+function New-FallbackGuide {
+    param([string]$CheckerKey, [string]$CheckerName, [string]$Severity)
+    $title = if ($CheckerName -and $CheckerName.Trim().Length -gt 0) { $CheckerName.Trim() } else { $CheckerKey }
+    $sev = if ($Severity -and $Severity.Trim().Length -gt 0) { $Severity.Trim() } else { '미확인' }
+    return @"
+# $CheckerKey — $title
+
+**트랙**: C  |  **심각도**: $sev  |  **가이드 상태**: XLS 기반 자동 생성
+
+## 진성 판별 기준
+
+- 이 체커는 ``references/checkers/$CheckerKey.md`` 가이드가 아직 없다.
+- Sparrow XLS의 ``체커 설명``, ``소스 코드``, ``파일명``, ``라인``, ``체커명``을 1차 근거로 삼는다.
+- 실제 소스 파일에서 해당 라인 주변의 최소 문맥을 확인하고, Sparrow가 요구한 결함을 제거하는 방향으로 수정한다.
+
+## 이렇게 보여도 넘기지 말 것
+
+- 가이드가 없다는 이유로 false-positive 처리하거나 스킵하지 않는다.
+- 코드상 문제가 없어 보인다는 이유만으로 방치하지 않는다. Sparrow 검출 항목은 전건 수정 정책의 대상이다.
+- 문맥이 부족하면 ``문맥 필요``로 두고 필요한 파일, 심볼, 호출부, 소유권 정보를 명시한다.
+
+## 수정 패턴 (C# 예시)
+
+- 이 체커의 전용 예시는 아직 없다.
+- 요청 md의 ``[검출 항목]``에 포함된 Sparrow 설명과 소스 스니펫을 기준으로 Before/After를 작성한다.
+- .NET Framework 4.7.2 / C# 7.3 문법만 사용한다.
+"@
+}
+
 # ---------------------------------------------------------------- prepare
 function Invoke-Prepare {
     if (-not $Index) { throw "prepare: -Index <index.csv> 필요" }
@@ -210,6 +239,7 @@ function Invoke-Prepare {
         $file = [string]$row.'파일명'
         $line = [string]$row.'라인'
         $mdField = [string]$row.'md_file'
+        $checkerName = [string]$row.'체커명'
 
         # 필터(AND). checker=정확 일치(체커 키), severity=집합 포함.
         if ($Checker -and ($checkerKey -ne $Checker)) { continue }
@@ -221,21 +251,29 @@ function Invoke-Prepare {
         $itemPath = if ($itemLeaf) { Join-Path $ItemsDir $itemLeaf } else { '' }
 
         $guidePath = Join-Path $GuidesDir ("{0}.md" -f $checkerKey)
+        $fallbackGuide = $false
 
-        if (-not $checkerKey -or -not (Test-Path -LiteralPath $guidePath)) {
+        if (-not $checkerKey) {
             $unresolvedCount++
-            $reason = if (-not $checkerKey) { '체커 키 없음' } else { '가이드 없음(Track A/B 또는 무가이드)' }
             $unresolved.Add((@(
                         (ConvertTo-CsvField $idPart), (ConvertTo-CsvField $checkerKey), (ConvertTo-CsvField $sev),
                         (ConvertTo-CsvField $file), (ConvertTo-CsvField $line), (ConvertTo-CsvField $itemLeaf),
-                        (ConvertTo-CsvField $reason)
+                        (ConvertTo-CsvField '체커 키 없음')
                     ) -join ','))
             continue
         }
 
-        # 가이드 존재 → 트랙 필터. 가이드에서 트랙을 읽어 요청 집합에 없으면 이 행을 건너뜀
-        # (요청도, 미해결도 아님 — 단순 제외). 가이드 read는 여기서 1회 하고 요청 조립 때 재사용.
-        $guideText = Read-TextNoBom -Path $guidePath
+        if (Test-Path -LiteralPath $guidePath) {
+            $guideText = Read-TextNoBom -Path $guidePath
+        }
+        else {
+            $fallbackGuide = $true
+            $guidePath = ('__generated_fallback__/{0}.md' -f $checkerKey)
+            $guideText = New-FallbackGuide -CheckerKey $checkerKey -CheckerName $checkerName -Severity $sev
+        }
+
+        # 가이드 존재 또는 fallback 생성 → 트랙 필터. 트랙이 요청 집합에 없으면 이 행을 건너뜀
+        # (요청도, 미해결도 아님 — 단순 제외). fallback guide는 Track C로 취급한다.
         $guideTrack = Get-GuideTrack -GuideText $guideText
         if ($trackSet -notcontains $guideTrack) {
             $trackFilteredCount++
@@ -255,7 +293,7 @@ function Invoke-Prepare {
         if (-not $perCheckerMeta.ContainsKey($checkerKey)) {
             $perCheckerMeta[$checkerKey] = (Get-GuideMeta -GuideText $guideText -CheckerKey $checkerKey)
         }
-        if ($checkerKey -eq 'NULL_RETURN_STD') {
+        if (-not $fallbackGuide -and $checkerKey -eq 'NULL_RETURN_STD') {
             $contractPath = Join-Path (Split-Path -Parent $GuidesDir) 'dotnet-contracts\null-return-std.md'
             if (Test-Path -LiteralPath $contractPath) {
                 $guideText = $guideText + "`n`n---`n`n## [추가 계약표: .NET null-return API]`n`n" + (Read-TextNoBom -Path $contractPath)

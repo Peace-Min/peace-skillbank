@@ -18,7 +18,7 @@ and `"a//b"` are left byte-identical. This guarantee is covered by the SAFETY fi
 ## CLI
 
 ```
-SparrowCommentFix <file.cs> [<file2.cs> ...] [--files-from <index.csv>] [--root <dir>] --rules <flatten,trailing,space,period,capitalize,memberblank,onestatement,onedeclaration,continuation,linqalign|all> [--dry-run]
+SparrowCommentFix <file.cs> [<file2.cs> ...] [--files-from <index.csv>] [--root <dir>] --rules <flatten,trailing,blockpromote,space,period,capitalize,memberblank,onestatement,onedeclaration,continuation,linqalign|all> [--dry-run]
 ```
 
 - Positional args are `.cs` file paths.
@@ -40,6 +40,7 @@ a rule with no safe deterministic contract is left unhandled rather than shipped
 |---|---|---|---|
 | `flatten` | `FORMATTING.COMMENT.BLOCK_OF_ASTERISK`, `FORMATTING.COMMENT.LOWERCASE_FIRST_LETTER`, `FORMATTING.COMMENT.MISSING_PERIOD` | `/** @brief x */` -> `// X.` line comments | skips empty blocks and comments containing preprocessor-like `#` text |
 | `trailing` | inline/trailing comment rule | `code; //ABC` -> `// ABC.` above `code;` | only real line-comment trivia after code on the same line |
+| `blockpromote` | `MISSING_BLANK_LINE_BEFORE_COMMENT` (inline `/* */`) | `if (/* x */ (cond))` -> `// x.` promoted above the statement (blank line before), inline block removed, residual whitespace collapsed | **opt-in** (not in the runner default set); single-line inline `/* */` only; skips multi-line blocks, `/**` doc blocks, own-line comments, empty text, undeterminable enclosing statement |
 | `space` | `FORMATTING.COMMENT.MISSING_SPACE_AFTER_DELIMITER` | `//x`→`// x`, `///x`→`/// x`, `/*x*/`→`/* x*/` | untouched if next char is whitespace, another `/`, or (block) `*`; `//`/`////` untouched |
 | `period` | `FORMATTING.COMMENT.MISSING_PERIOD` | append `.` to comment content | only when the last content char is a **letter** (ASCII / Hangul / CJK) or **digit**; skips dividers (`// ----`, `/****/`), commented-out code ending in `;`/`]`, and content already ending in punctuation |
 | `capitalize` | `FORMATTING.COMMENT.LOWERCASE_FIRST_LETTER` | strip leading punctuation (`<`, `.`, `[`, `(`, ...), then uppercase an ASCII `a-z` first letter (`// <variableSource>`→`// VariableSource>`, `//badcase`→`//Badcase`) | **skips** `///` doc + `/**` Doxygen; never strips/uppercases Korean/CJK (no case); aborts if only symbols/whitespace precede the first letter (`// ==== divider`); inline `/* */` edited in place, **never** converted to `//` |

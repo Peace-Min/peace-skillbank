@@ -205,7 +205,7 @@ try {
     Check "--rules nullvar leaves foreach alone" { $selText.Contains("foreach (XmlNode node in clsNodes)") }
     Check "--rules nullvar leaves parens alone" { $selText.Contains("if (nIndex > 0 && nIndex <= nCount - 1)") }
 
-    # 5) one-call runner parses cleanly (Run-TrackA.ps1 대응 러너)
+    # 5) one-call runner parses cleanly
     $runner = Join-Path $PSScriptRoot "..\skills\sparrow-static-analysis\tools\_internal\SparrowSyntaxFix\Run-SparrowSyntaxFix.ps1"
     Check "Run-SparrowSyntaxFix.ps1 exists" { Test-Path -LiteralPath $runner }
     Check "Run-SparrowSyntaxFix.ps1 parses (no syntax error)" {

@@ -33,7 +33,7 @@ if (-not (Test-Path -LiteralPath $XlsPath)) {
     return
 }
 
-$toolsDir   = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools"
+$toolsDir   = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\_internal"
 $syntaxProj = Join-Path $toolsDir "SparrowSyntaxFix\SparrowSyntaxFix.csproj"
 $commentProj= Join-Path $toolsDir "SparrowCommentFix\SparrowCommentFix.csproj"
 $genProj    = Join-Path $PSScriptRoot "SparrowExhaustiveXls\SparrowExhaustiveXls.csproj"

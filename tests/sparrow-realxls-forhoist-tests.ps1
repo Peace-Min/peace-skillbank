@@ -27,7 +27,7 @@ $ErrorActionPreference = "Stop"
 $dotnet = Get-Command dotnet -ErrorAction SilentlyContinue
 if (-not $dotnet) { Write-Host "dotnet SDK not found; skipping Sparrow real-xls forhoist tests."; return }
 
-$toolRoot   = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools"
+$toolRoot   = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\_internal"
 $syntaxProj = Join-Path $toolRoot "SparrowSyntaxFix\SparrowSyntaxFix.csproj"
 if (-not (Test-Path -LiteralPath $syntaxProj)) { throw "missing project: $syntaxProj" }
 

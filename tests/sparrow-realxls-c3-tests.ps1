@@ -30,7 +30,7 @@ $ErrorActionPreference = "Stop"
 $dotnet = Get-Command dotnet -ErrorAction SilentlyContinue
 if (-not $dotnet) { Write-Host "dotnet SDK not found; skipping Sparrow real-xls C3 tests."; return }
 
-$toolRoot    = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools"
+$toolRoot    = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\_internal"
 $commentProj = Join-Path $toolRoot "SparrowCommentFix\SparrowCommentFix.csproj"
 $syntaxProj  = Join-Path $toolRoot "SparrowSyntaxFix\SparrowSyntaxFix.csproj"
 foreach ($p in @($commentProj, $syntaxProj)) { if (-not (Test-Path -LiteralPath $p)) { throw "missing project: $p" } }

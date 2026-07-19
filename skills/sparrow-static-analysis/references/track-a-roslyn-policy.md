@@ -2,7 +2,7 @@
 
 ## Track A Roslyn 원샷 CLI 운영 원칙
 
-이 문서의 규칙명은 설계와 테스트를 위한 식별자다. 일반 사용자는 `SparrowSyntaxFix --rules foreachcast`처럼 직접 호출하지 않고, `tools/SparrowSyntaxFix/Run-SparrowSyntaxFix.ps1`를 실행해 runner가 묻는 Y/N 질문으로 선택한다.
+이 문서의 규칙명은 설계와 테스트를 위한 식별자다. 일반 사용자는 `SparrowSyntaxFix --rules foreachcast`처럼 직접 호출하지 않고, 통합 GUI `tools/Run-SparrowRunnerGui.cmd`에서 체크박스로 선택한다. 테스트/자동화에서만 `tools/_internal/SparrowSyntaxFix/Run-SparrowSyntaxFix.ps1`를 직접 실행한다.
 
 - 기본 안전 규칙은 runner가 자동 실행한다.
 - `foreachcast`, `objectinitializer`, `nullvar`, `objectvar-narrowing`, `localconst`, `arrayvar-narrowing`은 runner가 포함 여부를 묻는다.

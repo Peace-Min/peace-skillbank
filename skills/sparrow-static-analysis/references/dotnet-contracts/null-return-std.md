@@ -1,6 +1,6 @@
 # .NET Framework 4.7.2 null-return reference for Track C
 
-이 문서는 `NULL_RETURN_STD` 판단 시 로컬 Claude가 우선 참조할 정적 계약표다. 목적은 "표준 라이브러리 호출 결과가 null 일 수 있는가"를 빠르게 판정하는 것이며, 여기 없는 API는 결함 단정 대신 `needs_context=true`로 보류한다.
+이 문서는 `NULL_RETURN_STD` 처리 시 로컬 Claude가 우선 참조할 정적 계약표다. 목적은 "표준 라이브러리 호출 결과가 null 일 수 있는가"를 빠르게 확인하는 것이며, 여기 없는 API는 임의 단정하지 말고 `문맥 필요`로 표시한다.
 
 ## 판정 원칙
 
@@ -46,4 +46,4 @@
 
 - 표에 있는 API라도 검출 항목의 실제 overload와 generic type을 확인한다.
 - reference type 또는 nullable value type이 아닌 `FirstOrDefault<int>` 같은 값 타입 기본값은 null 역참조가 아니므로 이 체커로 단정하지 않는다.
-- 표에 없는 API는 공식 계약이 요청 패키지에 포함되지 않는 한 `보류`, `needs_context=true`로 둔다.
+- 표에 없는 API는 공식 계약이 요청 패키지에 포함되지 않는 한 `문맥 필요`로 표시한다.

@@ -25,8 +25,15 @@ param(
 $ErrorActionPreference = "Stop"
 
 $python = Get-Command python -ErrorAction SilentlyContinue
+if ($python -and $python.Source -like "*\WindowsApps\python.exe") {
+    $python = $null
+}
+if ($python) {
+    & $python.Source --version *> $null
+    if ($LASTEXITCODE -ne 0) { $python = $null }
+}
 if (-not $python) {
-    Write-Host "Python not found; skipping verify-symbols fixture tests."
+    Write-Host "Python not found or not executable; skipping verify-symbols fixture tests."
     return
 }
 

@@ -3,7 +3,7 @@
 - **건수**: (실측 시 변동)  |  **심각도**: 보통  |  **트랙**: A
 - **Sparrow 설명**: for문과 foreach의 루프변수의 타입은 암시적 타입을 사용해야 합니다.
 
-> **대부분 Track A(dotnet format/SparrowSyntaxFix) 또는 Track B(SparrowCommentFix/dotnet format whitespace)가 자동 처리한다. 이 가이드는 도구가 못 고친 잔여를 LLM이 처리할 때 사용**한다.
+> **대부분 Track A(SparrowSyntaxFix/SparrowSyntaxFix) 또는 Track B(SparrowCommentFix/SparrowCommentFix layout)가 자동 처리한다. 이 가이드는 도구가 못 고친 잔여를 LLM이 처리할 때 사용**한다.
 
 ## 지켜야 할 규칙 (무엇을 왜 검출)
 `for`문의 초기화 변수와 `foreach`문의 루프 변수는 명시 타입 대신 `var`(암시적 타입)로 선언해야 한다. **보안 결함이 아니라 스타일·가독성·표준 준수** 항목이다. `for (int i = 0; ...)`, `foreach (char ch in laugh)`처럼 루프 변수 타입을 반복 도메인에서 유추 가능하므로 명시 표기는 중복이다. Sparrow는 명시 타입 루프 변수를 가진 `for`/`foreach`문을 검출한다.

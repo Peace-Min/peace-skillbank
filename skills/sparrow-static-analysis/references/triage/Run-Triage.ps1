@@ -1,23 +1,18 @@
 ﻿#requires -Version 5.1
 <#
-    Run-Triage.ps1 — Sparrow Track C 트리아지 결정론 오케스트레이터.
-    LLM/판단 없음: 체커키→가이드 사전조회로 요청 조립(prepare), verdict JSON 검증·집계(collect)만 한다.
-    판정 자체는 사람/LLM이 triage-prompt 규칙대로 별도 수행(triage-contract.md 참조).
+    Run-Triage.ps1 — Sparrow Track C 요청 패키지 결정론 오케스트레이터.
+    LLM/판단 없음: 체커키→가이드 사전조회로 수정 작업 요청을 조립(prepare)한다.
 
     사용:
       # 요청 조립(결정론)
       .\Run-Triage.ps1 prepare -Index out\index.csv -ItemsDir out\items -GuidesDir ..\checkers -Out triage `
                                [-Checker FORWARD_NULL] [-Severity 매우위험,높음] [-Tracks C] [-Max 50] [-PromptPath triage-prompt.md]
       # -Tracks: 요청을 생성할 가이드 트랙 집합(쉼표구분, 기본 C만). 예) -Tracks A,B,C 로 Track A/B 체커도 포함.
-      # verdict 수거·검증·집계(결정론)
-      .\Run-Triage.ps1 collect -VerdictsDir triage\verdicts -Worklist triage\worklist.csv -Out triage
-
-    산출물(prepare): Out\requests\{ID}_{체커키}.md · Out\worklist.csv · Out\unresolved.csv · Out\verdicts\(빈 폴더)
-    산출물(collect): Out\triage-ledger.csv · Out\by-checker\<체커>.md · Out\invalid.csv
-    멱등: 재실행 시 산출물을 깨끗이 덮어씀(verdicts\는 입력이라 보존).
+    산출물(prepare): Out\requests\{체커키}\{ID}_{체커키}.md · Out\requests\_UNRESOLVED\*.md · Out\worklist.csv · Out\unresolved.csv
+    멱등: 재실행 시 prepare 산출물을 깨끗이 덮어씀.
 #>
 param(
-    [Parameter(Position = 0)][ValidateSet('prepare', 'collect')][string]$Mode,
+    [Parameter(Position = 0)][ValidateSet('prepare')][string]$Mode,
 
     # prepare
     [string]$Index,
@@ -30,10 +25,6 @@ param(
     [string]$PromptPath,
     [string]$ConventionsPath,
     [string]$TemplatePath,
-
-    # collect
-    [string]$VerdictsDir,
-    [string]$Worklist,
 
     # 공통
     [string]$Out
@@ -99,6 +90,47 @@ function ConvertTo-CsvField {
     return $s
 }
 
+function Write-UnresolvedRequests {
+    param(
+        [string]$RequestDir,
+        [System.Collections.IEnumerable]$Rows
+    )
+    $rowsArray = @($Rows)
+    if ($rowsArray.Count -eq 0) { return }
+
+    $unresolvedDir = Join-Path $RequestDir '_UNRESOLVED'
+    [void](New-Item -ItemType Directory -Force -Path $unresolvedDir)
+    Write-Utf8Lf -Path (Join-Path $unresolvedDir '_작업지침.md') -Content @"
+# _UNRESOLVED
+
+- 이 폴더는 Track C 요청 md로 정상 조립하지 못한 Sparrow XLS 행입니다.
+- 원본 XLS, 실제 소스 파일, 주변 문맥을 확인해 결함 제거 작업을 계속합니다.
+- 항목 md가 없거나 체커 키가 비어 있어도 Sparrow 검출 행이므로 임의로 무시하지 않습니다.
+"@
+
+    for ($i = 0; $i -lt $rowsArray.Count; $i++) {
+        $row = $rowsArray[$i]
+        $checkerPart = if ($row.Checker -and $row.Checker.Trim().Length -gt 0) { Get-SafeName $row.Checker } else { 'NO_CHECKER' }
+        $name = ('{0}_{1}_{2}.md' -f (($i + 1).ToString('D5')), (Get-SafeName $row.Id), $checkerPart)
+        $text = @"
+# 미해결 Sparrow 항목
+
+- ID: $($row.Id)
+- 체커 키: $($row.Checker)
+- 위험도: $($row.Severity)
+- 파일명: $($row.File)
+- 라인: $($row.Line)
+- item_md: $($row.Item)
+- 사유: $($row.Reason)
+
+## 작업 지시
+
+이 항목은 자동 조립이 실패했지만 Sparrow 검출 행입니다. 실제 소스 파일의 대상 라인과 최소 인접 문맥을 확인해 결함을 제거하고, 수정이 불가능하면 필요한 추가 문맥을 명시합니다.
+"@
+        Write-Utf8Lf -Path (Join-Path $unresolvedDir $name) -Content $text
+    }
+}
+
 # project-conventions.md 를 '## <이름>' 섹션 사전으로 파싱. 값 = 헤더 다음~다음 '## '까지 본문(Trim).
 # '### ' 하위헤딩은 섹션 경계가 아님('## ' prefix 아님). H1('# ')은 섹션 밖에서 무시.
 function Get-ConventionSections {
@@ -156,6 +188,35 @@ function Get-GuideTrack {
     return 'C'
 }
 
+function New-FallbackGuide {
+    param([string]$CheckerKey, [string]$CheckerName, [string]$Severity)
+    $title = if ($CheckerName -and $CheckerName.Trim().Length -gt 0) { $CheckerName.Trim() } else { $CheckerKey }
+    $sev = if ($Severity -and $Severity.Trim().Length -gt 0) { $Severity.Trim() } else { '미확인' }
+    return @"
+# $CheckerKey — $title
+
+**트랙**: C  |  **심각도**: $sev  |  **가이드 상태**: XLS 기반 자동 생성
+
+## 진성 판별 기준
+
+- 이 체커는 ``references/checkers/$CheckerKey.md`` 가이드가 아직 없다.
+- Sparrow XLS의 ``체커 설명``, ``소스 코드``, ``파일명``, ``라인``, ``체커명``을 1차 근거로 삼는다.
+- 실제 소스 파일에서 해당 라인 주변의 최소 문맥을 확인하고, Sparrow가 요구한 결함을 제거하는 방향으로 수정한다.
+
+## 이렇게 보여도 넘기지 말 것
+
+- 가이드가 없다는 이유로 false-positive 처리하거나 스킵하지 않는다.
+- 코드상 문제가 없어 보인다는 이유만으로 방치하지 않는다. Sparrow 검출 항목은 전건 수정 정책의 대상이다.
+- 문맥이 부족하면 ``문맥 필요``로 두고 필요한 파일, 심볼, 호출부, 소유권 정보를 명시한다.
+
+## 수정 패턴 (C# 예시)
+
+- 이 체커의 전용 예시는 아직 없다.
+- 요청 md의 ``[검출 항목]``에 포함된 Sparrow 설명과 소스 스니펫을 기준으로 Before/After를 작성한다.
+- .NET Framework 4.7.2 / C# 7.3 문법만 사용한다.
+"@
+}
+
 # ---------------------------------------------------------------- prepare
 function Invoke-Prepare {
     if (-not $Index) { throw "prepare: -Index <index.csv> 필요" }
@@ -189,13 +250,11 @@ function Invoke-Prepare {
     $trackSet = @('C')
     if ($Tracks) { $trackSet = @($Tracks.Split(',') | ForEach-Object { $_.Trim().ToUpperInvariant() } | Where-Object { $_.Length -gt 0 }) }
 
-    # 출력 폴더 준비(멱등: prepare 산출물만 초기화, verdicts\는 보존).
+    # 출력 폴더 준비(멱등: prepare 산출물만 초기화).
     [void](New-Item -ItemType Directory -Force -Path $Out)
     $reqDir = Join-Path $Out 'requests'
     if (Test-Path -LiteralPath $reqDir) { Remove-Item -LiteralPath $reqDir -Recurse -Force }
     [void](New-Item -ItemType Directory -Force -Path $reqDir)
-    $verDir = Join-Path $Out 'verdicts'
-    [void](New-Item -ItemType Directory -Force -Path $verDir)   # 입력 폴더 — 있으면 보존
 
     $rows = @(Read-CsvNoBom -Path $Index)   # @() 강제: 1행 CSV 스칼라 접힘 방지(foreach 안정)
 
@@ -203,6 +262,7 @@ function Invoke-Prepare {
     $worklist.Add('id,체커키,위험도,파일명,라인,item_md,guide,상태')
     $unresolved = New-Object System.Collections.Generic.List[string]
     $unresolved.Add('id,체커키,위험도,파일명,라인,item_md,사유')
+    $unresolvedRequests = New-Object System.Collections.Generic.List[object]
 
     $requestCount = 0
     $unresolvedCount = 0
@@ -221,9 +281,10 @@ function Invoke-Prepare {
         $file = [string]$row.'파일명'
         $line = [string]$row.'라인'
         $mdField = [string]$row.'md_file'
+        $checkerName = [string]$row.'체커명'
 
-        # 필터(AND). checker=정확 일치(체커 키), severity=집합 포함.
-        if ($Checker -and ($checkerKey -ne $Checker)) { continue }
+        # 필터(AND). checker는 SparrowExporter와 동일하게 체커 키 대소문자 무시 부분검색.
+        if ($Checker -and $checkerKey.IndexOf($Checker, [System.StringComparison]::OrdinalIgnoreCase) -lt 0) { continue }
         if ($sevSet.Count -gt 0 -and ($sevSet -notcontains $sev.Trim())) { continue }
         if ($Max -gt 0 -and $requestCount + $unresolvedCount -ge $Max) { break }
 
@@ -232,21 +293,32 @@ function Invoke-Prepare {
         $itemPath = if ($itemLeaf) { Join-Path $ItemsDir $itemLeaf } else { '' }
 
         $guidePath = Join-Path $GuidesDir ("{0}.md" -f $checkerKey)
+        $fallbackGuide = $false
 
-        if (-not $checkerKey -or -not (Test-Path -LiteralPath $guidePath)) {
+        if (-not $checkerKey) {
             $unresolvedCount++
-            $reason = if (-not $checkerKey) { '체커 키 없음' } else { '가이드 없음(Track A/B 또는 무가이드)' }
             $unresolved.Add((@(
                         (ConvertTo-CsvField $idPart), (ConvertTo-CsvField $checkerKey), (ConvertTo-CsvField $sev),
                         (ConvertTo-CsvField $file), (ConvertTo-CsvField $line), (ConvertTo-CsvField $itemLeaf),
-                        (ConvertTo-CsvField $reason)
+                        (ConvertTo-CsvField '체커 키 없음')
                     ) -join ','))
+            [void]$unresolvedRequests.Add([pscustomobject]@{
+                    Id = $idPart; Checker = $checkerKey; Severity = $sev; File = $file; Line = $line; Item = $itemLeaf; Reason = '체커 키 없음'
+                })
             continue
         }
 
-        # 가이드 존재 → 트랙 필터. 가이드에서 트랙을 읽어 요청 집합에 없으면 이 행을 건너뜀
-        # (요청도, 미해결도 아님 — 단순 제외). 가이드 read는 여기서 1회 하고 요청 조립 때 재사용.
-        $guideText = Read-TextNoBom -Path $guidePath
+        if (Test-Path -LiteralPath $guidePath) {
+            $guideText = Read-TextNoBom -Path $guidePath
+        }
+        else {
+            $fallbackGuide = $true
+            $guidePath = ('__generated_fallback__/{0}.md' -f $checkerKey)
+            $guideText = New-FallbackGuide -CheckerKey $checkerKey -CheckerName $checkerName -Severity $sev
+        }
+
+        # 가이드 존재 또는 fallback 생성 → 트랙 필터. 트랙이 요청 집합에 없으면 이 행을 건너뜀
+        # (요청도, 미해결도 아님 — 단순 제외). fallback guide는 Track C로 취급한다.
         $guideTrack = Get-GuideTrack -GuideText $guideText
         if ($trackSet -notcontains $guideTrack) {
             $trackFilteredCount++
@@ -260,13 +332,16 @@ function Invoke-Prepare {
                         (ConvertTo-CsvField $file), (ConvertTo-CsvField $line), (ConvertTo-CsvField $itemLeaf),
                         (ConvertTo-CsvField ('항목 md 없음: ' + $itemLeaf))
                     ) -join ','))
+            [void]$unresolvedRequests.Add([pscustomobject]@{
+                    Id = $idPart; Checker = $checkerKey; Severity = $sev; File = $file; Line = $line; Item = $itemLeaf; Reason = ('항목 md 없음: ' + $itemLeaf)
+                })
             continue
         }
 
         if (-not $perCheckerMeta.ContainsKey($checkerKey)) {
             $perCheckerMeta[$checkerKey] = (Get-GuideMeta -GuideText $guideText -CheckerKey $checkerKey)
         }
-        if ($checkerKey -eq 'NULL_RETURN_STD') {
+        if (-not $fallbackGuide -and $checkerKey -eq 'NULL_RETURN_STD') {
             $contractPath = Join-Path (Split-Path -Parent $GuidesDir) 'dotnet-contracts\null-return-std.md'
             if (Test-Path -LiteralPath $contractPath) {
                 $guideText = $guideText + "`n`n---`n`n## [추가 계약표: .NET null-return API]`n`n" + (Read-TextNoBom -Path $contractPath)
@@ -317,6 +392,8 @@ function Invoke-Prepare {
         Write-Utf8Lf -Path (Join-Path (Join-Path $reqDir $safeChecker) '_작업지침.md') -Content $instr
     }
 
+    Write-UnresolvedRequests -RequestDir $reqDir -Rows $unresolvedRequests
+
     Write-Utf8Lf -Path (Join-Path $Out 'worklist.csv') -Content (($worklist -join "`n") + "`n")
     Write-Utf8Lf -Path (Join-Path $Out 'unresolved.csv') -Content (($unresolved -join "`n") + "`n")
 
@@ -337,155 +414,8 @@ function Invoke-Prepare {
     Write-Host ("  출력 폴더   : {0}" -f (Resolve-Path -LiteralPath $Out).Path)
 }
 
-# ---------------------------------------------------------------- collect
-function Test-Verdict {
-    # 반환: 문제 사유(정상이면 $null).
-    param($v)
-    if ($null -eq $v) { return 'JSON 파싱 실패' }
-    foreach ($k in @('id', 'checker', 'file', 'line', 'verdict')) {
-        if (-not ($v.PSObject.Properties.Name -contains $k)) { return "필수 키 없음: $k" }
-    }
-    $verdict = [string]$v.verdict
-    if (@('수정', '보류') -notcontains $verdict) { return "verdict 값 오류: '$verdict'" }
-    foreach ($boolKey in @('needs_context', 'needs_frontier')) {
-        if ($v.PSObject.Properties.Name -contains $boolKey) {
-            if (-not ($v.$boolKey -is [bool])) { return "$boolKey 값은 boolean이어야 함" }
-        }
-    }
-    $needsContext = ($v.PSObject.Properties.Name -contains 'needs_context' -and $v.needs_context)
-    $needsFrontier = ($v.PSObject.Properties.Name -contains 'needs_frontier' -and $v.needs_frontier)
-    if ($needsContext -and $needsFrontier) { return 'needs_context와 needs_frontier를 동시에 true로 둘 수 없음' }
-    if ($verdict -ne '보류' -and ($needsContext -or $needsFrontier)) {
-        return '수정 verdict에는 needs_context/needs_frontier=true를 사용할 수 없음'
-    }
-
-    if ($verdict -eq '수정') {
-        if (-not ($v.PSObject.Properties.Name -contains 'fix') -or $null -eq $v.fix) { return '수정인데 fix 없음' }
-        $before = [string]$v.fix.before
-        $after = [string]$v.fix.after
-        if ([string]::IsNullOrWhiteSpace($before) -or [string]::IsNullOrWhiteSpace($after)) {
-            return '수정인데 fix.before/after 비어있음'
-        }
-    }
-    elseif ($verdict -eq '보류') {
-        if ([string]::IsNullOrWhiteSpace([string]$v.hold_reason)) { return '보류인데 hold_reason 없음' }
-        if ($needsContext) {
-            if (-not ($v.PSObject.Properties.Name -contains 'missing_context') -or $null -eq $v.missing_context) {
-                return 'needs_context=true인데 missing_context 없음'
-            }
-            $missing = @($v.missing_context)
-            if ($missing.Count -eq 0 -or [string]::IsNullOrWhiteSpace(($missing -join ' '))) {
-                return 'needs_context=true인데 missing_context 비어있음'
-            }
-        }
-    }
-    return $null
-}
-
-function Invoke-Collect {
-    if (-not $VerdictsDir) { throw "collect: -VerdictsDir <*.json 폴더> 필요" }
-    if (-not $Out) { throw "collect: -Out <출력 폴더> 필요" }
-    if (-not (Test-Path -LiteralPath $VerdictsDir)) { throw "verdicts 폴더 없음: $VerdictsDir" }
-    if ($Worklist -and -not (Test-Path -LiteralPath $Worklist)) { Write-Warning "worklist 없음(무시): $Worklist" }
-
-    [void](New-Item -ItemType Directory -Force -Path $Out)
-    $byCheckerDir = Join-Path $Out 'by-checker'
-    if (Test-Path -LiteralPath $byCheckerDir) { Remove-Item -LiteralPath $byCheckerDir -Recurse -Force }
-    [void](New-Item -ItemType Directory -Force -Path $byCheckerDir)
-
-    # verdicts 는 이제 flat 또는 verdicts\<체커키>\ 하위에 있을 수 있으므로 재귀 스캔(결정론: FullName 정렬).
-    $files = @(Get-ChildItem -LiteralPath $VerdictsDir -Filter '*.json' -File -Recurse | Sort-Object FullName)
-
-    $valid = New-Object System.Collections.Generic.List[object]
-    $invalid = New-Object System.Collections.Generic.List[string]
-    $invalid.Add('verdict_file,사유')
-
-    $cntJin = 0; $cntBo = 0; $cntBad = 0
-
-    $ErrorActionPreference = 'Continue'
-    foreach ($f in $files) {
-        $obj = $null
-        $parseErr = $null
-        try { $obj = (Read-TextNoBom -Path $f.FullName | ConvertFrom-Json) } catch { $parseErr = $_.Exception.Message }
-        $reason = if ($parseErr) { "JSON 파싱 실패: $parseErr" } else { Test-Verdict $obj }
-        if ($reason) {
-            $cntBad++
-            $invalid.Add((@((ConvertTo-CsvField $f.Name), (ConvertTo-CsvField $reason)) -join ','))
-            continue
-        }
-        $valid.Add($obj)
-        switch ([string]$obj.verdict) {
-            '수정' { $cntJin++ }
-            '보류' { $cntBo++ }
-        }
-    }
-    $ErrorActionPreference = 'Stop'
-
-    # 결정론 정렬: 체커 → id → 파일 → 라인.
-    $sorted = @($valid | Sort-Object `
-        @{ Expression = { [string]$_.checker } }, `
-        @{ Expression = { [string]$_.id } }, `
-        @{ Expression = { [string]$_.file } }, `
-        @{ Expression = { [string]$_.line } })
-
-    # 원장(ledger)
-    $ledger = New-Object System.Collections.Generic.List[string]
-    $ledger.Add('id,체커,파일,라인,verdict,cwe,needs_context,missing_context,needs_frontier,근거요약')
-    foreach ($v in $sorted) {
-        $nc = if ($v.PSObject.Properties.Name -contains 'needs_context' -and $v.needs_context) { 'true' } else { 'false' }
-        $mc = if ($v.PSObject.Properties.Name -contains 'missing_context' -and $null -ne $v.missing_context) { (@($v.missing_context) -join '; ') } else { '' }
-        $nf = if ($v.PSObject.Properties.Name -contains 'needs_frontier' -and $v.needs_frontier) { 'true' } else { 'false' }
-        $summary = if ([string]$v.verdict -eq '보류') { [string]$v.hold_reason }
-        else { [string]$v.rationale }
-        $ledger.Add((@(
-                    (ConvertTo-CsvField ([string]$v.id)), (ConvertTo-CsvField ([string]$v.checker)),
-                    (ConvertTo-CsvField ([string]$v.file)), (ConvertTo-CsvField ([string]$v.line)),
-                    (ConvertTo-CsvField ([string]$v.verdict)), (ConvertTo-CsvField ([string]$v.cwe)),
-                    $nc, (ConvertTo-CsvField (ConvertTo-Csv1Line $mc)),
-                    $nf, (ConvertTo-CsvField (ConvertTo-Csv1Line $summary))
-                ) -join ','))
-    }
-    Write-Utf8Lf -Path (Join-Path $Out 'triage-ledger.csv') -Content (($ledger -join "`n") + "`n")
-    Write-Utf8Lf -Path (Join-Path $Out 'invalid.csv') -Content (($invalid -join "`n") + "`n")
-
-    # by-checker/<체커>.md
-    $groups = $sorted | Group-Object { [string]$_.checker } | Sort-Object Name
-    foreach ($g in $groups) {
-        $checkerKey = $g.Name
-        $jin = @($g.Group | Where-Object { [string]$_.verdict -eq '수정' })
-        $bo = @($g.Group | Where-Object { [string]$_.verdict -eq '보류' })
-
-        $sb = New-Object System.Text.StringBuilder
-        [void]$sb.Append("# $checkerKey — 트리아지 결과`n`n")
-        [void]$sb.Append("## 수정 (수정 대상 — 커밋 단위 후보)`n`n")
-        if ($jin.Count -eq 0) { [void]$sb.Append("- (없음)`n") }
-        foreach ($v in $jin) {
-            $lines = if ($v.PSObject.Properties.Name -contains 'fix' -and $v.fix) { [string]$v.fix.lines } else { '' }
-            [void]$sb.Append(("- [{0}] {1}:{2}" -f [string]$v.id, [string]$v.file, [string]$v.line))
-            if ($lines) { [void]$sb.Append(" (수정 라인 $lines)") }
-            [void]$sb.Append(" — " + (ConvertTo-Csv1Line ([string]$v.rationale)) + "`n")
-        }
-        [void]$sb.Append("`n## 보류 (문맥 확보 후 수정 — needs_context 또는 frontier 검토 후보)`n`n")
-        if ($bo.Count -eq 0) { [void]$sb.Append("- (없음)`n") }
-        foreach ($v in $bo) {
-            $nc = if ($v.PSObject.Properties.Name -contains 'needs_context' -and $v.needs_context) { 'true' } else { 'false' }
-            $mc = if ($v.PSObject.Properties.Name -contains 'missing_context' -and $null -ne $v.missing_context) { (@($v.missing_context) -join '; ') } else { '' }
-            $nf = if ($v.PSObject.Properties.Name -contains 'needs_frontier' -and $v.needs_frontier) { 'true' } else { 'false' }
-            [void]$sb.Append(("- [{0}] {1}:{2} — {3} (needs_context={4}; missing_context={5}; needs_frontier={6})`n" -f [string]$v.id, [string]$v.file, [string]$v.line, (ConvertTo-Csv1Line ([string]$v.hold_reason)), $nc, (ConvertTo-Csv1Line $mc), $nf))
-        }
-        Write-Utf8Lf -Path (Join-Path $byCheckerDir ((Get-SafeName $checkerKey) + '.md')) -Content $sb.ToString()
-    }
-
-    Write-Host "=== collect 요약 ==="
-    Write-Host ("  수정 : {0}" -f $cntJin)
-    Write-Host ("  보류 : {0}" -f $cntBo)
-    Write-Host ("  무효 : {0}" -f $cntBad)
-    Write-Host ("  원장 : {0}" -f (Join-Path (Resolve-Path -LiteralPath $Out).Path 'triage-ledger.csv'))
-}
-
 # ---------------------------------------------------------------- dispatch
-if (-not $Mode) { throw "첫 인자로 모드(prepare | collect)를 지정하세요. 예: .\Run-Triage.ps1 prepare -Index ... " }
+if (-not $Mode) { throw "첫 인자로 모드(prepare)를 지정하세요. 예: .\Run-Triage.ps1 prepare -Index ... " }
 switch ($Mode) {
     'prepare' { Invoke-Prepare }
-    'collect' { Invoke-Collect }
 }

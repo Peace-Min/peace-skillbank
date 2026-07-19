@@ -1,7 +1,7 @@
 // Rule 1 (nullcast): rewrite  <ExplicitType> x = null;  ->  var x = (<ExplicitType>)null;
 //
 // The cast keeps the EXACT original static type, so the transform is 100% semantics-preserving. This is
-// the residual that `dotnet format`'s IDE0007 declines: `var x = null;` is illegal C#, so the analyzer
+// the residual that `SparrowSyntaxFix`'s IDE0007 declines: `var x = null;` is illegal C#, so the analyzer
 // leaves the finding, but a cast lets `var` be inferred to the identical type.
 //
 // ONLY a plain single-declarator local statement whose sole initializer is the bare `null` literal is

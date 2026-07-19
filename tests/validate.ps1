@@ -192,10 +192,10 @@ if ($IncludeClrMdE2E) { & $clrmdE2E -RepositoryRoot $RepositoryRoot }
 
 # Sparrow XLS export E2E: always syntax-check + assert the tool/fixture projects exist; only RUN when
 # opted in (builds + restores NPOI; needs the SDK). Mirrors the ClrMD E2E wiring above.
-$sparrowToolProj = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\SparrowXlsExport\SparrowXlsExport.csproj"
-$sparrowToolProgram = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\SparrowXlsExport\Program.cs"
-$sparrowFixtureProj = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\SparrowXlsExport\FixtureGen\FixtureGen.csproj"
-$sparrowFixtureProgram = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\SparrowXlsExport\FixtureGen\Program.cs"
+$sparrowToolProj = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\_internal\SparrowXlsExport\SparrowXlsExport.csproj"
+$sparrowToolProgram = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\_internal\SparrowXlsExport\Program.cs"
+$sparrowFixtureProj = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\_internal\SparrowXlsExport\FixtureGen\FixtureGen.csproj"
+$sparrowFixtureProgram = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\_internal\SparrowXlsExport\FixtureGen\Program.cs"
 $sparrowE2E = Join-Path $RepositoryRoot "tests\sparrow-xlsexport-fixtures.ps1"
 foreach ($sparrowFile in @($sparrowToolProj, $sparrowToolProgram, $sparrowFixtureProj, $sparrowFixtureProgram, $sparrowE2E)) {
     Assert-Condition (Test-Path -LiteralPath $sparrowFile) "Missing Sparrow XLS export file: $sparrowFile"
@@ -205,22 +205,22 @@ if ($IncludeSparrowE2E) { & $sparrowE2E -RepositoryRoot $RepositoryRoot }
 
 # SparrowSyntaxFix E2E: always syntax-check + assert the tool/fixture projects exist; only RUN when opted
 # in (builds + restores Roslyn; needs the SDK). Mirrors the Sparrow XLS export wiring above.
-$syntaxToolProj = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\SparrowSyntaxFix\SparrowSyntaxFix.csproj"
-$syntaxToolProgram = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\SparrowSyntaxFix\Program.cs"
-$syntaxEngine = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\SparrowSyntaxFix\RewriteEngine.cs"
-$syntaxNullCast = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\SparrowSyntaxFix\NullCastRewriter.cs"
-$syntaxNullVar = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\SparrowSyntaxFix\NullVarRewriter.cs"
-$syntaxVarHelpers = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\SparrowSyntaxFix\VarRewriteHelpers.cs"
-$syntaxObjectVar = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\SparrowSyntaxFix\ObjectVarRewriter.cs"
-$syntaxObjectInitializer = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\SparrowSyntaxFix\ObjectInitializerRewriter.cs"
-$syntaxArrayVar = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\SparrowSyntaxFix\ArrayVarRewriter.cs"
-$syntaxForeachCast = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\SparrowSyntaxFix\ForeachCastRewriter.cs"
-$syntaxObviousVar = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\SparrowSyntaxFix\ObviousVarRewriter.cs"
-$syntaxLocalConst = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\SparrowSyntaxFix\LocalConstRewriter.cs"
-$syntaxParens = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\SparrowSyntaxFix\ParensRewriter.cs"
-$syntaxReadme = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\SparrowSyntaxFix\README.md"
-$syntaxFixtureProj = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\SparrowSyntaxFix\FixtureTests\FixtureTests.csproj"
-$syntaxFixtureProgram = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\SparrowSyntaxFix\FixtureTests\Program.cs"
+$syntaxToolProj = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\_internal\SparrowSyntaxFix\SparrowSyntaxFix.csproj"
+$syntaxToolProgram = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\_internal\SparrowSyntaxFix\Program.cs"
+$syntaxEngine = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\_internal\SparrowSyntaxFix\RewriteEngine.cs"
+$syntaxNullCast = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\_internal\SparrowSyntaxFix\NullCastRewriter.cs"
+$syntaxNullVar = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\_internal\SparrowSyntaxFix\NullVarRewriter.cs"
+$syntaxVarHelpers = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\_internal\SparrowSyntaxFix\VarRewriteHelpers.cs"
+$syntaxObjectVar = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\_internal\SparrowSyntaxFix\ObjectVarRewriter.cs"
+$syntaxObjectInitializer = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\_internal\SparrowSyntaxFix\ObjectInitializerRewriter.cs"
+$syntaxArrayVar = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\_internal\SparrowSyntaxFix\ArrayVarRewriter.cs"
+$syntaxForeachCast = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\_internal\SparrowSyntaxFix\ForeachCastRewriter.cs"
+$syntaxObviousVar = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\_internal\SparrowSyntaxFix\ObviousVarRewriter.cs"
+$syntaxLocalConst = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\_internal\SparrowSyntaxFix\LocalConstRewriter.cs"
+$syntaxParens = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\_internal\SparrowSyntaxFix\ParensRewriter.cs"
+$syntaxReadme = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\_internal\SparrowSyntaxFix\README.md"
+$syntaxFixtureProj = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\_internal\SparrowSyntaxFix\FixtureTests\FixtureTests.csproj"
+$syntaxFixtureProgram = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\_internal\SparrowSyntaxFix\FixtureTests\Program.cs"
 $syntaxE2E = Join-Path $RepositoryRoot "tests\sparrow-syntaxfix-fixtures.ps1"
 foreach ($syntaxFile in @($syntaxToolProj, $syntaxToolProgram, $syntaxEngine, $syntaxNullCast, $syntaxNullVar, $syntaxVarHelpers, $syntaxObjectVar, $syntaxObjectInitializer, $syntaxArrayVar, $syntaxForeachCast, $syntaxObviousVar, $syntaxLocalConst, $syntaxParens, $syntaxReadme, $syntaxFixtureProj, $syntaxFixtureProgram, $syntaxE2E)) {
     Assert-Condition (Test-Path -LiteralPath $syntaxFile) "Missing SparrowSyntaxFix file: $syntaxFile"
@@ -230,8 +230,8 @@ if ($IncludeSyntaxFixE2E) { & $syntaxE2E -RepositoryRoot $RepositoryRoot }
 
 # SparrowCommentFix E2E (Track B): always syntax-check + assert the tool/program/fixtures files exist; only
 # RUN when opted in (builds + restores Roslyn; needs the SDK). Mirrors the Sparrow XLS export wiring above.
-$commentToolProj = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\SparrowCommentFix\SparrowCommentFix.csproj"
-$commentToolProgram = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\SparrowCommentFix\Program.cs"
+$commentToolProj = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\_internal\SparrowCommentFix\SparrowCommentFix.csproj"
+$commentToolProgram = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\_internal\SparrowCommentFix\Program.cs"
 $commentE2E = Join-Path $RepositoryRoot "tests\sparrow-commentfix-fixtures.ps1"
 foreach ($commentFile in @($commentToolProj, $commentToolProgram, $commentE2E)) {
     Assert-Condition (Test-Path -LiteralPath $commentFile) "Missing SparrowCommentFix file: $commentFile"
@@ -306,19 +306,14 @@ foreach ($exhFile in @($sparrowExhaustive, $sparrowExhaustiveProj, $sparrowExhau
 Test-PowerShellSyntax -Path $sparrowExhaustive
 if ($IncludeSparrowExhaustiveXls) { & $sparrowExhaustive -RepositoryRoot $RepositoryRoot }
 
-# Track A auto-fix kit (LLM-free): assert the .editorconfig + runner exist and the runner parses.
-# (Run-TrackA.ps1 carries Korean text -> must stay UTF-8-with-BOM or PS 5.1 mis-parses it.)
-$trackAEditorConfig = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\references\bucket1-autofix.editorconfig"
-$trackARunner = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\references\Run-TrackA.ps1"
-Assert-Condition (Test-Path -LiteralPath $trackAEditorConfig) "Missing Track A .editorconfig template"
-Assert-Condition (Test-Path -LiteralPath $trackARunner) "Missing Track A runner Run-TrackA.ps1"
-Test-PowerShellSyntax -Path $trackARunner
-
-# SparrowCommentFix one-call runner (Track B): assert it exists + parses. Like Run-TrackA.ps1 it carries
-# Korean text -> must stay UTF-8-with-BOM or PS 5.1 mis-parses it.
-$commentRunner = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\SparrowCommentFix\Run-SparrowCommentFix.ps1"
-Assert-Condition (Test-Path -LiteralPath $commentRunner) "Missing SparrowCommentFix runner Run-SparrowCommentFix.ps1"
-Test-PowerShellSyntax -Path $commentRunner
+# Sparrow one-call runners: assert they exist and parse.
+$syntaxRunner = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\_internal\SparrowSyntaxFix\Run-SparrowSyntaxFix.ps1"
+$commentRunner = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\_internal\SparrowCommentFix\Run-SparrowCommentFix.ps1"
+$allRunner = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\Run-SparrowAll.ps1"
+foreach ($runner in @($syntaxRunner, $commentRunner, $allRunner)) {
+    Assert-Condition (Test-Path -LiteralPath $runner) "Missing Sparrow runner: $runner"
+    Test-PowerShellSyntax -Path $runner
+}
 
 $claude = Get-Command claude -ErrorAction SilentlyContinue
 if ($claude) {
@@ -383,6 +378,13 @@ Test-PowerShellSyntax -Path $lcApiIndexScript
 Test-PowerShellSyntax -Path (Join-Path $lcRoot "scripts\setup-local-corpus.ps1")
 
 $python = Get-Command python -ErrorAction SilentlyContinue
+if ($python -and $python.Source -like "*\WindowsApps\python.exe") {
+    $python = $null
+}
+if ($python) {
+    & $python.Source --version *> $null
+    if ($LASTEXITCODE -ne 0) { $python = $null }
+}
 if ($python) {
     foreach ($lcPy in @("build-manual-index.py", "verify-symbols.py", "search.py")) {
         # ast.parse is a syntax check that does not write __pycache__ bytecode.
@@ -391,7 +393,7 @@ if ($python) {
     }
 }
 else {
-    Write-Host "Python not found; skipping lightningchart-72 Python syntax checks."
+    Write-Host "Python not found or not executable; skipping lightningchart-72 Python syntax checks."
 }
 
 # Behavioral fixtures for the verify-symbols hook (synthetic index; self-skips without Python).

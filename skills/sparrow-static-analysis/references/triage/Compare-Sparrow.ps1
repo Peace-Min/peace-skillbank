@@ -22,7 +22,12 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-$KnownExe = 'C:\Users\CEO\Desktop\dotnet-gcdump-offline\sparrow-xlsexport\win-x64\SparrowXlsExport.exe'
+function Get-DefaultParserExe {
+    $scriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
+    $refsDir = Split-Path -Parent $scriptDir
+    $skillDir = Split-Path -Parent $refsDir
+    return (Join-Path $skillDir 'tools\_internal\SparrowXlsExport\bin\Release\net8.0\SparrowXlsExport.exe')
+}
 
 function Read-TextNoBom {
     param([string]$Path)
@@ -41,7 +46,7 @@ function Read-CsvNoBom {
 if (-not (Test-Path -LiteralPath $Before)) { throw "before xls 없음: $Before" }
 if (-not (Test-Path -LiteralPath $After)) { throw "after xls 없음: $After" }
 
-if (-not $Exe) { $Exe = $KnownExe }
+if (-not $Exe) { $Exe = Get-DefaultParserExe }
 if (-not (Test-Path -LiteralPath $Exe)) {
     throw "SparrowXlsExport.exe 없음: $Exe`n  -Exe 로 경로를 지정하세요(기본 추정 경로: $KnownExe)."
 }

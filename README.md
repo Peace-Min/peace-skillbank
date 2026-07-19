@@ -185,6 +185,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\validate.ps1
 
 ## 현재 스킬
 
+- [`sparrow-static-analysis`](docs/sparrow-static-analysis-usage.md): Sparrow 정적분석 결과를 줄이기 위한 통합 GUI/자동화 스킬. Track A는 C# 코드 규칙 자동수정, Track B는 주석·레이아웃 규칙 자동수정, Track C는 Sparrow XLS를 폐쇄망 LLM에게 넘길 `requests/` 패키지로 변환한다. GUI 진입점은 `skills/sparrow-static-analysis/SparrowRunner.Gui/SparrowRunner.Gui.sln`이다.
 - [`diagsession-memory-analysis`](docs/diagsession-memory-analysis-usage.md): Visual Studio `.diagsession` 또는 `.gcdump` 스냅샷에서 .NET managed heap 누수 분석용 LLM 입력을 생성하고, before/after 증가 타입을 중심으로 분석하는 절차.
 - [`lightningchart-72`](docs/lightningchart-72-usage.md): LightningChart Ultimate SDK 7.2(Arction) API·프로퍼티·사용법을 로컬 7.2 소스(DLL API 인덱스 + 매뉴얼 + 프로젝트 코드)에 근거해서만 답하고, 인용·API 실재 검증으로 할루시네이션을 막는 스킬. 코퍼스는 라이선스 원본으로 로컬 생성(커밋 안 함).
 - [`frontier-handoff`](docs/frontier-handoff-usage.md): 폐쇄망 약한/오프라인 모델로 작업하다 막히거나 할루시네이션이 날 때, 현재 코드·문제·시도·환경·요청을 프론티어 모델용 self-contained 프롬프트 1개로 묶어주는 스킬. `finalize-handoff.py`가 필수 응답 지시문(잘게 쪼갠 실행 단계)을 결정론적으로 보장(자동 시크릿 마스킹은 없음 — 입력 보안은 사용자가 관리).

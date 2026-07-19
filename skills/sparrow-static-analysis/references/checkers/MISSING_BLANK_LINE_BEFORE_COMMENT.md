@@ -3,7 +3,7 @@
 - **건수**: (실측 시 변동)  |  **심각도**: 낮음  |  **트랙**: B
 - **Sparrow 설명**: 주석은 코드의 끝이 아니라 별도의 줄을 할당하여 작성해야 합니다.
 
-> **대부분 Track A(dotnet format/SparrowSyntaxFix) 또는 Track B(SparrowCommentFix/dotnet format whitespace)가 자동 처리한다. 이 가이드는 도구가 못 고친 잔여를 LLM이 처리할 때 사용**한다.
+> **대부분 Track A(SparrowSyntaxFix/SparrowSyntaxFix) 또는 Track B(SparrowCommentFix/SparrowCommentFix layout)가 자동 처리한다. 이 가이드는 도구가 못 고친 잔여를 LLM이 처리할 때 사용**한다.
 
 ## 지켜야 할 규칙 (무엇을 왜 검출)
 주석은 코드 줄 끝에 꼬리로 붙이지 말고 **별도의 줄**에 작성하며, 앞 코드와 시각적으로 분리되도록 **주석 앞에 빈 줄**을 둔다. **보안 결함이 아니라 스타일·가독성·표준 준수** 항목이다. 코드 바로 아래 줄에 주석이 붙어 있으면 어느 코드에 대한 설명인지, 새 블록의 서두인지 경계가 흐려진다. Sparrow는 앞 코드 줄 바로 다음에 빈 줄 없이 시작하는 (설명 블록성) 주석 줄을 검출한다.

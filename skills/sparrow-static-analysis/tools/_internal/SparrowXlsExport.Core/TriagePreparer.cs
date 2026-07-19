@@ -2,9 +2,10 @@
 //
 // Reads index.csv (UTF-8 with BOM; header md_file,ID,체커 키,위험도,파일명,라인,이슈 상태,체커명), and for
 // each row resolves the checker guide <GuidesDir>\<체커 키>.md (join on the verbatim 체커 키 column). If the
-// guide is present it writes a self-contained requests\{ID}_{체커키}.md (the triage prompt with {{GUIDE}} and
-// {{ITEM}} substituted), else it records the row in unresolved.csv. Also writes worklist.csv and creates an
-// empty verdicts\ folder.
+// guide is present it writes a self-contained requests\{ID}_{체커키}.md (the repair prompt with {{GUIDE}} and
+// {{ITEM}} substituted). If the guide is missing but the checker key exists, it emits a fallback guide from the
+// XLS/item evidence so the LLM can still handle the finding. Only rows with no checker key or missing item md
+// remain in unresolved.csv. Also writes worklist.csv.
 //
 // BYTE-IDENTICAL contract vs Run-Triage.ps1 prepare (PS is the reference — do not diverge):
 //  - request filename: {Get-SafeName idPart}_{Get-SafeName 체커키}.md
@@ -47,10 +48,10 @@ namespace SparrowXlsExport.Core
         /// <summary>Path to the folder-instruction-template.md (_작업지침.md 렌더 템플릿). Required.</summary>
         public string TemplatePath = "";
 
-        /// <summary>Output directory; gets requests\, worklist.csv, unresolved.csv, empty verdicts\. Required.</summary>
+        /// <summary>Output directory; gets requests\, worklist.csv, unresolved.csv. Required.</summary>
         public string OutDir = "";
 
-        /// <summary>Exact-match filter on 체커 키; null =&gt; no checker filter.</summary>
+        /// <summary>Case-insensitive substring filter on 체커 키; null =&gt; no checker filter.</summary>
         public string? Checker;
 
         /// <summary>Comma-separated severity set (each trimmed); null/empty =&gt; no severity filter.</summary>
@@ -84,7 +85,7 @@ namespace SparrowXlsExport.Core
     {
         /// <summary>
         /// Reproduce Run-Triage.ps1 prepare exactly: emit requests\{ID}_{체커키}.md (guide+item merged into the
-        /// prompt), worklist.csv, unresolved.csv, and an empty verdicts\ folder. Optionally streams the same
+        /// prompt), worklist.csv, and unresolved.csv. Optionally streams the same
         /// human summary lines the PS version prints to <paramref name="log"/>.
         /// </summary>
         public static PrepareResult Prepare(PrepareOptions opts, TextWriter? log = null)
@@ -123,18 +124,17 @@ namespace SparrowXlsExport.Core
                     opts.Tracks.Split(',').Select(x => x.Trim().ToUpperInvariant()).Where(x => x.Length > 0),
                     StringComparer.Ordinal);
 
-            // 출력 폴더 준비(멱등: prepare 산출물만 초기화, verdicts\는 보존).
+            // 출력 폴더 준비(멱등: prepare 산출물만 초기화).
             Directory.CreateDirectory(opts.OutDir);
             string reqDir = Path.Combine(opts.OutDir, "requests");
             if (Directory.Exists(reqDir)) Directory.Delete(reqDir, recursive: true);
             Directory.CreateDirectory(reqDir);
-            string verDir = Path.Combine(opts.OutDir, "verdicts");
-            Directory.CreateDirectory(verDir);   // 입력 폴더 — 있으면 보존
 
             var rows = ReadCsvNoBom(opts.IndexCsvPath);
 
             var worklist = new List<string> { "id,체커키,위험도,파일명,라인,item_md,guide,상태" };
             var unresolved = new List<string> { "id,체커키,위험도,파일명,라인,item_md,사유" };
+            var unresolvedRequests = new List<UnresolvedRow>();
 
             int requestCount = 0;
             int unresolvedCount = 0;
@@ -153,8 +153,8 @@ namespace SparrowXlsExport.Core
                 string line = Field(row, "라인");
                 string mdField = Field(row, "md_file");
 
-                // 필터(AND). checker=정확 일치(체커 키), severity=집합 포함.
-                if (opts.Checker != null && checkerKey != opts.Checker) continue;
+                // 필터(AND). checker=대소문자 무시 부분검색(체커 키), severity=집합 포함.
+                if (opts.Checker != null && checkerKey.IndexOf(opts.Checker, StringComparison.OrdinalIgnoreCase) < 0) continue;
                 if (sevSet.Count > 0 && !sevSet.Contains(sev.Trim())) continue;
                 // Max caps the number of processed items (requests + unresolved) among the filtered rows,
                 // matching Run-Triage.ps1 prepare (guard: `$Max -gt 0`). Break before processing the (Max+1)th.
@@ -164,23 +164,35 @@ namespace SparrowXlsExport.Core
                 string itemLeaf = mdField.Length > 0 ? LeafName(mdField) : "";
                 string itemPath = itemLeaf.Length > 0 ? Path.Combine(opts.ItemsDir, itemLeaf) : "";
 
+                string checkerName = Field(row, "체커명");
                 string guidePath = JoinPathPwsh(opts.GuidesDir, checkerKey + ".md");
+                bool fallbackGuide = false;
 
-                if (checkerKey.Length == 0 || !File.Exists(guidePath))
+                if (checkerKey.Length == 0)
                 {
                     unresolvedCount++;
-                    string reason = checkerKey.Length == 0 ? "체커 키 없음" : "가이드 없음(Track A/B 또는 무가이드)";
                     unresolved.Add(string.Join(",", new[]
                     {
                         CsvField(idPart), CsvField(checkerKey), CsvField(sev),
-                        CsvField(file), CsvField(line), CsvField(itemLeaf), CsvField(reason),
+                        CsvField(file), CsvField(line), CsvField(itemLeaf), CsvField("체커 키 없음"),
                     }));
+                    unresolvedRequests.Add(new UnresolvedRow(idPart, checkerKey, sev, file, line, itemLeaf, "체커 키 없음"));
                     continue;
                 }
 
                 // 가이드 존재 → 트랙 필터. 가이드를 여기서 1회 읽어 트랙을 파싱하고, 요청 집합에 없으면
                 // 이 행을 건너뜀(요청도 미해결도 아님). 통과 시 guideText 를 요청 조립 때 재사용.
-                string guideText = ReadTextNoBom(guidePath);
+                string guideText;
+                if (File.Exists(guidePath))
+                {
+                    guideText = ReadTextNoBom(guidePath);
+                }
+                else
+                {
+                    fallbackGuide = true;
+                    guidePath = "__generated_fallback__/" + checkerKey + ".md";
+                    guideText = BuildFallbackGuide(checkerKey, checkerName, sev);
+                }
                 string guideTrack = GetGuideTrack(guideText);
                 if (!trackSet.Contains(guideTrack))
                 {
@@ -196,12 +208,13 @@ namespace SparrowXlsExport.Core
                         CsvField(idPart), CsvField(checkerKey), CsvField(sev),
                         CsvField(file), CsvField(line), CsvField(itemLeaf), CsvField("항목 md 없음: " + itemLeaf),
                     }));
+                    unresolvedRequests.Add(new UnresolvedRow(idPart, checkerKey, sev, file, line, itemLeaf, "항목 md 없음: " + itemLeaf));
                     continue;
                 }
 
                 if (!perCheckerMeta.ContainsKey(checkerKey))
                     perCheckerMeta[checkerKey] = GetGuideMeta(guideText, checkerKey);
-                if (checkerKey == "NULL_RETURN_STD")
+                if (!fallbackGuide && checkerKey == "NULL_RETURN_STD")
                 {
                     string contractPath = JoinPathPwsh(ParentDir(opts.GuidesDir), "dotnet-contracts\\null-return-std.md");
                     if (File.Exists(contractPath))
@@ -253,6 +266,8 @@ namespace SparrowXlsExport.Core
                 WriteUtf8Lf(Path.Combine(reqDir, safeChecker, "_작업지침.md"), instr);
             }
 
+            WriteUnresolvedRequests(reqDir, unresolvedRequests);
+
             WriteUtf8Lf(Path.Combine(opts.OutDir, "worklist.csv"), string.Join("\n", worklist) + "\n");
             WriteUtf8Lf(Path.Combine(opts.OutDir, "unresolved.csv"), string.Join("\n", unresolved) + "\n");
 
@@ -290,6 +305,60 @@ namespace SparrowXlsExport.Core
                 PerChecker = perCheckerOrdered,
                 OutDir = Path.GetFullPath(opts.OutDir),
             };
+        }
+
+        private sealed class UnresolvedRow
+        {
+            public UnresolvedRow(string id, string checker, string severity, string file, string line, string item, string reason)
+            {
+                Id = id;
+                Checker = checker;
+                Severity = severity;
+                File = file;
+                Line = line;
+                Item = item;
+                Reason = reason;
+            }
+
+            public string Id { get; }
+            public string Checker { get; }
+            public string Severity { get; }
+            public string File { get; }
+            public string Line { get; }
+            public string Item { get; }
+            public string Reason { get; }
+        }
+
+        private static void WriteUnresolvedRequests(string reqDir, IReadOnlyList<UnresolvedRow> rows)
+        {
+            if (rows.Count == 0) return;
+
+            string unresolvedDir = Path.Combine(reqDir, "_UNRESOLVED");
+            Directory.CreateDirectory(unresolvedDir);
+            WriteUtf8Lf(Path.Combine(unresolvedDir, "_작업지침.md"),
+                "# _UNRESOLVED\n\n" +
+                "- 이 폴더는 Track C 요청 md로 정상 조립하지 못한 Sparrow XLS 행입니다.\n" +
+                "- 원본 XLS, 실제 소스 파일, 주변 문맥을 확인해 결함 제거 작업을 계속합니다.\n" +
+                "- 항목 md가 없거나 체커 키가 비어 있어도 Sparrow 검출 행이므로 임의로 무시하지 않습니다.");
+
+            for (int i = 0; i < rows.Count; i++)
+            {
+                var row = rows[i];
+                string checkerPart = string.IsNullOrWhiteSpace(row.Checker) ? "NO_CHECKER" : SafeName(row.Checker);
+                string name = (i + 1).ToString("D5", CultureInfo.InvariantCulture) + "_" + SafeName(row.Id) + "_" + checkerPart + ".md";
+                var sb = new StringBuilder();
+                sb.Append("# 미해결 Sparrow 항목\n\n");
+                sb.Append("- ID: ").Append(row.Id).Append('\n');
+                sb.Append("- 체커 키: ").Append(row.Checker).Append('\n');
+                sb.Append("- 위험도: ").Append(row.Severity).Append('\n');
+                sb.Append("- 파일명: ").Append(row.File).Append('\n');
+                sb.Append("- 라인: ").Append(row.Line).Append('\n');
+                sb.Append("- item_md: ").Append(row.Item).Append('\n');
+                sb.Append("- 사유: ").Append(row.Reason).Append("\n\n");
+                sb.Append("## 작업 지시\n\n");
+                sb.Append("이 항목은 자동 조립이 실패했지만 Sparrow 검출 행입니다. 실제 소스 파일의 대상 라인과 최소 인접 문맥을 확인해 결함을 제거하고, 수정이 불가능하면 필요한 추가 문맥을 명시합니다.");
+                WriteUtf8Lf(Path.Combine(unresolvedDir, name), sb.ToString());
+            }
         }
 
         // --- text I/O (Read-TextNoBom / Write-Utf8Lf equivalents) ---
@@ -377,6 +446,28 @@ namespace SparrowXlsExport.Core
         {
             var m = TrackRe.Match(guideText);
             return m.Success ? m.Groups[1].Value : "C";
+        }
+
+        private static string BuildFallbackGuide(string checkerKey, string checkerName, string severity)
+        {
+            string title = string.IsNullOrWhiteSpace(checkerName) ? checkerKey : checkerName.Trim();
+            string sev = string.IsNullOrWhiteSpace(severity) ? "미확인" : severity.Trim();
+            var sb = new StringBuilder();
+            sb.Append("# ").Append(checkerKey).Append(" — ").Append(title).Append("\n\n");
+            sb.Append("**트랙**: C  |  **심각도**: ").Append(sev).Append("  |  **가이드 상태**: XLS 기반 자동 생성\n\n");
+            sb.Append("## 진성 판별 기준\n\n");
+            sb.Append("- 이 체커는 `references/checkers/").Append(checkerKey).Append(".md` 가이드가 아직 없다.\n");
+            sb.Append("- Sparrow XLS의 `체커 설명`, `소스 코드`, `파일명`, `라인`, `체커명`을 1차 근거로 삼는다.\n");
+            sb.Append("- 실제 소스 파일에서 해당 라인 주변의 최소 문맥을 확인하고, Sparrow가 요구한 결함을 제거하는 방향으로 수정한다.\n\n");
+            sb.Append("## 이렇게 보여도 넘기지 말 것\n\n");
+            sb.Append("- 가이드가 없다는 이유로 false-positive 처리하거나 스킵하지 않는다.\n");
+            sb.Append("- 코드상 문제가 없어 보인다는 이유만으로 방치하지 않는다. Sparrow 검출 항목은 전건 수정 정책의 대상이다.\n");
+            sb.Append("- 문맥이 부족하면 `문맥 필요`로 두고 필요한 파일, 심볼, 호출부, 소유권 정보를 명시한다.\n\n");
+            sb.Append("## 수정 패턴 (C# 예시)\n\n");
+            sb.Append("- 이 체커의 전용 예시는 아직 없다.\n");
+            sb.Append("- 요청 md의 `[검출 항목]`에 포함된 Sparrow 설명과 소스 스니펫을 기준으로 Before/After를 작성한다.\n");
+            sb.Append("- .NET Framework 4.7.2 / C# 7.3 문법만 사용한다.");
+            return sb.ToString();
         }
 
         // --- CSV read (ConvertFrom-Csv equivalent, header-keyed) ---

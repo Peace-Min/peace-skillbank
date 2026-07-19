@@ -1,7 +1,7 @@
 ﻿#requires -Version 5.1
 <#
-    fixtures/run-validate.ps1 — Track C 트리아지 파이프라인 자체 검증(합성 픽스처).
-    prepare(실제 checkers 가이드에 대해) → collect → 멱등성 을 검사한다.
+    fixtures/run-validate.ps1 — Track C 요청 패키지 자체 검증(합성 픽스처).
+    prepare(실제 checkers 가이드에 대해) → 요청/작업지침/멱등성 을 검사한다.
     Compare-Sparrow.ps1 은 실제 Sparrow xls 2개가 필요하므로 기본 스킵(triage-contract.md 6절: 문서화된 한계).
     각 검사 PASS/FAIL 출력, 하나라도 실패면 exit 1.
 #>
@@ -15,7 +15,6 @@ $promptPath = Join-Path $triageDir 'triage-prompt.md'
 $guidesDir = Join-Path (Split-Path -Parent $triageDir) 'checkers'
 $index = Join-Path $here 'index.csv'
 $items = Join-Path $here 'items'
-$verdicts = Join-Path $here 'verdicts'
 
 $work = Join-Path ([System.IO.Path]::GetTempPath()) ('triage-validate-' + [System.IO.Path]::GetRandomFileName())
 $out = Join-Path $work 'triage'
@@ -45,8 +44,10 @@ Write-Host "[prepare]"
 & $runTriage prepare -Index $index -ItemsDir $items -GuidesDir $guidesDir -Out $out -PromptPath $promptPath | Out-Null
 $reqFwd = Join-Path $out 'requests\FORWARD_NULL\5001_FORWARD_NULL.md'
 $reqLeak = Join-Path $out 'requests\RESOURCE_LEAK\5002_RESOURCE_LEAK.md'
+$reqUnknown = Join-Path $out 'requests\UNKNOWN_RULE\5003_UNKNOWN_RULE.md'
 Assert (Test-Path -LiteralPath $reqFwd) "요청 생성: FORWARD_NULL\5001_FORWARD_NULL.md"
 Assert (Test-Path -LiteralPath $reqLeak) "요청 생성: RESOURCE_LEAK\5002_RESOURCE_LEAK.md"
+Assert (Test-Path -LiteralPath $reqUnknown) "fallback 요청 생성: UNKNOWN_RULE\5003_UNKNOWN_RULE.md"
 
 $fwdText = ReadAll $reqFwd
 Assert ($fwdText -match 'CWE-476') "요청에 가이드 병합됨 (CWE-476)"
@@ -59,54 +60,43 @@ $leakText = ReadAll $reqLeak
 Assert ($leakText -match 'CWE-772') "RESOURCE_LEAK 요청에 가이드 병합 (CWE-772)"
 Assert ($leakText -match 'SqlConnection') "RESOURCE_LEAK 요청에 항목 소스 병합"
 
+$unknownText = ReadAll $reqUnknown
+Assert ($unknownText -match 'XLS 기반 자동 생성') "UNKNOWN_RULE 요청에 fallback 가이드 병합"
+Assert ($unknownText -match 'DoRiskyWork') "UNKNOWN_RULE 요청에 항목 소스 병합"
+Assert ($unknownText -match '가이드가 없다는 이유로 false-positive 처리하거나 스킵하지 않는다') "fallback 가이드가 스킵 금지 명시"
+
 # 체커별 _작업지침.md
 $instrFwd = Join-Path $out 'requests\FORWARD_NULL\_작업지침.md'
 $instrLeak = Join-Path $out 'requests\RESOURCE_LEAK\_작업지침.md'
+$instrUnknown = Join-Path $out 'requests\UNKNOWN_RULE\_작업지침.md'
 Assert (Test-Path -LiteralPath $instrFwd) "작업지침 생성: FORWARD_NULL\_작업지침.md"
 Assert (Test-Path -LiteralPath $instrLeak) "작업지침 생성: RESOURCE_LEAK\_작업지침.md"
+Assert (Test-Path -LiteralPath $instrUnknown) "작업지침 생성: UNKNOWN_RULE\_작업지침.md"
 Assert ((ReadAll $instrFwd) -match '전건') "작업지침에 공통 정책 렌더됨"
 
 $wlLines = DataLines (ReadAll (Join-Path $out 'worklist.csv'))
-Assert (($wlLines | Where-Object { $_ -match ',TODO$' }).Count -eq 2) "worklist TODO 2건"
+Assert (($wlLines | Where-Object { $_ -match ',TODO$' }).Count -eq 3) "worklist TODO 3건"
 $unresLines = DataLines (ReadAll (Join-Path $out 'unresolved.csv'))
-Assert ($unresLines.Count -eq 1) "unresolved 데이터행 0 (헤더만; 모두 해결)"
+Assert ($unresLines.Count -eq 2) "unresolved 데이터행 1건 (item md 누락)"
+$unresolvedDir = Join-Path $out 'requests\_UNRESOLVED'
+$unresolvedGuide = Join-Path $unresolvedDir '_작업지침.md'
+$unresolvedReq = Join-Path $unresolvedDir '00001_5004_MISSING_ITEM.md'
+Assert (Test-Path -LiteralPath $unresolvedGuide) "미해결 작업지침 생성: _UNRESOLVED\_작업지침.md"
+Assert (Test-Path -LiteralPath $unresolvedReq) "미해결 요청 생성: _UNRESOLVED\00001_5004_MISSING_ITEM.md"
+Assert ((ReadAll $unresolvedReq) -match '항목 md 없음') "미해결 요청에 사유 포함"
 
-# --- 2) collect
-Write-Host ""
-Write-Host "[collect]"
-& $runTriage collect -VerdictsDir $verdicts -Worklist (Join-Path $out 'worklist.csv') -Out $out | Out-Null
-$ledger = ReadAll (Join-Path $out 'triage-ledger.csv')
-Assert ((DataLines $ledger).Count -eq 3) "원장 = 헤더 + 유효 2행 (수정1/보류1)"
-Assert (($ledger -match 'FORWARD_NULL') -and ($ledger -match '수정')) "원장에 수정 FORWARD_NULL"
-Assert (($ledger -match 'RESOURCE_LEAK') -and ($ledger -match '보류')) "원장에 보류 RESOURCE_LEAK"
-
-$invalid = ReadAll (Join-Path $out 'invalid.csv')
-Assert ((DataLines $invalid).Count -eq 3) "invalid = 헤더 + 무효 2행 (5003-bad, 5004-bad-enum)"
-Assert ($invalid -match '5003-bad\.json') "무효 목록에 5003-bad.json"
-Assert ($invalid -match 'fix') "무효 사유가 fix 관련(수정인데 fix 비어있음)"
-Assert ($invalid -match '5004-bad-enum\.json') "무효 목록에 5004-bad-enum.json (폐기된 enum 값 거부)"
-Assert ($invalid -match 'verdict 값 오류') "무효 사유가 verdict enum 위반 — 폐기된 false-positive enum 값을 collect 가 거부"
-
-$bcFwdPath = Join-Path $out 'by-checker\FORWARD_NULL.md'
-Assert (Test-Path -LiteralPath $bcFwdPath) "by-checker/FORWARD_NULL.md 생성"
-$bcFwd = ReadAll $bcFwdPath
-Assert (($bcFwd -match '## 수정') -and ($bcFwd -match '5001')) "by-checker에 수정 5001 커밋후보 목록"
-$bcLeak = ReadAll (Join-Path $out 'by-checker\RESOURCE_LEAK.md')
-Assert (($bcLeak -match '## 보류') -and ($bcLeak -match '5002')) "by-checker에 보류 5002 목록"
-
-# --- 3) 멱등성
+# --- 2) 멱등성
 Write-Host ""
 Write-Host "[idempotency]"
 $reqBefore = $fwdText
-$ledgerBefore = $ledger
-$invalidBefore = $invalid
-$bcBefore = $bcFwd
+$worklistBefore = ReadAll (Join-Path $out 'worklist.csv')
+$unresolvedBefore = ReadAll (Join-Path $out 'unresolved.csv')
+$instrBefore = ReadAll $instrFwd
 & $runTriage prepare -Index $index -ItemsDir $items -GuidesDir $guidesDir -Out $out -PromptPath $promptPath | Out-Null
-& $runTriage collect -VerdictsDir $verdicts -Worklist (Join-Path $out 'worklist.csv') -Out $out | Out-Null
 Assert ((ReadAll $reqFwd) -eq $reqBefore) "멱등: 요청 파일 재실행 동일"
-Assert ((ReadAll (Join-Path $out 'triage-ledger.csv')) -eq $ledgerBefore) "멱등: 원장 재실행 동일"
-Assert ((ReadAll (Join-Path $out 'invalid.csv')) -eq $invalidBefore) "멱등: invalid 재실행 동일"
-Assert ((ReadAll $bcFwdPath) -eq $bcBefore) "멱등: by-checker 재실행 동일"
+Assert ((ReadAll (Join-Path $out 'worklist.csv')) -eq $worklistBefore) "멱등: worklist 재실행 동일"
+Assert ((ReadAll (Join-Path $out 'unresolved.csv')) -eq $unresolvedBefore) "멱등: unresolved 재실행 동일"
+Assert ((ReadAll $instrFwd) -eq $instrBefore) "멱등: 작업지침 재실행 동일"
 
 # --- Compare-Sparrow (실제 xls 필요)
 Write-Host ""

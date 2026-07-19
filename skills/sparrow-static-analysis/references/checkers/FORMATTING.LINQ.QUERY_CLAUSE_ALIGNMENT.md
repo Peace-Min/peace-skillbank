@@ -3,7 +3,7 @@
 - **건수**: (실측 시 변동)  |  **심각도**: 낮음  |  **트랙**: B
 - **Sparrow 설명**: LINQ문 안에서 from절 밑에 쿼리문들을 정렬해야 합니다.
 
-> **대부분 Track A(dotnet format/SparrowSyntaxFix) 또는 Track B(SparrowCommentFix/dotnet format whitespace)가 자동 처리한다. 이 가이드는 도구가 못 고친 잔여를 LLM이 처리할 때 사용**한다.
+> **대부분 Track A(SparrowSyntaxFix/SparrowSyntaxFix) 또는 Track B(SparrowCommentFix/SparrowCommentFix layout)가 자동 처리한다. 이 가이드는 도구가 못 고친 잔여를 LLM이 처리할 때 사용**한다.
 
 ## 지켜야 할 규칙 (무엇을 왜 검출)
 LINQ 쿼리 식(query syntax)에서 `where`/`orderby`/`select` 등 후속 절은 **`from` 절과 열을 맞춰 정렬**해야 한다. **보안 결함이 아니라 스타일·가독성·표준 준수** 항목이다. 절이 들쭉날쭉하면 쿼리 구조가 한눈에 들어오지 않는다. Sparrow는 `from` 절 아래 후속 쿼리 절들이 정렬되지 않은 LINQ 문을 검출한다.

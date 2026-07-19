@@ -1,7 +1,7 @@
 ﻿#requires -Version 5.1
 <#
     Run-SparrowSyntaxFix.ps1 — Track A 2단계 원콜 러너.
-    dotnet format(Run-TrackA.ps1)이 못 하거나 일부 누락한 Track A 체커를 자작 Roslyn 툴 SparrowSyntaxFix로 결정론 처리:
+    Track A 체커를 자작 Roslyn 툴 SparrowSyntaxFix로 결정론 처리:
       - nullvar              : `<타입> x = null;` / `<타입> x;` -> `var x = (<타입>)null;`
       - parens               : `a && b` 등의 비교/산술 피연산자 괄호
       - objectvar-safe       : `Foo x = new Foo()` -> `var x = new Foo()`
@@ -16,7 +16,7 @@
       - fieldsplit           : 다중 선언자 필드 -> 줄마다 하나(필드 한정; opt-in)
       - emptystmt            : 잉여 빈문장(; ;) 제거(for(;;)/label 등 의미상 필요분 제외; opt-in)
       - forhoist             : 다중 선언자 for 초기화절 분해 — 비루프 선언자를 for 앞으로 hoist(for는 단일 선언자 유지; opt-in)
-    Run-TrackA.ps1과 동일 UX: 솔루션 경로만 주면 동작(내부에서 exe 확보 -> 규칙별 실행 -> 규칙별 커밋).
+    원샷 UX: 솔루션 경로만 주면 동작(내부에서 exe 확보 -> 규칙별 실행 -> 규칙별 커밋).
 
     사용(원큐): 그냥 실행 -> 솔루션 경로 -> 검토필요 규칙 포함 여부(Y/N) -> 커밋 여부(Y/N)를 물어봄.
       .\Run-SparrowSyntaxFix.ps1                                                # ← 이게 원큐. 경로/검토필요 규칙/커밋 Y/N

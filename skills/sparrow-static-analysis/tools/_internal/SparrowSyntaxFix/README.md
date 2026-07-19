@@ -1,6 +1,6 @@
-﻿# SparrowSyntaxFix
+# SparrowSyntaxFix
 
-Deterministic Roslyn source rewriter for Sparrow (?뚯닔 ?뺤쟻遺꾩꽍) Track A code-rule findings that `dotnet format`
+Deterministic Roslyn source rewriter for Sparrow (?뚯닔 ?뺤쟻遺꾩꽍) Track A code-rule findings that `SparrowSyntaxFix`
 does not fully clear on the legacy **OSTES** project (.NET Framework 4.7.2, non-SDK `.csproj`). It parses C#
 source text with Roslyn **syntax** APIs only ??it never loads an MSBuild project ??and rewrites at the syntax
 level, preserving all trivia (comments/whitespace/newlines). No string/regex editing of code, ever.
@@ -130,9 +130,9 @@ nullcast edits:   285
 parens edits:     741
 ```
 
-## One-call runner ??`Run-SparrowSyntaxFix.ps1` (沅뚯옣, Run-TrackA.ps1 ???
+## One-call runner ??`Run-SparrowSyntaxFix.ps1` (沅뚯옣, Run-SparrowSyntaxFix.ps1 ???
 
-?붾（??寃쎈줈留?二쇰㈃ ?숈옉?섎뒗 PowerShell ?щ꼫(Track A 2?④퀎). ?대??먯꽌 exe ?뺣낫 ??洹쒖튃蹂??ㅽ뻾 ??洹쒖튃蹂?而ㅻ컠(寃??媛?ν븳 ?⑥쐞). `references/Run-TrackA.ps1`(dotnet format 1?④퀎)??吏?
+?붾（??寃쎈줈留?二쇰㈃ ?숈옉?섎뒗 PowerShell ?щ꼫(Track A 2?④퀎). ?대??먯꽌 exe ?뺣낫 ??洹쒖튃蹂??ㅽ뻾 ??洹쒖튃蹂?而ㅻ컠(寃??媛?ν븳 ?⑥쐞). `references/Run-SparrowSyntaxFix.ps1`(SparrowSyntaxFix 1?④퀎)??吏?
 
 ```powershell
 # ?먰걧: 洹몃깷 ?ㅽ뻾?섎㈃ ?붾（??寃쎈줈瑜?臾산퀬, ?댁뼱??而ㅻ컠 ?щ?(Y/N)瑜?臾쇱뼱遊?

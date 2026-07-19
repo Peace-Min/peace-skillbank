@@ -7,7 +7,7 @@
 
     기본 규칙셋은 이 스킬이 결정론으로 처리 가능한 Track A/B 전 규칙(신규 opt-in forvar/fieldsplit/emptystmt/
     forhoist/blockpromote 포함)이다. 검토필요(review-needed) 규칙은 커밋 메시지에 '!' 로 표시된다.
-    (참고: dotnet format 기반 Run-TrackA 는 OSTES x64에서 무력이라 원큐에는 포함하지 않고 Roslyn 러너를 쓴다.)
+    (참고: SparrowSyntaxFix 기반 Run-SparrowSyntaxFix 는 OSTES x64에서 무력이라 원큐에는 포함하지 않고 Roslyn 러너를 쓴다.)
 
     사용:
       .\Run-SparrowAll.ps1 -Solution ...\OSTES.sln -Commit     # A→B 전 규칙, 규칙별 자동 커밋
@@ -52,8 +52,8 @@ catch {
 
 $ErrorActionPreference = 'Stop'
 $here = $PSScriptRoot
-$syntaxRunner  = Join-Path $here 'SparrowSyntaxFix\Run-SparrowSyntaxFix.ps1'
-$commentRunner = Join-Path $here 'SparrowCommentFix\Run-SparrowCommentFix.ps1'
+$syntaxRunner  = Join-Path $here '_internal\SparrowSyntaxFix\Run-SparrowSyntaxFix.ps1'
+$commentRunner = Join-Path $here '_internal\SparrowCommentFix\Run-SparrowCommentFix.ps1'
 foreach ($p in @($syntaxRunner, $commentRunner)) {
     if (-not (Test-Path -LiteralPath $p)) { throw "서브러너를 찾을 수 없습니다: $p" }
 }

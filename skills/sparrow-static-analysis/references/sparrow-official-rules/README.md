@@ -10,9 +10,9 @@
 
 | Rule 파일 | 처리 | 상태 |
 |---|---|---|
-| PRACTICE.OBVIOUS_VARIABLE_TYPE… | SparrowSyntaxFix `nullcast` + dotnet format var | ✅ 대량 소거(1385→48) |
-| PRACTICE.OBJECT_INSTANTIATION… | dotnet format var(IDE0007) | ⚠️ 부분(1078→515), 레거시 미적용 잔존 |
-| PRACTICE.LOOP_VARIABLE… | dotnet format var(IDE0008) | ⚠️ 부분(837→117) |
+| PRACTICE.OBVIOUS_VARIABLE_TYPE… | SparrowSyntaxFix `nullcast` + SparrowSyntaxFix var | ✅ 대량 소거(1385→48) |
+| PRACTICE.OBJECT_INSTANTIATION… | SparrowSyntaxFix var(IDE0007) | ⚠️ 부분(1078→515), 레거시 미적용 잔존 |
+| PRACTICE.LOOP_VARIABLE… | SparrowSyntaxFix var(IDE0008) | ⚠️ 부분(837→117) |
 | MISSING_PARENTHESIS(파일 없음) | SparrowSyntaxFix `parens` | ✅ **완전 소거(741→0)** |
 | FORMATTING.COMMENT.MISSING_SPACE | SparrowCommentFix `space` | ❌ 동일경로 미소거(블록주석 미지원) |
 | FORMATTING.COMMENT.MISSING_PERIOD | SparrowCommentFix `period` | ❌ 동일경로 미소거(`/** */` 미지원) |

@@ -62,9 +62,21 @@ Assert ($leakText -match 'CWE-772') "RESOURCE_LEAK 요청에 가이드 병합 (C
 Assert ($leakText -match 'SqlConnection') "RESOURCE_LEAK 요청에 항목 소스 병합"
 
 $unknownText = ReadAll $reqUnknown
-Assert ($unknownText -match 'XLS 기반 자동 생성') "UNKNOWN_RULE 요청에 fallback 가이드 병합"
+Assert ($unknownText -match '가이드 상태\*\*: 미등록') "UNKNOWN_RULE 요청에 fallback 가이드 병합(미등록 표시)"
 Assert ($unknownText -match 'DoRiskyWork') "UNKNOWN_RULE 요청에 항목 소스 병합"
-Assert ($unknownText -match '가이드가 없다는 이유로 false-positive 처리하거나 스킵하지 않는다') "fallback 가이드가 스킵 금지 명시"
+# fallback 은 합성 의사 가이드가 아니라 최소 안내 2줄. 스킵 금지/전건 수정은 '처리 정책' 섹션이 담당한다.
+Assert ($unknownText -match '등록된 룰이 없습니다') "fallback 가이드 = 미등록 안내 1줄"
+Assert ($unknownText -match '체커 룰 관리') "fallback 가이드 = 룰 등록 경로 안내 1줄"
+Assert ($unknownText -notmatch '## 진성 판별 기준') "fallback 가이드에 합성 pseudo 섹션 없음"
+Assert ($unknownText -match '## 처리 정책 \(이 프로젝트\)') "fallback 요청도 공통 처리 정책 임베드(스킵 금지 근거)"
+
+# 템플릿 유지보수용 머리말은 어떤 요청에도 새어 나가지 않는다(등록/미등록 공통).
+Assert ($unknownText -notmatch '이 파일은') "미등록 요청에 템플릿 유지보수 머리말 없음"
+Assert ($unknownText -notmatch '템플릿이다') "미등록 요청에 템플릿 설명 문구 없음"
+Assert ($fwdText -notmatch '이 파일은') "등록 체커 요청에 템플릿 유지보수 머리말 없음"
+Assert ($fwdText -notmatch '템플릿이다') "등록 체커 요청에 템플릿 설명 문구 없음"
+Assert ($fwdText -match '(?m)^# Track C 실제 수정 요청 프롬프트') "머리말 제거 후에도 H1 유지"
+Assert ($fwdText -match '(?m)^## 역할') "머리말 제거 후 첫 섹션(## 역할) 보존"
 
 # 체커별 _작업지침.md
 $instrFwd = Join-Path $out 'requests\FORWARD_NULL\_작업지침.md'

@@ -75,6 +75,14 @@ namespace SparrowXlsExport.Core
         private const string CSource = "소스 코드";
         private const string CPath = "경로";   // full source path (dir+file); disambiguates same-named files across projects
 
+        // Columns dropped from the per-item 필드 table: constant across the whole codebase
+        // (보안약점 / C# / SEMANTIC / 미확인) and contributing nothing to the fix decision.
+        // Explicit exclusion set so any future xls column keeps rendering by default.
+        private static readonly HashSet<string> TableExcludedColumns = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "유형", "언어", "체커 타입", "이슈 상태",
+        };
+
         /// <summary>
         /// Parse the workbook and write items/{...}.md + index.csv + checkers.md, exactly as the console tool.
         /// Writes the same human summary lines (incl. the "output dir:" line) to <paramref name="log"/> when
@@ -262,6 +270,7 @@ namespace SparrowXlsExport.Core
             {
                 string h = columns[i].Header;
                 if (h == CSource || h == CDesc) continue;   // these get their own verbatim sections below
+                if (TableExcludedColumns.Contains(h)) continue;   // constant/no-signal columns
                 string v = vals[i];
                 if (v.Length == 0) continue;
                 sb.Append("| ").Append(TableCell(h)).Append(" | ").Append(TableCell(v)).Append(" |\n");

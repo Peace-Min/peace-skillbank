@@ -18,6 +18,8 @@
 //  - encodings: all outputs UTF-8 WITHOUT BOM, LF line endings; every CSV ends with a trailing LF
 //  - NULL_RETURN_STD guide gets the dotnet-contracts\null-return-std.md contract table appended (if present)
 //  - reads guide/item/prompt with Read-TextNoBom semantics (decode UTF-8, strip a single leading U+FEFF)
+//  - the prompt template's maintainer preamble (leading '>' block + '---' before the first '## ') is stripped
+//    at assembly time so it never leaks into a generated request (Remove-MaintainerPreamble in PS)
 
 using System;
 using System.Collections.Generic;
@@ -106,7 +108,7 @@ namespace SparrowXlsExport.Core
             if (string.IsNullOrEmpty(opts.TemplatePath)) throw new ArgumentException("prepare: TemplatePath 필요");
             if (!File.Exists(opts.TemplatePath)) throw new FileNotFoundException("폴더 지침 템플릿 없음: " + opts.TemplatePath);
 
-            string promptTemplate = ReadTextNoBom(opts.PromptPath);
+            string promptTemplate = StripMaintainerPreamble(ReadTextNoBom(opts.PromptPath));
 
             // OSTES 프로젝트 정책 소스(공통) + 폴더 지침 템플릿.
             var conventions = GetConventionSections(ReadTextNoBom(opts.ConventionsPath));
@@ -449,26 +451,63 @@ namespace SparrowXlsExport.Core
             return m.Success ? m.Groups[1].Value : "C";
         }
 
+        // 미등록 체커의 자리표시 가이드. 합성 의사(pseudo) 가이드를 쓰지 않는다: 스킵 금지/전건 수정은 모든
+        // 요청에 붙는 '처리 정책' 섹션이 이미 규정하므로 여기서 반복하면 중복 토큰만 늘어난다. XLS가 실제로
+        // 준 값(체커키/체커명/심각도)과 최소 안내 2줄만 남긴다. (PS New-FallbackGuide 와 바이트 동일)
         private static string BuildFallbackGuide(string checkerKey, string checkerName, string severity)
         {
             string title = string.IsNullOrWhiteSpace(checkerName) ? checkerKey : checkerName.Trim();
             string sev = string.IsNullOrWhiteSpace(severity) ? "미확인" : severity.Trim();
             var sb = new StringBuilder();
             sb.Append("# ").Append(checkerKey).Append(" — ").Append(title).Append("\n\n");
-            sb.Append("**트랙**: C  |  **심각도**: ").Append(sev).Append("  |  **가이드 상태**: XLS 기반 자동 생성\n\n");
-            sb.Append("## 진성 판별 기준\n\n");
-            sb.Append("- 이 체커는 `references/checkers/").Append(checkerKey).Append(".md` 가이드가 아직 없다.\n");
-            sb.Append("- Sparrow XLS의 `체커 설명`, `소스 코드`, `파일명`, `라인`, `체커명`을 1차 근거로 삼는다.\n");
-            sb.Append("- 실제 소스 파일에서 해당 라인 주변의 최소 문맥을 확인하고, Sparrow가 요구한 결함을 제거하는 방향으로 수정한다.\n\n");
-            sb.Append("## 이렇게 보여도 넘기지 말 것\n\n");
-            sb.Append("- 가이드가 없다는 이유로 false-positive 처리하거나 스킵하지 않는다.\n");
-            sb.Append("- 코드상 문제가 없어 보인다는 이유만으로 방치하지 않는다. Sparrow 검출 항목은 전건 수정 정책의 대상이다.\n");
-            sb.Append("- 문맥이 부족하면 `문맥 필요`로 두고 필요한 파일, 심볼, 호출부, 소유권 정보를 명시한다.\n\n");
-            sb.Append("## 수정 패턴 (C# 예시)\n\n");
-            sb.Append("- 이 체커의 전용 예시는 아직 없다.\n");
-            sb.Append("- 요청 md의 `[검출 항목]`에 포함된 Sparrow 설명과 소스 스니펫을 기준으로 Before/After를 작성한다.\n");
-            sb.Append("- .NET Framework 4.7.2 / C# 7.3 문법만 사용한다.");
+            sb.Append("**트랙**: C  |  **심각도**: ").Append(sev).Append("  |  **가이드 상태**: 미등록\n\n");
+            sb.Append("(이 체커에는 등록된 룰이 없습니다. 아래 [검출 항목]의 `체커 설명`·`소스 코드`·`라인`을 1차 근거로 수정하세요.)\n");
+            sb.Append("(룰 등록: Sparrow Helper GUI → '체커 룰 관리'에서 `").Append(checkerKey).Append("` 룰을 추가하면 다음 실행부터 이 자리에 반영됩니다.)");
             return sb.ToString();
+        }
+
+        // 템플릿 유지보수용 머리말 제거(생성물에서만). triage-prompt.md 상단의 '>' 인용 블록은 템플릿 파일을
+        // 읽는 유지보수자용 설명이지 작업자용 지시가 아니므로, 요청 md 로 새어 나가지 않게 조립 직전에 벗겨낸다.
+        // 정의: 첫 '## ' 섹션 앞에 나오는 연속된 '>' 줄 + 바로 뒤의 '---' 구분선 + 주변 빈 줄. H1 은 유지.
+        // 그런 블록이 없으면 원문 그대로 반환(no-op, 멱등). PS Remove-MaintainerPreamble 과 동일 알고리즘.
+        private static string StripMaintainerPreamble(string template)
+        {
+            string[] lines = template.Split('\n');
+
+            int firstSection = lines.Length;
+            for (int i = 0; i < lines.Length; i++)
+            {
+                if (lines[i].TrimStart().StartsWith("## ", StringComparison.Ordinal)) { firstSection = i; break; }
+            }
+
+            int bq = -1;
+            for (int i = 0; i < firstSection; i++)
+            {
+                if (lines[i].TrimStart().StartsWith(">", StringComparison.Ordinal)) { bq = i; break; }
+            }
+            if (bq < 0) return template;   // 머리말 없음 → 그대로
+
+            int end = bq;
+            while (end + 1 < firstSection && lines[end + 1].TrimStart().StartsWith(">", StringComparison.Ordinal)) end++;
+
+            // 인용 블록 뒤: 빈 줄 → '---' → 빈 줄 이 이어지면 함께 제거. '---' 가 없으면 빈 줄은 남긴다.
+            int probe = end + 1;
+            while (probe < firstSection && lines[probe].Trim().Length == 0) probe++;
+            if (probe < firstSection && lines[probe].Trim() == "---")
+            {
+                end = probe;
+                while (end + 1 < firstSection && lines[end + 1].Trim().Length == 0) end++;
+            }
+
+            int start = bq;
+            while (start - 1 >= 0 && lines[start - 1].Trim().Length == 0) start--;
+
+            var kept = new List<string>(lines.Length);
+            for (int i = 0; i < start; i++) kept.Add(lines[i]);
+            // 앞뒤로 내용이 남아 있으면 빈 줄 하나로 이어 붙인다(H1 과 첫 섹션 사이 한 줄 유지).
+            if (start > 0 && end + 1 < lines.Length) kept.Add("");
+            for (int i = end + 1; i < lines.Length; i++) kept.Add(lines[i]);
+            return string.Join("\n", kept);
         }
 
         // --- CSV read (ConvertFrom-Csv equivalent, header-keyed) ---

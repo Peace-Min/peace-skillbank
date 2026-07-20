@@ -89,6 +89,19 @@ try {
         Check "row (b) source verbatim line 2" { $b.Contains("   7:   int x=0; // x") }
         Check "row (b) source verbatim line 3" { $b.Contains("   8: }") }
         Check "row (b) 소스 코드/체커 설명 excluded from table" { (-not ($b -match "(?m)^\| 소스 코드 ")) -and (-not ($b -match "(?m)^\| 체커 설명 ")) }
+        # 상수/무기여 컬럼(유형·언어·체커 타입·이슈 상태)은 필드표에서 제외한다 -- 수정 판단에 기여하지 않음.
+        Check "row (b) 유형/언어/체커 타입/이슈 상태 excluded from table" {
+            (-not ($b -match "(?m)^\| 유형 ")) -and (-not ($b -match "(?m)^\| 언어 ")) -and
+            (-not ($b -match "(?m)^\| 체커 타입 ")) -and (-not ($b -match "(?m)^\| 이슈 상태 "))
+        }
+        # 판단에 쓰이는 컬럼은 그대로 남는다.
+        Check "row (b) keeps 위험도/체커 키/라인/파일명 rows" {
+            ($b -match "(?m)^\| 위험도 ") -and ($b -match "(?m)^\| 체커 키 ") -and
+            ($b -match "(?m)^\| 라인 ") -and ($b -match "(?m)^\| 파일명 ")
+        }
+        # 이중 앵커(수정 대상 블록 + 소스 TARGET LINE)와 체커 설명 섹션은 유지된다.
+        Check "row (b) keeps 체커 설명/수정 대상 sections" { $b.Contains("## 체커 설명") -and $b.Contains("## 수정 대상") }
+        Check "row (b) keeps TARGET LINE anchor" { $b.Contains("<<< TARGET LINE 7 - ANCHOR >>>") }
     }
 
     # row (a) md (ID 101): ID renders without a trailing .0 in the table.

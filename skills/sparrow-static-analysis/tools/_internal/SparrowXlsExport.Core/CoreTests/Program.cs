@@ -70,6 +70,10 @@ internal static class Program
             Console.WriteLine("\n==== S. CheckerRuleStore (체커 룰 관리) ====");
             TestCheckerRuleStore(work, guidesDir, skillRoot);
 
+            // ================================================================ I. item md 필드표 (상수 컬럼 제외)
+            Console.WriteLine("\n==== I. 항목 md 필드표 (무기여 컬럼 제외 / 이중 앵커 보존) ====");
+            TestItemMdFieldTable(work);
+
             Check(File.Exists(consoleExe), "precondition: console exe exists", consoleExe);
             if (!fixturesOnly) Check(File.Exists(realXls), "precondition: real xls exists", realXls);
             Check(File.Exists(runTriage), "precondition: Run-Triage.ps1 exists", runTriage);
@@ -316,6 +320,55 @@ internal static class Program
         Check(synthKeys.Count == 2 && synthKeys[0] == "DUP_CHECK" && synthKeys[1] == "OTHER_ONE",
               "S: GetXlsCheckerKeys distinct + order-preserving + empty-skipped (header not at col 0)",
               string.Join(",", synthKeys));
+    }
+
+    // I. Per-item md field table: constant/no-signal Sparrow columns (유형 / 언어 / 체커 타입 / 이슈 상태) are
+    // dropped, decision-carrying columns stay, and the dual anchor (수정 대상 + TARGET LINE, commit d58c586)
+    // plus the 체커 설명 section survive. Uses a synthetic xls so it runs in fixtures-only mode too.
+    private static void TestItemMdFieldTable(string work)
+    {
+        string xls = Path.Combine(work, "fieldtable.xls");
+        WriteSyntheticXls(xls,
+            new[] { "ID", "유형", "위험도", "언어", "체커 타입", "체커 키", "체커명", "라인", "파일명", "함수", "경로", "이슈 상태", "체커 설명", "소스 코드" },
+            new[]
+            {
+                new[]
+                {
+                    "7001", "보안약점", "매우위험", "C#", "SEMANTIC", "FORWARD_NULL", "널 값 역참조", "88", "Foo.cs",
+                    "Process", "src/Foo.cs", "미확인", "널 값을 역참조합니다.",
+                    "  87: // no guard\n  88: Process(node.Value);\n  89: return;",
+                },
+            });
+
+        string outDir = Path.Combine(work, "fieldtable_out");
+        SparrowExporter.Run(new ExportOptions { InputPath = xls, OutDir = outDir }, TextWriter.Null);
+        string itemsDir = Path.Combine(outDir, "items");
+        string? item = Directory.Exists(itemsDir)
+            ? Directory.GetFiles(itemsDir, "*.md").OrderBy(p => p, StringComparer.Ordinal).FirstOrDefault()
+            : null;
+        Check(item != null, "I: item md generated", itemsDir);
+        if (item == null) return;
+        string md = ReadText(item);
+
+        // dropped: constant across the codebase, no bearing on the fix decision
+        foreach (string dropped in new[] { "유형", "언어", "체커 타입", "이슈 상태" })
+            Check(!md.Contains("| " + dropped + " |", StringComparison.Ordinal),
+                  "I: 필드표에서 '" + dropped + "' 행 제거됨");
+
+        // kept: identity + location + checker meta
+        foreach (string kept in new[] { "ID", "위험도", "체커 키", "체커명", "라인", "파일명", "함수", "경로" })
+            Check(md.Contains("| " + kept + " |", StringComparison.Ordinal),
+                  "I: 필드표에 '" + kept + "' 행 유지됨");
+
+        // sections that must never be trimmed (dual anchor + checker description)
+        Check(md.Contains("## 체커 설명", StringComparison.Ordinal), "I: 체커 설명 섹션 보존");
+        Check(md.Contains("널 값을 역참조합니다.", StringComparison.Ordinal), "I: 체커 설명 본문 보존");
+        Check(md.Contains("## 수정 대상", StringComparison.Ordinal), "I: 수정 대상 앵커 블록 보존");
+        Check(md.Contains("- 대상 코드: `", StringComparison.Ordinal), "I: 수정 대상의 대상 코드 라인 보존");
+        Check(md.Contains("<<< TARGET LINE 88 - ANCHOR >>>", StringComparison.Ordinal), "I: 소스 코드 TARGET LINE 마커 보존");
+        Check(md.Contains("## 소스 코드", StringComparison.Ordinal), "I: 소스 코드 섹션 보존");
+        Check(!md.Contains("| 소스 코드 |", StringComparison.Ordinal) && !md.Contains("| 체커 설명 |", StringComparison.Ordinal),
+              "I: 소스 코드/체커 설명은 표가 아닌 전용 섹션에만 존재");
     }
 
     // Minimal BIFF (.xls) writer for the synthetic GetXlsCheckerKeys check.

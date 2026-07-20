@@ -513,6 +513,13 @@ namespace SparrowRunner.Gui
                     CopyDirectory(sourceRequestsDir, finalRequestsDir);
                     log.WriteLine("요청 생성수: " + prepare.RequestCount);
                     log.WriteLine("미해결수    : " + prepare.UnresolvedCount);
+                    if (prepare.FallbackCheckers.Count > 0)
+                    {
+                        // 운영자용 안내: 요청 md에는 룰 등록 경로를 넣지 않는다(작업자가 GUI를 조작할 수 없음).
+                        log.WriteLine("미등록 체커 " + prepare.FallbackCheckers.Count
+                                      + "종 — GUI '체커 룰 관리'에서 룰 추가 가능: "
+                                      + string.Join(", ", prepare.FallbackCheckers));
+                    }
                     log.WriteLine("LLM 전달 폴더: " + finalRequestsDir);
                     return finalRequestsDir;
                 }

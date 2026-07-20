@@ -76,11 +76,13 @@ namespace SparrowXlsExport.Core
         private const string CPath = "경로";   // full source path (dir+file); disambiguates same-named files across projects
 
         // Columns dropped from the per-item 필드 table: constant across the whole codebase
-        // (보안약점 / C# / SEMANTIC / 미확인) and contributing nothing to the fix decision.
-        // Explicit exclusion set so any future xls column keeps rendering by default.
+        // (보안약점 / C# / SEMANTIC / 미확인), or workflow/bookkeeping metadata that carries no signal for the
+        // fix decision (A.S / 이슈 담당자 / 검출 시간 / 유사 이슈 그룹 / 레퍼런스). Both groups only add tokens to
+        // the request md the worker reads. Explicit exclusion set so any future xls column keeps rendering by default.
         private static readonly HashSet<string> TableExcludedColumns = new HashSet<string>(StringComparer.Ordinal)
         {
             "유형", "언어", "체커 타입", "이슈 상태",
+            "A.S", "이슈 담당자", "검출 시간", "유사 이슈 그룹", "레퍼런스",
         };
 
         /// <summary>
@@ -317,10 +319,12 @@ namespace SparrowXlsExport.Core
             sb.Append("\n## 소스 코드\n");
             if (line.Trim().Length > 0)
             {
-                sb.Append("> ⚠️ **수정 대상 = 라인 ").Append(line.Trim()).Append("**");
-                sb.Append(lineMarked
-                    ? " (아래 소스의 `TARGET LINE` 표시). 그 라인만 고치고, 표시 없는 다른 라인은 임의로 수정하지 마라.\n\n"
-                    : ". 이 라인만 고치고, 다른 라인은 임의로 수정하지 마라.\n\n");
+                // 앵커 문구는 '기준점'이지 '단일 라인 수정 지시'가 아니다. 자원 누수/상수 추출처럼 결함 제거에
+                // 여러 줄이 필요한 수정을 "그 라인만 고치라"는 제약으로 읽고 무의미한 1줄 교체를 하거나 아예
+                // 포기(문맥 필요)하는 경로를 막기 위해, 작업 규칙 3(최소 인접 범위 허용)과 문구를 일치시킨다.
+                sb.Append("> ⚠️ **수정 기준점 = 라인 ").Append(line.Trim()).Append(".**");
+                if (lineMarked) sb.Append(" (아래 소스의 `TARGET LINE` 표시)");
+                sb.Append(" 결함 제거에 필요한 최소 인접 범위(감싸는 블록·try/finally·선언부)까지는 수정 가능하며, 결함과 무관한 다른 코드는 수정하지 마십시오. 범위 제약을 수정 불가 사유로 삼지 마십시오.\n\n");
             }
             sb.Append(fence).Append("text\n");
             sb.Append(src);

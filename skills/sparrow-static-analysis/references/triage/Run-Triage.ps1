@@ -191,6 +191,10 @@ function Get-GuideTrack {
 # 미등록 체커의 자리표시 가이드. 합성 의사(pseudo) 가이드를 만들지 않는다: 스킵 금지/전건 수정은 모든 요청에
 # 붙는 '처리 정책' 섹션이 이미 규정하므로 여기서 반복하면 중복 토큰만 늘어난다. XLS가 실제로 준 값
 # (체커키/체커명/심각도)과 최소 안내 2줄만 남긴다. (Core BuildFallbackGuide 와 바이트 동일)
+#
+# 안내 2줄의 역할: (1) 근거 범위를 '체커 설명 + 표시된 소스 라인'으로 못박아 없는 룰/표준 매핑을 지어내지
+# 못하게 하고, (2) 룰 미등록이 처리 유예 사유가 아님을 못박는다. GUI 룰 등록 안내는 작업자(LLM)가 실행할 수
+# 없는 동작이라 요청 md에서 제외하고, 운영자용 경로(prepare 요약 + fallback 체커의 _작업지침.md)로만 남긴다.
 function New-FallbackGuide {
     param([string]$CheckerKey, [string]$CheckerName, [string]$Severity)
     $title = if ($CheckerName -and $CheckerName.Trim().Length -gt 0) { $CheckerName.Trim() } else { $CheckerKey }
@@ -200,9 +204,30 @@ function New-FallbackGuide {
 
 **트랙**: C  |  **심각도**: $sev  |  **가이드 상태**: 미등록
 
-(이 체커에는 등록된 룰이 없습니다. 아래 [검출 항목]의 ``체커 설명``·``소스 코드``·``라인``을 1차 근거로 수정하세요.)
-(룰 등록: Sparrow Helper GUI → '체커 룰 관리'에서 ``$CheckerKey`` 룰을 추가하면 다음 실행부터 이 자리에 반영됩니다.)
+(이 체커에는 등록된 룰이 없습니다. 근거로 사용할 수 있는 것은 아래 [검출 항목]의 ``체커 설명``과 표시된 소스 라인뿐이며, 그 외 판별 기준·예외 조건·표준(CWE 등) 매핑을 추론해 보충하지 마십시오.)
+(룰 미등록은 처리 유예 사유가 아닙니다. 위 범위만으로 반드시 수정 또는 patch를 산출하고, 정말 불가능하면 ``문맥 필요``로 두되 필요한 룰 항목을 [추가 필요 문맥]에 적으십시오.)
 "@
+}
+
+# 요청 md의 '처리 상태 > 근거' 필드. 등록 체커는 가이드 요약 1줄. 미등록 체커는 요약할 룰이 없으므로 요약 대신
+# '인용'을 강제한다(빈칸을 "가이드에 따르면…"으로 메우는 환각 경로 차단). (Core 상수와 바이트 동일)
+$script:EvidenceFieldRegistered = '- 근거: <체커 가이드 기준으로 짧게 요약>'
+$script:EvidenceFieldUnregistered = @'
+- 근거(인용): <[검출 항목]의 `체커 설명`에서 그대로 인용한 문장 1개>
+- 근거(코드): <TARGET LINE의 실제 코드가 왜 그 설명에 해당하는지 1문장>
+'@
+# 미등록 체커에만 '출력 형식' 앞에 붙는 제약. 등록 체커는 빈 문자열(자리표시자 뒤 문장에 그대로 이어짐).
+$script:UnregisteredConstraint = @'
+**등록된 룰이 없으므로 "체커 가이드에 따르면" 류 서술을 쓰지 마십시오. 인용 가능한 근거는 `체커 설명` 한 줄과 표시된 소스 라인뿐입니다.**
+
+
+'@
+
+# fallback 체커 폴더의 _작업지침.md 에만 들어가는 운영자용 안내(작업자용 요청 md에는 넣지 않는다).
+function New-FallbackFolderNote {
+    param([string]$CheckerKey)
+    return ('- (운영 참고) 이 체커에는 등록된 룰 가이드가 없어 요청 md의 [체커 가이드] 자리에는 미등록 안내만 들어갑니다. Sparrow Helper GUI → ''체커 룰 관리''에서 `' +
+        $CheckerKey + '` 룰을 추가하면 다음 실행부터 이 자리에 가이드 전문이 반영됩니다.' + "`n")
 }
 
 # 템플릿 유지보수용 머리말 제거(생성물에서만). triage-prompt.md 상단의 '>' 인용 블록은 템플릿 파일을 읽는
@@ -298,6 +323,8 @@ function Invoke-Prepare {
     $trackFilteredCount = 0
     $perChecker = @{}
     $perCheckerMeta = @{}   # 체커키 → @{ Name; Severity }(가이드에서 1회 추출)
+    # 요청이 fallback(미등록) 가이드로 조립된 체커키 집합. 운영자 안내(요약 출력 + _작업지침.md)에만 쓴다.
+    $fallbackCheckers = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::Ordinal)
     $ordinal = 0
 
     # 항목 md 파싱을 회피(오차 소지)하기 위해 index.csv 순서를 그대로 안정 정렬로 사용.
@@ -379,7 +406,13 @@ function Invoke-Prepare {
         $itemText = Read-TextNoBom -Path $itemPath
 
         # 자리표시자 치환(리터럴). -replace 는 정규식이라 부작용 위험 → .Replace() 사용.
-        $reqText = $promptTemplate.Replace('{{GUIDE}}', $guideText).Replace('{{ITEM}}', $itemText)
+        # 근거 필드/제약은 등록·미등록에 따라 분기한다(미등록은 요약 대신 인용 강제).
+        $evidenceField = if ($fallbackGuide) { $script:EvidenceFieldUnregistered } else { $script:EvidenceFieldRegistered }
+        $constraint = if ($fallbackGuide) { $script:UnregisteredConstraint } else { '' }
+        $reqText = $promptTemplate.
+            Replace('{{EVIDENCE_FIELD}}', $evidenceField).
+            Replace('{{UNREGISTERED_CONSTRAINT}}', $constraint).
+            Replace('{{GUIDE}}', $guideText).Replace('{{ITEM}}', $itemText)
 
         # OSTES 정책 임베드: 모든 요청에 공통 Policy A 를 붙여 self-contained 로 만든다(frontier-handoff 견고).
         $reqText = $reqText + "`n`n---`n`n## 처리 정책 (이 프로젝트)`n`n" + $commonPolicy + "`n"
@@ -395,6 +428,7 @@ function Invoke-Prepare {
         $reqPath = Join-Path $subDir $reqName
         Write-Utf8Lf -Path $reqPath -Content $reqText
         $requestCount++
+        if ($fallbackGuide) { [void]$fallbackCheckers.Add($checkerKey) }
         if ($perChecker.ContainsKey($checkerKey)) { $perChecker[$checkerKey]++ } else { $perChecker[$checkerKey] = 1 }
 
         $worklist.Add((@(
@@ -411,7 +445,9 @@ function Invoke-Prepare {
         $safeChecker = Get-SafeName $ck
         $meta = $perCheckerMeta[$ck]
         $mandate = if ($conventions.Contains($ck)) { [string]$conventions[$ck] } else { $generalNote }
+        $fallbackNote = if ($fallbackCheckers.Contains($ck)) { New-FallbackFolderNote -CheckerKey $ck } else { '' }
         $instr = $folderTemplate.
+            Replace('{{FALLBACK_NOTE}}', $fallbackNote).
             Replace('{{CHECKER_KEY}}', $ck).
             Replace('{{CHECKER_NAME}}', [string]$meta.Name).
             Replace('{{COUNT}}', [string]$perChecker[$ck]).
@@ -439,6 +475,10 @@ function Invoke-Prepare {
         foreach ($k in ($perChecker.Keys | Sort-Object { -$perChecker[$_] }, { $_ })) {
             Write-Host ("    {0} : {1}" -f $k, $perChecker[$k])
         }
+    }
+    if ($fallbackCheckers.Count -gt 0) {
+        $fallbackOrdered = @($fallbackCheckers | Sort-Object)
+        Write-Host ("  미등록 체커 {0}종 — GUI '체커 룰 관리'에서 룰 추가 가능: {1}" -f $fallbackOrdered.Count, ($fallbackOrdered -join ', '))
     }
     Write-Host ("  출력 폴더   : {0}" -f (Resolve-Path -LiteralPath $Out).Path)
 }

@@ -329,13 +329,17 @@ internal static class Program
     {
         string xls = Path.Combine(work, "fieldtable.xls");
         WriteSyntheticXls(xls,
-            new[] { "ID", "유형", "위험도", "언어", "체커 타입", "체커 키", "체커명", "라인", "파일명", "함수", "경로", "이슈 상태", "체커 설명", "소스 코드" },
+            new[]
+            {
+                "ID", "유형", "위험도", "언어", "레퍼런스", "체커 타입", "체커 키", "체커명", "라인", "파일명",
+                "함수", "경로", "A.S", "유사 이슈 그룹", "이슈 상태", "이슈 담당자", "검출 시간", "체커 설명", "소스 코드",
+            },
             new[]
             {
                 new[]
                 {
-                    "7001", "보안약점", "매우위험", "C#", "SEMANTIC", "FORWARD_NULL", "널 값 역참조", "88", "Foo.cs",
-                    "Process", "src/Foo.cs", "미확인", "널 값을 역참조합니다.",
+                    "7001", "보안약점", "매우위험", "C#", "CWE-476", "SEMANTIC", "FORWARD_NULL", "널 값 역참조", "88", "Foo.cs",
+                    "Process", "src/Foo.cs", "N", "G-12", "미확인", "없음", "2026-07-19 10:00:00", "널 값을 역참조합니다.",
                     "  87: // no guard\n  88: Process(node.Value);\n  89: return;",
                 },
             });
@@ -350,8 +354,12 @@ internal static class Program
         if (item == null) return;
         string md = ReadText(item);
 
-        // dropped: constant across the codebase, no bearing on the fix decision
-        foreach (string dropped in new[] { "유형", "언어", "체커 타입", "이슈 상태" })
+        // dropped: constant across the codebase, or workflow/bookkeeping metadata — no bearing on the fix decision
+        foreach (string dropped in new[]
+                 {
+                     "유형", "언어", "체커 타입", "이슈 상태",
+                     "A.S", "이슈 담당자", "검출 시간", "유사 이슈 그룹", "레퍼런스",
+                 })
             Check(!md.Contains("| " + dropped + " |", StringComparison.Ordinal),
                   "I: 필드표에서 '" + dropped + "' 행 제거됨");
 
@@ -369,6 +377,14 @@ internal static class Program
         Check(md.Contains("## 소스 코드", StringComparison.Ordinal), "I: 소스 코드 섹션 보존");
         Check(!md.Contains("| 소스 코드 |", StringComparison.Ordinal) && !md.Contains("| 체커 설명 |", StringComparison.Ordinal),
               "I: 소스 코드/체커 설명은 표가 아닌 전용 섹션에만 존재");
+
+        // ⚠️ 앵커 블록은 '기준점 + 최소 인접 범위 허용'이어야 한다. 옛 "그 라인만 고치고" 문구는 작업 규칙 3
+        // (최소 인접 범위 수정 허용)과 모순되어 여러 줄이 필요한 수정을 포기시키는 경로였다 → 재발 방지.
+        Check(md.Contains("> ⚠️ **수정 기준점 = 라인 88.** (아래 소스의 `TARGET LINE` 표시) 결함 제거에 필요한 최소 인접 범위(감싸는 블록·try/finally·선언부)까지는 수정 가능하며, 결함과 무관한 다른 코드는 수정하지 마십시오. 범위 제약을 수정 불가 사유로 삼지 마십시오.",
+              StringComparison.Ordinal), "I: ⚠️ 앵커 블록 = 기준점 + 최소 인접 범위 허용 문구");
+        Check(!md.Contains("그 라인만 고치고", StringComparison.Ordinal)
+              && !md.Contains("이 라인만 고치고", StringComparison.Ordinal),
+              "I: ⚠️ 블록에 '그 라인만 고치고' 단일라인 제약 없음");
     }
 
     // Minimal BIFF (.xls) writer for the synthetic GetXlsCheckerKeys check.

@@ -5,7 +5,7 @@
 // Design points baked in:
 //  - GENERIC header mapping: whatever headers exist become table columns; a fixed set of Sparrow columns
 //    is treated as WELL-KNOWN only for filenames/index/summary (ID / 체커 키 / 체커명 / 위험도 / 파일명 /
-//    라인 / 이슈 상태 / 체커 설명 / 소스 코드).
+//    라인 / 이슈 상태 / 체커 설명 / 소스 코드 / 경로).
 //  - deterministic: sheet order preserved; filters AND-combined; --max caps the written set; all three
 //    outputs (per-item md, index.csv, checkers.md) reflect that same written set.
 //  - encodings: md/csv are UTF-8 WITHOUT BOM, EXCEPT index.csv which is written WITH a BOM so Excel shows
@@ -73,6 +73,7 @@ namespace SparrowXlsExport.Core
         private const string CStatus = "이슈 상태";
         private const string CDesc = "체커 설명";
         private const string CSource = "소스 코드";
+        private const string CPath = "경로";   // full source path (dir+file); disambiguates same-named files across projects
 
         /// <summary>
         /// Parse the workbook and write items/{...}.md + index.csv + checkers.md, exactly as the console tool.
@@ -179,7 +180,10 @@ namespace SparrowXlsExport.Core
 
             // 1) Per-item markdown.
             var index = new StringBuilder();
-            index.Append("md_file,ID,체커 키,위험도,파일명,라인,이슈 상태,체커명\n");
+            // 경로 is appended as the LAST column (existing columns keep their positions so name/index-based
+            // consumers are unaffected). It carries the xls '경로' full path for full-path finding identity
+            // (G2 gate); empty string when the xls has no 경로 column.
+            index.Append("md_file,ID,체커 키,위험도,파일명,라인,이슈 상태,체커명,경로\n");
             foreach (var rec in written)
             {
                 string id = GV(rec.Vals, CID);
@@ -195,6 +199,7 @@ namespace SparrowXlsExport.Core
                 {
                     CsvQuote("items/" + mdName), CsvQuote(id), CsvQuote(checkerKey), CsvQuote(GV(rec.Vals, CSeverity)),
                     CsvQuote(fileName), CsvQuote(line), CsvQuote(GV(rec.Vals, CStatus)), CsvQuote(GV(rec.Vals, CCheckerName)),
+                    CsvQuote(GV(rec.Vals, CPath)),
                 })).Append('\n');
             }
 

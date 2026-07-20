@@ -1,6 +1,7 @@
 // SparrowXlsExport.Core.TriagePreparer: deterministic reproduction of Run-Triage.ps1 `prepare`.
 //
-// Reads index.csv (UTF-8 with BOM; header md_file,ID,체커 키,위험도,파일명,라인,이슈 상태,체커명), and for
+// Reads index.csv (UTF-8 with BOM; header md_file,ID,체커 키,위험도,파일명,라인,이슈 상태,체커명,경로 — the
+// trailing 경로 column is ignored here, columns are resolved by name), and for
 // each row resolves the checker guide <GuidesDir>\<체커 키>.md (join on the verbatim 체커 키 column). If the
 // guide is present it writes a self-contained requests\{ID}_{체커키}.md (the repair prompt with {{GUIDE}} and
 // {{ITEM}} substituted). If the guide is missing but the checker key exists, it emits a fallback guide from the

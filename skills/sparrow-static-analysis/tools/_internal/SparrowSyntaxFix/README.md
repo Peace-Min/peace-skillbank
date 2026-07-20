@@ -1,9 +1,10 @@
 # SparrowSyntaxFix
 
-Deterministic Roslyn source rewriter for Sparrow (?뚯닔 ?뺤쟻遺꾩꽍) Track A code-rule findings that `SparrowSyntaxFix`
-does not fully clear on the legacy **OSTES** project (.NET Framework 4.7.2, non-SDK `.csproj`). It parses C#
-source text with Roslyn **syntax** APIs only ??it never loads an MSBuild project ??and rewrites at the syntax
-level, preserving all trivia (comments/whitespace/newlines). No string/regex editing of code, ever.
+Deterministic Roslyn source rewriter for Sparrow (스패로우 정적분석) Track A code-rule findings that the
+now-deleted `dotnet format` runner did not fully clear on the legacy **OSTES** project (.NET Framework 4.7.2,
+non-SDK `.csproj`). It parses C# source text with Roslyn **syntax** APIs only — it never loads an MSBuild
+project — and rewrites at the syntax level, preserving all trivia (comments/whitespace/newlines). No
+string/regex editing of code, ever.
 
 Current implementation covers the Track A Roslyn expansion in `references/track-a-roslyn-policy.md`:
 `nullvar`, `parens`, `objectvar-safe`, `foreachcast`, `obviousvar`, `objectvar-narrowing`, `localconst`,
@@ -104,7 +105,7 @@ Default safe rules are `objectvar-safe`, `obviousvar`, `arrayvar-safe`, and `par
 ```
 SparrowSyntaxFix <file-or-dir>... [options]
 
-  --files-from <index.csv>  read target .cs paths from a CSV (?뚯씪紐?寃쎈줈 column) or a newline list;
+  --files-from <index.csv>  read target .cs paths from a CSV (파일 경로 column) or a newline list;
                             relative paths resolve against --root
   --root <dir>              base directory for resolving relative paths (default: current dir)
   --rules <list>            comma list of Track A rules or 'all' (default: safe subset)
@@ -130,27 +131,30 @@ nullcast edits:   285
 parens edits:     741
 ```
 
-## One-call runner ??`Run-SparrowSyntaxFix.ps1` (沅뚯옣, Run-SparrowSyntaxFix.ps1 ???
+## One-call runner — `Run-SparrowSyntaxFix.ps1` (권장)
 
-?붾（??寃쎈줈留?二쇰㈃ ?숈옉?섎뒗 PowerShell ?щ꼫(Track A 2?④퀎). ?대??먯꽌 exe ?뺣낫 ??洹쒖튃蹂??ㅽ뻾 ??洹쒖튃蹂?而ㅻ컠(寃??媛?ν븳 ?⑥쐞). `references/Run-SparrowSyntaxFix.ps1`(SparrowSyntaxFix 1?④퀎)??吏?
+솔루션(.sln)/소스 폴더 경로만 주면 동작하는 PowerShell 러너(Track A 2단계). 내부에서 exe를 확보한 뒤 규칙별로
+실행하고 규칙별로 커밋한다(검수 가능한 단위). 일반 운영은 이 러너로 하고, 직접 `SparrowSyntaxFix --rules ...`
+호출은 테스트/자동화/정밀 재실행에만 쓴다.
 
 ```powershell
-# ?먰걧: 洹몃깷 ?ㅽ뻾?섎㈃ ?붾（??寃쎈줈瑜?臾산퀬, ?댁뼱??而ㅻ컠 ?щ?(Y/N)瑜?臾쇱뼱遊?
+# 원큐: 그냥 실행하면 솔루션 경로를 묻고, 이어서 커밋 여부(Y/N)를 묻는다.
 .\Run-SparrowSyntaxFix.ps1
 
-# 寃쎈줈瑜?誘몃━ 以섎룄 ??而ㅻ컠 ?щ????ъ쟾??臾쇱쓬). ?붾（??.sln) ?먮뒗 ?뚯뒪 ?대뜑 寃쎈줈.
+# 경로를 미리 줘도 됨(커밋 여부는 물음). 솔루션(.sln) 또는 소스 폴더 경로.
 .\Run-SparrowSyntaxFix.ps1 -Solution C:\Work\OSTES\OSTES.sln
 
-.\Run-SparrowSyntaxFix.ps1 -Solution ...\OSTES.sln -DryRun                 # 誘몃━蹂닿린(蹂寃?????
-.\Run-SparrowSyntaxFix.ps1 -Solution ...\OSTES.sln -Commit                 # 洹쒖튃蹂??먮룞 而ㅻ컠
+.\Run-SparrowSyntaxFix.ps1 -Solution ...\OSTES.sln -DryRun                 # 미리보기(변경 안 함)
+.\Run-SparrowSyntaxFix.ps1 -Solution ...\OSTES.sln -Commit                 # 규칙별 자동 커밋
 .\Run-SparrowSyntaxFix.ps1 -Solution ...\OSTES.sln -Rules nullcast         # 테스트/자동화/정밀 재실행용 예외
-.\Run-SparrowSyntaxFix.ps1 -Solution ...\OSTES.sln -FilesFrom index.csv    # (?뺣?) 寃異??뚯씪留?
-.\Run-SparrowSyntaxFix.ps1 -Solution ...\OSTES.sln -ExePath C:\tools\SparrowSyntaxFix.exe  # ?먯뇙留?諛섏엯 exe
+.\Run-SparrowSyntaxFix.ps1 -Solution ...\OSTES.sln -FilesFrom index.csv    # (정밀) 검출된 파일만
+.\Run-SparrowSyntaxFix.ps1 -Solution ...\OSTES.sln -ExePath C:\tools\SparrowSyntaxFix.exe  # 폐쇄망: 반입 exe 지정
 ```
 
-???뺣낫 ?쒖꽌: `-ExePath` ???ㅽ겕由쏀듃 ??`publish\SparrowSyntaxFix.exe` ??`bin\Release\net8.0\SparrowSyntaxFix.dll`
-???놁쑝硫?`dotnet build`(?⑦궎吏 蹂듭썝 媛?ν븷 ??. **?명꽣???녿뒗 PC??`-ExePath`/`publish\`濡?諛섏엯 exe瑜?二쇱꽭??**
-`.sln`??二쇰㈃ 洹??대뜑 ?꾨옒 `*.cs`瑜??ш? 泥섎━(?앹꽦/諛깆뾽 ?쒖쇅); ?⑹뼱吏??꾨줈?앺듃??`-FilesFrom index.csv`濡??뺣? ?源?
+exe 확보 순서: `-ExePath` → 스크립트 옆 `publish\SparrowSyntaxFix.exe` → `bin\Release\net8.0\SparrowSyntaxFix.dll`
+→ 없으면 `dotnet build`(패키지 복원 가능할 때). **인터넷 없는 폐쇄망 PC는 `-ExePath` 또는 `publish\`로 반입 exe를 주세요**
+(반입 번들은 `tools/publish-airgap.ps1`로 생성). `.sln`을 주면 그 폴더 아래 `*.cs`를 재귀 처리한다(생성/백업 제외).
+특정 파일만 정밀 처리하려면 `-FilesFrom index.csv`(SparrowXlsExport 산출)로 검출된 파일 목록을 준다.
 
 ## Safety / encoding
 

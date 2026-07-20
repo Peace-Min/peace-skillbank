@@ -16,6 +16,41 @@ skills/sparrow-static-analysis/SparrowRunner.Gui/SparrowRunner.Gui.sln
 skills/sparrow-static-analysis/tools/Run-SparrowRunnerGui.cmd
 ```
 
+## 폐쇄망 반입(오프라인 배포)
+
+GUI와 러너는 평소 `dotnet run`/`dotnet build`로 동작한다. 이는 대상 PC에 `.NET SDK`와 NuGet 복원(=인터넷)을 요구하므로, 인터넷이 없는 폐쇄망 PC에서는 그대로 실행되지 않는다. 오프라인 반입은 다음 순서로 한다.
+
+1. **인터넷 + `.NET SDK`가 있는 PC**에서 발행 스크립트를 실행한다. 도구 4종(Track A/B/C CLI + WPF GUI)이 각 프로젝트의 `publish\` 폴더로 발행된다.
+
+   ```powershell
+   # 기본: self-contained win-x64 (대상 PC에 .NET 런타임 불필요)
+   .\skills\sparrow-static-analysis\tools\publish-airgap.ps1
+
+   # 산출물 크기를 줄이려면(대상 PC에 .NET 8 런타임 필요)
+   .\skills\sparrow-static-analysis\tools\publish-airgap.ps1 -FrameworkDependent
+
+   # 무엇을 어디로 발행할지 미리보기(빌드 안 함)
+   .\skills\sparrow-static-analysis\tools\publish-airgap.ps1 -DryRun
+   ```
+
+2. **`skills/sparrow-static-analysis` 폴더 트리 전체**를 폐쇄망 PC로 복사한다. 반드시 함께 넘겨야 하는 것:
+   - 방금 생성된 `publish\` 산출물 4곳(`SparrowRunner.Gui\publish\`, `_internal\SparrowSyntaxFix\publish\`, `_internal\SparrowCommentFix\publish\`, `_internal\SparrowXlsExport\publish\`)
+   - `references\`(Track C 요청 생성에 쓰는 checkers/triage/공식 규칙)
+   - `tools\`의 러너/진입점(`Run-SparrowRunnerGui.cmd`, `Run-SparrowAll.cmd`, `_internal\...\Run-*.ps1`)
+
+   > `publish\` 산출물은 머신마다 생성되는 것이라 저장소에 커밋하지 않는다(`.gitignore` 제외 대상). 반입은 파일 복사로 한다.
+
+3. 폐쇄망 PC에서 `tools\Run-SparrowRunnerGui.cmd`를 실행한다. 이 배치는 `SparrowRunner.Gui\publish\SparrowRunner.Gui.exe`가 있으면 그것을 바로 실행하고(없을 때만 `dotnet run`으로 폴백), 러너는 `publish\SparrowSyntaxFix.exe` / `publish\SparrowCommentFix.exe`를 자동으로 집어 쓴다(`dotnet build`/복원 불필요). Windows 기본 `powershell.exe`만 있으면 된다.
+
+### 대상 PC 런타임 요건
+
+| 발행 모드 | 스위치 | 대상 PC .NET 요건 | 산출물 크기 |
+| --- | --- | --- | --- |
+| self-contained (기본) | (없음) | **불필요**(런타임 동봉) | 큼(도구별 수십~수백 MB) |
+| framework-dependent | `-FrameworkDependent` | GUI = **.NET 8 Desktop Runtime**, CLI 3종 = **.NET 8 Runtime** | 작음 |
+
+`win-x64` 자기완결(self-contained) 발행이 폐쇄망 무설치 배포에 가장 안전한 기본값이다. 대상 PC에 이미 .NET 8 런타임이 관리·배포되어 있다면 `-FrameworkDependent`로 용량을 줄일 수 있다.
+
 ## 구성
 
 | 구분 | 목적 | 위치 |

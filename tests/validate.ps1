@@ -315,6 +315,11 @@ foreach ($runner in @($syntaxRunner, $commentRunner, $allRunner)) {
     Test-PowerShellSyntax -Path $runner
 }
 
+# Air-gapped publish bundler: assert it exists and parses. Always on (no heavy build/publish smoke here).
+$airgapPublish = Join-Path $RepositoryRoot "skills\sparrow-static-analysis\tools\publish-airgap.ps1"
+Assert-Condition (Test-Path -LiteralPath $airgapPublish) "Missing air-gap publish script: $airgapPublish"
+Test-PowerShellSyntax -Path $airgapPublish
+
 $claude = Get-Command claude -ErrorAction SilentlyContinue
 if ($claude) {
     Push-Location $RepositoryRoot

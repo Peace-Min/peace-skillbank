@@ -34,6 +34,16 @@ Keep implementation logic out of the GUI:
 - Comment/layout fixer: `tools/_internal/SparrowCommentFix`
 - XLS parser and request packager: `tools/_internal/SparrowXlsExport` and `tools/_internal/SparrowXlsExport.Core`
 
+## 폐쇄망 반입(오프라인 배포)
+
+The GUI/runners normally `dotnet run`/`dotnet build`, which needs a .NET SDK and NuGet restore — impossible on an air-gapped PC. For offline use, publish the tools once on an internet PC and carry the whole skill folder over:
+
+1. On an internet PC with the .NET SDK, run `tools\publish-airgap.ps1` (default: self-contained `win-x64`; add `-FrameworkDependent` for smaller output, `-DryRun` to preview). It publishes all four projects into per-project `publish\` folders.
+2. Copy the **entire `skills/sparrow-static-analysis` tree** — including the generated `publish\` folders and `references/` — to the air-gapped PC.
+3. On the target, run `tools\Run-SparrowRunnerGui.cmd`. It auto-uses `SparrowRunner.Gui\publish\SparrowRunner.Gui.exe` when present, and the runners auto-pick `publish\SparrowSyntaxFix.exe` / `publish\SparrowCommentFix.exe` (no build/restore). Self-contained needs no .NET runtime on the target; framework-dependent needs the .NET 8 Desktop Runtime (GUI) / .NET 8 Runtime (CLI).
+
+See `docs/sparrow-static-analysis-usage.md` (폐쇄망 반입 절) for the operator steps and runtime checklist.
+
 ## Deterministic CLI Fixes
 
 Use deterministic CLI fixes only for predefined patterns. These tools are not general-purpose repair agents.

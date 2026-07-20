@@ -293,6 +293,31 @@ namespace SparrowSyntaxFix.FixtureTests
             ExpectUnchanged("already-OfType<T> source skipped (idempotent)",
                 "class C\n{\n    void M()\n    {\n        foreach (XmlNode node in System.Linq.Enumerable.OfType<XmlNode>(clsNodes))\n        {\n            _ = node.Name;\n        }\n    }\n}\n",
                 SyntaxRule.ForeachCast);
+
+            // VALUE-TYPE GUARD (runtime-safety): the original foreach does an IMPLICIT NUMERIC conversion, not a
+            // cast, so Enumerable.Cast<T> would unbox to the wrong runtime type and throw InvalidCastException at
+            // the first iteration. These MUST stay byte-identical.
+            //   `foreach (double d in intList)` — int→double widening; Cast<double>(intList) throws at runtime.
+            ExpectUnchanged("value-type guard: double over int collection skipped",
+                "class C\n{\n    void M()\n    {\n        var intList = GetInts();\n        foreach (double d in intList)\n        {\n            _ = d;\n        }\n    }\n}\n",
+                SyntaxRule.ForeachCast);
+            //   `foreach (int i in intList)` — Cast<int> WOULD be safe here, but the guard conservatively skips
+            //   ALL numeric value-type element types (syntax cannot tell a safe case from an unsafe one).
+            ExpectUnchanged("value-type guard: int over int collection skipped (conservative)",
+                "class C\n{\n    void M()\n    {\n        var intList = GetInts();\n        foreach (int i in intList)\n        {\n            _ = i;\n        }\n    }\n}\n",
+                SyntaxRule.ForeachCast);
+            //   `foreach (long x in arr)` — int[]→long widening; Cast<long> throws.
+            ExpectUnchanged("value-type guard: long over array skipped",
+                "class C\n{\n    void M(int[] arr)\n    {\n        foreach (long x in arr)\n        {\n            _ = x;\n        }\n    }\n}\n",
+                SyntaxRule.ForeachCast);
+            //   `foreach (int? n in list)` — nullable element type; unbox-to-nullable kept out conservatively.
+            ExpectUnchanged("value-type guard: nullable int? skipped",
+                "class C\n{\n    void M()\n    {\n        var list = GetInts();\n        foreach (int? n in list)\n        {\n            _ = n;\n        }\n    }\n}\n",
+                SyntaxRule.ForeachCast);
+            //   `System.`-qualified well-known value type name is guarded too.
+            ExpectUnchanged("value-type guard: System.Double name skipped",
+                "class C\n{\n    void M()\n    {\n        var list = GetInts();\n        foreach (System.Double d in list)\n        {\n            _ = d;\n        }\n    }\n}\n",
+                SyntaxRule.ForeachCast);
         }
 
         private static void ObviousVarPositives()

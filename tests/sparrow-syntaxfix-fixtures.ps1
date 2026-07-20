@@ -285,6 +285,53 @@ try {
     Check "default set: forvar NOT applied" { $defText.Contains("for (int i = 0; i < count; i++)") }
     Check "default set: fieldsplit NOT applied" { $defText.Contains("private double _rawXMin, _rawXMax, _rawYMin, _rawYMax;") }
     Check "default set: emptystmt NOT applied" { $defText.Contains("h += OnE; ;") }
+
+    # 7) COMPILE GATE (Run-SparrowSyntaxFix.ps1 -VerifyCmd): in a throwaway git repo, a rule whose gate command
+    #    FAILS must have its edits reverted (working tree clean, no new commit); a rule whose gate PASSES must be
+    #    committed. Uses -ExePath to the freshly built dll so the STALE publish\ exe is not preferred.
+    $git = Get-Command git -ErrorAction SilentlyContinue
+    if (-not $git) {
+        Write-Host "  (git not found; skipping compile-gate test)"
+    }
+    else {
+        $enc = New-Object System.Text.UTF8Encoding($false)
+        $freshDll = Join-Path $toolDir "bin\Release\net8.0\SparrowSyntaxFix.dll"
+        Check "compile-gate: fresh tool dll exists" { Test-Path -LiteralPath $freshDll }
+
+        $gateRepo = Join-Path $work "gate"
+        New-Item -ItemType Directory -Force -Path $gateRepo | Out-Null
+        $gateCs = Join-Path $gateRepo "Gate.cs"
+        $gateSrc = ("class C" + $nl + "{" + $nl + "    bool M(bool a, bool b)" + $nl + "    {" + $nl + "        bool ok = a && b;" + $nl + "        return ok;" + $nl + "    }" + $nl + "}" + $nl)
+        [System.IO.File]::WriteAllText($gateCs, $gateSrc, $enc)
+
+        $prevEap = $ErrorActionPreference
+        $ErrorActionPreference = "Continue"
+        try {
+            & $git.Source -C $gateRepo init -q 2>&1 | Out-Null
+            & $git.Source -C $gateRepo config user.email "t@example.com" 2>&1 | Out-Null
+            & $git.Source -C $gateRepo config user.name "Test" 2>&1 | Out-Null
+            & $git.Source -C $gateRepo config commit.gpgsign false 2>&1 | Out-Null
+            & $git.Source -C $gateRepo add -A 2>&1 | Out-Null
+            & $git.Source -C $gateRepo commit -q -m "init" 2>&1 | Out-Null
+
+            # (a) gate FAILS -> edits reverted, no new commit.
+            & $runner -Solution $gateRepo -Rules parens -Commit -ExePath $freshDll -LogDir $work -VerifyCmd 'powershell -NoProfile -Command "exit 1"' *>&1 | Out-Null
+            $statusFail = ((& $git.Source -C $gateRepo status --porcelain) | Out-String).Trim()
+            $countFail = ((& $git.Source -C $gateRepo rev-list --count HEAD) | Out-String).Trim()
+            $textFail = [System.IO.File]::ReadAllText($gateCs)
+            Check "compile-gate FAIL: working tree clean (rule edits reverted)" { $statusFail -eq "" }
+            Check "compile-gate FAIL: no new commit (still 1)" { $countFail -eq "1" }
+            Check "compile-gate FAIL: file content unchanged (parens NOT applied)" { $textFail.Contains("bool ok = a && b;") }
+
+            # (b) gate PASSES -> commit created, edit applied.
+            & $runner -Solution $gateRepo -Rules parens -Commit -ExePath $freshDll -LogDir $work -VerifyCmd 'powershell -NoProfile -Command "exit 0"' *>&1 | Out-Null
+            $countPass = ((& $git.Source -C $gateRepo rev-list --count HEAD) | Out-String).Trim()
+            $textPass = [System.IO.File]::ReadAllText($gateCs)
+            Check "compile-gate PASS: new commit created (now 2)" { $countPass -eq "2" }
+            Check "compile-gate PASS: parens applied" { $textPass.Contains("(a) && (b)") }
+        }
+        finally { $ErrorActionPreference = $prevEap }
+    }
 }
 finally {
     Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue

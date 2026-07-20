@@ -25,6 +25,7 @@
       .\Run-SparrowCommentFix.ps1 -Solution ...\OSTES.sln -FilesFrom index.csv   # (정밀) 자동 글롭 대신 준 CSV 사용(SparrowXlsExport 산출)
       .\Run-SparrowCommentFix.ps1 -Solution ...\OSTES -IncludeGenerated      # 생성/백업 파일도 포함(기본 제외)
       .\Run-SparrowCommentFix.ps1 -Solution ...\OSTES.sln -ExePath C:\tools\SparrowCommentFix.exe  # 폐쇄망: 반입 exe 지정
+      .\Run-SparrowCommentFix.ps1 -Solution ...\OSTES.sln -Commit -VerifyCmd '"C:\...\msbuild.exe" ...\OSTES.sln /t:Build'  # 규칙별 커밋 전 컴파일 게이트(실패 규칙 revert)
 
     폐쇄망 참고: 이 툴은 Roslyn을 품은 컴파일 exe라, 대상 PC에 exe가 있어야 합니다. 러너는
     (1) -ExePath  (2) 스크립트 옆 publish\SparrowCommentFix.exe  (3) bin\Release\net8.0\SparrowCommentFix.dll
@@ -39,7 +40,13 @@ param(
     [string]$FilesFrom,          # (정밀) 이미 있는 index.csv를 주면 자동 글롭 대신 그걸 사용
     [switch]$IncludeGenerated,   # 기본 off: 생성/백업 파일 제외. on이면 전부 포함
     [string]$ExePath,            # 폐쇄망: 반입 exe/dll 지정
-    [string]$LogDir
+    [string]$LogDir,
+    # 규칙별 커밋 앞 컴파일 게이트(선택). 예: '"C:\...\msbuild.exe" C:\Work\OSTES\OSTES.sln /t:Build'
+    # 주면 각 규칙 edits 후·git 커밋 전 이 명령을 실행. 비정상 종료(exit!=0) 시 그 규칙의 미커밋 *.cs edits를
+    # `git checkout -- *.cs`로 되돌리고(커밋 skip) '[GATE] rule <r> reverted' 로그 후 다음 규칙으로 진행.
+    # 게이트를 통과한 규칙만 커밋된다. (-Commit 과 함께일 때만 의미 있음 — revert 기준선이 직전 규칙 커밋이므로.)
+    # 안 주면 게이트 없음: -Commit이면 "커밋 후 전체 빌드 필수" 안내만 1줄 출력(동작은 종전과 동일).
+    [string]$VerifyCmd
 )
 
 trap {
@@ -234,6 +241,30 @@ function Invoke-GitCommitStep {
     return 'failed'
 }
 
+# 컴파일 게이트: $VerifyCmd(문자열 명령)를 실행하고 종료코드를 반환. 0=통과. 출력/종료코드는 로그로 흘림.
+# 명령 예: '"C:\...\msbuild.exe" C:\Work\OSTES\OSTES.sln /t:Build' 또는 'powershell -Command "exit 1"'.
+# 네이티브 exe가 아닌 순수 cmdlet만 실행되면 $LASTEXITCODE가 안 바뀌므로 null->0(통과)로 간주한다.
+function Invoke-VerifyGate {
+    param([Parameter(Mandatory = $true)][string]$Cmd, [Parameter(Mandatory = $true)][string]$LogFile)
+    Add-Content -LiteralPath $LogFile -Value ("`n---------- [GATE] verify: $Cmd ----------")
+    $global:LASTEXITCODE = 0
+    $prevEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $gout = Invoke-Expression $Cmd 2>&1
+        $gexit = $LASTEXITCODE
+    }
+    catch {
+        $gout = ($_ | Out-String)
+        $gexit = 1
+    }
+    finally { $ErrorActionPreference = $prevEap }
+    if ($null -eq $gexit) { $gexit = 0 }
+    Add-Content -LiteralPath $LogFile -Value (($gout | Out-String))
+    Add-Content -LiteralPath $LogFile -Value ("[GATE] exit=$gexit")
+    return $gexit
+}
+
 # 1b) -Commit/-DryRun 둘 다 없으면 물어봄(플래그 빼먹는 실수 방지). 비대화형은 안 물어보고 커밋 안 함.
 if (-not $Commit -and -not $DryRun -and -not $NoCommit) {
     if ([Environment]::UserInteractive) {
@@ -247,6 +278,18 @@ if (-not $Commit -and -not $DryRun -and -not $NoCommit) {
 }
 elseif ($NoCommit) {
     Write-Host "-> 파일만 수정(커밋 안 함). (-NoCommit)"
+}
+
+# 1c) 컴파일 게이트 안내. -Commit인데 -VerifyCmd가 없으면 게이트가 없다는 걸 분명히 알린다(커밋 후 전체 빌드 필수).
+$gateActive = ($Commit -and $VerifyCmd)
+if ($Commit -and -not $VerifyCmd) {
+    Write-Host "빌드 게이트 없음 — 커밋 후 반드시 전체 빌드로 확인 (규칙별 컴파일 게이트는 -VerifyCmd 로 활성화)."
+}
+elseif ($gateActive) {
+    Write-Host "빌드 게이트 활성: 규칙별 커밋 전 검증 실행 -> $VerifyCmd  (실패 규칙은 edits revert 후 커밋 skip)"
+}
+elseif ($VerifyCmd -and -not $Commit) {
+    Write-Host "참고: -VerifyCmd는 -Commit과 함께일 때만 게이트로 동작합니다(revert 기준선이 직전 규칙 커밋). 이번 실행은 커밋을 안 하므로 게이트 미적용."
 }
 
 # 2) 대상 .cs 파일 목록 구성.
@@ -326,6 +369,7 @@ try {
     $ErrorActionPreference = 'Continue'
     $failed = $false
     $grand = 0
+    $gateReverted = 0
     foreach ($r in $Rules) {
         $toolArgs = @('--files-from', $csvForTool, '--rules', $r, '--root', $root)
         if ($DryRun) { $toolArgs += '--dry-run' }
@@ -353,6 +397,21 @@ try {
         if ($DryRun) { Write-Host "  결과      : [dry-run] 파일 변경 안 함"; continue }
 
         if ($Commit) {
+            # 컴파일 게이트: 커밋 앞에서 $VerifyCmd 실행. 실패하면 이 규칙의 미커밋 *.cs edits를 revert하고 커밋 skip.
+            # (revert pathspec는 커밋의 git add와 동일한 '*.cs' — 대상 루트 아래 추적 .cs만 직전 커밋 상태로 되돌림.)
+            # 이 규칙이 실제로 .cs를 안 바꿨으면(no-op) 느린 빌드를 낭비하지 않도록 게이트를 건너뛴다(커밋도 nochange 처리).
+            $csDirty = @(& git -C $root status --porcelain -- '*.cs') | Where-Object { $_ }
+            if ($gateActive -and $csDirty.Count -gt 0) {
+                $gexit = Invoke-VerifyGate -Cmd $VerifyCmd -LogFile $logPath
+                if ($gexit -ne 0) {
+                    & git -C $root checkout -- '*.cs' 2>&1 | Out-Null
+                    Write-Host "  [GATE] rule $r reverted: verify failed(exit $gexit)"
+                    Add-Content -LiteralPath $logPath -Value "[GATE] rule $r reverted: verify failed(exit $gexit)"
+                    $gateReverted++
+                    continue
+                }
+                Write-Host "  게이트    : 통과(exit 0) -> 커밋 진행"
+            }
             $res = Invoke-GitCommitStep -Root $root -Message "sparrow(B): $($labels[$r]) (SparrowCommentFix)"
             switch ($res) {
                 'committed' { Write-Host "  커밋      : sparrow(B): $($labels[$r])" }
@@ -367,6 +426,7 @@ try {
 
     Write-Host ""
     if (-not $DryRun) { Write-Host "총 수정 건수(적용된 규칙 합): $grand" }
+    if ($gateActive -and $gateReverted -gt 0) { Write-Host "게이트 revert(검증 실패로 되돌리고 커밋 skip한 규칙): $gateReverted" }
     if ($failed) { Write-Host "일부 규칙 미완 -> 로그 확인." }
 }
 finally {

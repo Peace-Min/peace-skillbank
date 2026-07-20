@@ -67,7 +67,7 @@ The CLI supports these rules:
 | Rule | Transform | Commit policy |
 |---|---|---|
 | `objectvar-safe` | `Foo x = new Foo()` ??`var x = new Foo()` when declaration type and construction type match | normal |
-| `foreachcast` | `foreach (XmlNode n in xs)` ??`foreach (var n in System.Linq.Enumerable.Cast<XmlNode>(xs))` | `review-needed` |
+| `foreachcast` | `foreach (XmlNode n in xs)` ??`foreach (var n in System.Linq.Enumerable.Cast<XmlNode>(xs))`. **Value-type guard:** skipped when the element type is a numeric/implicit-conversion value type — predefined keywords (`int`/`long`/`double`/`decimal`/`bool`/`char`/…), well-known names bare or `System.`-qualified (`Int32`/`Int64`/`Double`/`Boolean`/…), or any nullable form (`T?`, `Nullable<T>`) — because there foreach does an implicit numeric conversion, not a cast, so `Cast<T>` would unbox to the wrong runtime type and throw `InvalidCastException`. (Reference/other named types are unaffected — their conversion IS a cast.) **Residual risk:** enums declared as named types are syntactically indistinguishable from classes and are NOT skipped — human review + build/Sparrow gates are the backstop. | `review-needed` |
 | `obviousvar` | `string s = "A"` ??`var s = "A"`; `double d = 20` ??`var d = (double)20` | normal |
 | `objectvar-narrowing` | `IList<T> x = new List<T>()` ??`var x = new List<T>()` | `review-needed` |
 | `localconst` | `const string s = "A"` ??`var s = "A"` | `review-needed` |

@@ -13,6 +13,21 @@ Run-SparrowRunnerGui.cmd
 - `SparrowRunner.Gui/`: 통합 GUI 프로젝트입니다.
 - `_internal/`: GUI와 러너가 내부적으로 호출하는 엔진 프로젝트입니다. 일반 사용자가 직접 실행할 필요가 없습니다.
 
+## 규칙별 커밋 전 컴파일 게이트 (`-VerifyCmd`, 한 줄)
+
+`-Commit`으로 규칙별 자동 커밋을 돌릴 때, `-VerifyCmd '<빌드 명령>'`을 함께 주면 **각 규칙 edits 후·커밋 전**에 그
+명령을 실행한다. 명령이 비정상 종료(exit≠0)하면 그 규칙의 미커밋 `*.cs` edits를 `git checkout -- *.cs`로 되돌리고
+커밋을 건너뛴 뒤(`[GATE] rule <r> reverted` 로그) 다음 규칙으로 넘어간다 — **게이트를 통과한 규칙만 커밋**된다.
+레거시 비-SDK x64 대상이라 규칙마다 전체 msbuild는 느리므로, 게이트는 선택(opt-in)이며 안 주면 예전과 동일하게
+동작하되 `-Commit`일 때 "빌드 게이트 없음 — 커밋 후 반드시 전체 빌드로 확인" 안내가 1줄 출력된다.
+
+```powershell
+# 원큐(A→B) 모두에 게이트 적용
+.\Run-SparrowAll.ps1 -Solution C:\Work\OSTES\OSTES.sln -Commit -VerifyCmd '"C:\...\msbuild.exe" C:\Work\OSTES\OSTES.sln /t:Build'
+# 개별 러너에도 동일한 -VerifyCmd 지원
+.\_internal\SparrowSyntaxFix\Run-SparrowSyntaxFix.ps1 -Solution ...\OSTES.sln -Commit -VerifyCmd '<빌드 명령>'
+```
+
 ## 내부 구성
 
 - `_internal/SparrowSyntaxFix`: Track A 코드 규칙 자동수정 엔진.

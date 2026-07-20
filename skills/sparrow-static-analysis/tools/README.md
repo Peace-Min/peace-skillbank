@@ -8,7 +8,7 @@ Run-SparrowRunnerGui.cmd
 
 ## 무엇을 써야 하나요?
 
-- `Run-SparrowRunnerGui.cmd`: Track A/B/C를 한 화면에서 실행하는 권장 진입점입니다.
+- `Run-SparrowRunnerGui.cmd`: Track A/B/C를 한 화면에서 실행하는 권장 진입점입니다. Track C 탭의 "체커 룰 관리" 버튼으로 미등록 체커의 가이드(`references/checkers/<체커키>.md`)를 목록에서 추가·삭제할 수 있고, 추가한 룰은 다음 Track C 실행부터 반영됩니다.
 - `Run-SparrowAll.cmd`: GUI 없이 Track A/B만 순차 실행해야 할 때 쓰는 보조 진입점입니다.
 - `SparrowRunner.Gui/`: 통합 GUI 프로젝트입니다.
 - `_internal/`: GUI와 러너가 내부적으로 호출하는 엔진 프로젝트입니다. 일반 사용자가 직접 실행할 필요가 없습니다.

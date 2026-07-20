@@ -15,6 +15,8 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text;
+using NPOI.HSSF.UserModel;
+using NPOI.SS.UserModel;
 using SparrowXlsExport.Core;
 
 internal static class Program
@@ -63,6 +65,11 @@ internal static class Program
 
         try
         {
+            // ================================================================ S. CheckerRuleStore (guide CRUD)
+            // Independent of the console exe / PowerShell; runs in every mode (fixtures-only and full).
+            Console.WriteLine("\n==== S. CheckerRuleStore (체커 룰 관리) ====");
+            TestCheckerRuleStore(work, guidesDir, skillRoot);
+
             Check(File.Exists(consoleExe), "precondition: console exe exists", consoleExe);
             if (!fixturesOnly) Check(File.Exists(realXls), "precondition: real xls exists", realXls);
             Check(File.Exists(runTriage), "precondition: Run-Triage.ps1 exists", runTriage);
@@ -189,6 +196,142 @@ internal static class Program
         Console.WriteLine("checks: " + _checks + "   fails: " + _fails);
         if (_fails == 0) { Console.WriteLine("== CoreTests PASS =="); return 0; }
         Console.WriteLine("== CoreTests FAIL (" + _fails + ") =="); return 1;
+    }
+
+    // Assert that invoking action throws TEx (Korean-message validation paths).
+    private static void ExpectThrows<TEx>(Action action, string name) where TEx : Exception
+    {
+        _checks++;
+        try
+        {
+            action();
+            _fails++;
+            Console.WriteLine("  [FAIL] " + name + "  -- expected " + typeof(TEx).Name + ", nothing thrown");
+        }
+        catch (TEx)
+        {
+            Console.WriteLine("  [PASS] " + name);
+        }
+        catch (Exception ex)
+        {
+            _fails++;
+            Console.WriteLine("  [FAIL] " + name + "  -- expected " + typeof(TEx).Name + ", got " + ex.GetType().Name);
+        }
+    }
+
+    // S. CheckerRuleStore: List excludes '_'-prefixed; Add/Remove/Save/Read CRUD + validation; template
+    // precedence; GetXlsCheckerKeys distinctness. Uses a temp dir for mutations (never touches the repo).
+    private static void TestCheckerRuleStore(string work, string realGuidesDir, string skillRoot)
+    {
+        // --- real guides: List excludes '_'-prefixed scaffolding, surfaces titles ---
+        var realStore = new CheckerRuleStore(realGuidesDir);
+        var realRules = realStore.List();
+        Check(realRules.Count > 0, "S: real guides List non-empty", "count=" + realRules.Count);
+        Check(realRules.All(r => !r.Key.StartsWith("_", StringComparison.Ordinal)),
+              "S: List excludes '_'-prefixed files");
+        Check(File.Exists(Path.Combine(realGuidesDir, "_TEMPLATE.md")),
+              "S: _TEMPLATE.md exists on disk (but excluded from List)");
+        Check(realRules.All(r => r.Key != "_TEMPLATE" && r.Key != "_BACKLOG"),
+              "S: _TEMPLATE/_BACKLOG not listed as rules");
+        var obc = realRules.FirstOrDefault(r => r.Key == "OVERLY_BROAD_CATCH");
+        Check(obc != null && obc.Title.Length > 0, "S: known guide OVERLY_BROAD_CATCH has a title",
+              obc == null ? "not found" : "title='" + obc.Title + "'");
+
+        // --- temp dir CRUD ---
+        string td = Path.Combine(work, "rulestore");
+        var store = new CheckerRuleStore(td);
+        Check(store.List().Count == 0, "S: List() empty when guides dir missing");
+
+        // built-in template (no _TEMPLATE yet): 설명/판정 기준/수정 방법/예시 sections present.
+        string builtin = store.LoadTemplate();
+        Check(builtin.Contains("## 설명") && builtin.Contains("## 판정 기준")
+              && builtin.Contains("## 수정 방법") && builtin.Contains("## 예시"),
+              "S: built-in template has 설명/판정 기준/수정 방법/예시");
+
+        // Add valid.
+        string contentA = "# MY_TEST_CHECKER — 테스트 체커\n\n## 설명\n한글 본문\n";
+        store.Add("MY_TEST_CHECKER", contentA);
+        string filePath = Path.Combine(td, "MY_TEST_CHECKER.md");
+        Check(File.Exists(filePath), "S: Add creates <key>.md");
+        Check(!HasUtf8Bom(filePath), "S: Add writes UTF-8 WITHOUT BOM (matches _TEMPLATE convention)");
+        Check(store.ReadContent("MY_TEST_CHECKER") == contentA, "S: ReadContent roundtrips Add content");
+        var afterAdd = store.List();
+        Check(afterAdd.Count == 1 && afterAdd[0].Key == "MY_TEST_CHECKER", "S: List() shows the added rule");
+        Check(afterAdd.Count == 1 && afterAdd[0].Title == "MY_TEST_CHECKER — 테스트 체커",
+              "S: List() Title = first heading text");
+
+        // Add rejects (ArgumentException with Korean message).
+        ExpectThrows<ArgumentException>(() => store.Add("", "x"), "S: Add rejects empty key");
+        ExpectThrows<ArgumentException>(() => store.Add("   ", "x"), "S: Add rejects whitespace key");
+        ExpectThrows<ArgumentException>(() => store.Add("BAD KEY", "x"), "S: Add rejects space (bad chars)");
+        ExpectThrows<ArgumentException>(() => store.Add("BAD-KEY", "x"), "S: Add rejects hyphen (bad chars)");
+        ExpectThrows<ArgumentException>(() => store.Add("_LEADING", "x"), "S: Add rejects '_'-prefixed key");
+        ExpectThrows<ArgumentException>(() => store.Add("MY_TEST_CHECKER", "x"), "S: Add rejects duplicate");
+        ExpectThrows<ArgumentException>(() => store.Add("my_test_checker", "x"),
+            "S: Add rejects duplicate (case-insensitive)");
+        // Valid Sparrow key with dots is accepted.
+        store.Add("PRACTICE.LOOP_VARIABLE.NOT_USED_IMPLICIT_TYPING", "# dotted\n");
+        Check(File.Exists(Path.Combine(td, "PRACTICE.LOOP_VARIABLE.NOT_USED_IMPLICIT_TYPING.md")),
+              "S: Add accepts dotted Sparrow key");
+
+        // ReadContent / SaveContent roundtrip.
+        string edited = "line1\nline2\n한글 편집\n";
+        store.SaveContent("MY_TEST_CHECKER", edited);
+        Check(store.ReadContent("MY_TEST_CHECKER") == edited, "S: SaveContent/ReadContent roundtrip");
+
+        // _TEMPLATE.md precedence: once present, LoadTemplate returns it (still excluded from List).
+        File.WriteAllText(Path.Combine(td, "_TEMPLATE.md"), "# TEMPLATE FROM FILE\n", new UTF8Encoding(false));
+        Check(store.LoadTemplate().Contains("TEMPLATE FROM FILE"), "S: LoadTemplate prefers _TEMPLATE.md");
+        Check(store.List().All(r => r.Key != "_TEMPLATE"), "S: _TEMPLATE.md still excluded after write");
+
+        // Remove.
+        store.Remove("MY_TEST_CHECKER");
+        Check(!File.Exists(filePath), "S: Remove deletes the file");
+        ExpectThrows<FileNotFoundException>(() => store.Remove("MY_TEST_CHECKER"), "S: Remove throws when missing");
+
+        // --- GetXlsCheckerKeys: real fixture (5 distinct checkers) ---
+        string xls = Path.Combine(skillRoot, "references", "triage", "e2e-lab", "sample-before.xls");
+        Check(File.Exists(xls), "S: sample-before.xls fixture exists", xls);
+        var xlsKeys = CheckerRuleStore.GetXlsCheckerKeys(xls);
+        var expected = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "FORWARD_NULL", "RESOURCE_LEAK", "EMPTY_CATCH_BLOCK", "OVERLY_BROAD_CATCH", "NULL_RETURN_STD",
+        };
+        Check(xlsKeys.Count == 5, "S: GetXlsCheckerKeys returns 5 distinct keys", "count=" + xlsKeys.Count);
+        Check(expected.SetEquals(xlsKeys), "S: GetXlsCheckerKeys keys == expected 5-checker set",
+              string.Join(",", xlsKeys));
+
+        // --- GetXlsCheckerKeys: synthetic xls proving distinct/empty-skip/header-by-name (체커 키 not at col 0) ---
+        string synth = Path.Combine(work, "synth.xls");
+        WriteSyntheticXls(synth,
+            new[] { "ID", "체커 키", "파일명" },
+            new[]
+            {
+                new[] { "1", "DUP_CHECK", "a.cs" },
+                new[] { "2", "DUP_CHECK", "b.cs" },
+                new[] { "3", "OTHER_ONE", "c.cs" },
+                new[] { "4", "", "d.cs" },        // empty checker key -> skipped
+            });
+        var synthKeys = CheckerRuleStore.GetXlsCheckerKeys(synth);
+        Check(synthKeys.Count == 2 && synthKeys[0] == "DUP_CHECK" && synthKeys[1] == "OTHER_ONE",
+              "S: GetXlsCheckerKeys distinct + order-preserving + empty-skipped (header not at col 0)",
+              string.Join(",", synthKeys));
+    }
+
+    // Minimal BIFF (.xls) writer for the synthetic GetXlsCheckerKeys check.
+    private static void WriteSyntheticXls(string path, string[] headers, string[][] rows)
+    {
+        IWorkbook wb = new HSSFWorkbook();
+        ISheet sheet = wb.CreateSheet("issues");
+        IRow header = sheet.CreateRow(0);
+        for (int c = 0; c < headers.Length; c++) header.CreateCell(c).SetCellValue(headers[c]);
+        for (int r = 0; r < rows.Length; r++)
+        {
+            IRow row = sheet.CreateRow(r + 1);
+            for (int c = 0; c < rows[r].Length; c++) row.CreateCell(c).SetCellValue(rows[r][c]);
+        }
+        using FileStream fs = File.Create(path);
+        wb.Write(fs);
     }
 
     // Run PS prepare and Core.Prepare on the same inputs, then byte-compare requests/**, worklist, unresolved.

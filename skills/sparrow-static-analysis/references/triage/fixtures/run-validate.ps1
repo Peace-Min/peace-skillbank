@@ -143,7 +143,8 @@ else {
         # 3) 스캔 스코프 불일치: 기본은 경고+판정미변경(PASS), -StrictScope 는 FAIL.
         $r3 = Invoke-Compare @('-Before', (Join-Path $scenDir 'scope-before.xls'), '-After', (Join-Path $scenDir 'scope-after.xls'))
         Assert ($r3.Exit -eq 0) "G2 스코프불일치: 기본 PASS(경고만)"
-        Assert ($r3.Out -match '스캔 위생 경고') "G2 스코프불일치: 위생 경고 출력"
+        # 한글 match 는 중첩 powershell 캡처의 콘솔 코드페이지에 따라 깨질 수 있어 ASCII 배너(####…)도 인정.
+        Assert (($r3.Out -match '스캔 위생 경고') -or ($r3.Out -match '#{40,}')) "G2 스코프불일치: 위생 경고 출력"
         $r4 = Invoke-Compare @('-Before', (Join-Path $scenDir 'scope-before.xls'), '-After', (Join-Path $scenDir 'scope-after.xls'), '-StrictScope')
         Assert ($r4.Exit -eq 1) "G2 스코프불일치: -StrictScope 는 FAIL(exit 1)"
     }

@@ -26,6 +26,7 @@ namespace SparrowRunner.Gui
         private CancellationTokenSource? _cts;
         private Process? _currentProcess;
         private string? _lastTrackCOutputDir;
+        private RuleManagerWindow? _ruleManager;
 
         public MainWindow()
         {
@@ -103,6 +104,33 @@ namespace SparrowRunner.Gui
             {
                 TrackCOutputPathBox.Text = dlg.FolderName;
             }
+        }
+
+        private void OpenRuleManagerButton_Click(object sender, RoutedEventArgs e)
+        {
+            // Guides dir = the same references\checkers Track C prepare uses. Fall back to the skill default
+            // when the references box is empty. The store creates the folder on first Add if it is missing.
+            string referencesRoot = TrackCReferencesPathBox.Text.Trim().Trim('"');
+            if (string.IsNullOrEmpty(referencesRoot))
+            {
+                referencesRoot = Path.Combine(_skillRoot, "references");
+            }
+            string guidesDir = Path.Combine(referencesRoot, "checkers");
+            string? xls = string.IsNullOrWhiteSpace(TrackCXlsPathBox.Text)
+                ? null
+                : TrackCXlsPathBox.Text.Trim().Trim('"');
+
+            if (_ruleManager != null)
+            {
+                // Already open: bring it forward rather than spawning a duplicate.
+                _ruleManager.Activate();
+                return;
+            }
+
+            var window = new RuleManagerWindow(this, guidesDir, xls);
+            window.Closed += (_, _) => _ruleManager = null;
+            _ruleManager = window;
+            window.Show();
         }
 
         private void BrowseTrackCReferencesButton_Click(object sender, RoutedEventArgs e)

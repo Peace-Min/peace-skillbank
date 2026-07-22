@@ -224,8 +224,129 @@ if (-not $DryRun) {
 
 # git 커밋 하드닝: add/commit을 일시 락(.idx unlink 실패·index.lock 등)에 자동 재시도로 감쌈.
 # 반환: 'committed' | 'nochange' | 'failed'. 실패해도 러너는 계속 진행(다음 규칙 처리).
+function Read-FilesFromValues {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    $preferredColumns = @('경로', '파일명', 'path', 'filepath', 'file', 'fullpath')
+    $lines = @(Get-Content -LiteralPath $Path -Encoding UTF8)
+    $first = @($lines | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -First 1)
+    if ($first.Count -gt 0) {
+        $firstText = [string]$first[0]
+        $isKnownHeader = $false
+        foreach ($name in $preferredColumns) {
+            if ($firstText.Trim() -ieq $name) { $isKnownHeader = $true; break }
+        }
+        if (-not $isKnownHeader -and $firstText.IndexOf(',') -lt 0) {
+            foreach ($line in $lines) {
+                $value = ([string]$line).Trim().Trim('"')
+                if (-not [string]::IsNullOrWhiteSpace($value)) { $value }
+            }
+            return
+        }
+    }
+
+    $rows = @(Import-Csv -LiteralPath $Path -Encoding UTF8)
+    foreach ($row in $rows) {
+        $props = @($row.PSObject.Properties)
+        if ($props.Count -eq 0) { continue }
+        $prop = $null
+        foreach ($name in $preferredColumns) {
+            $prop = $props | Where-Object { $_.Name -ieq $name -and -not [string]::IsNullOrWhiteSpace([string]$_.Value) } | Select-Object -First 1
+            if ($prop) { break }
+        }
+        if (-not $prop) { $prop = $props[0] }
+        $value = [string]$prop.Value
+        if (-not [string]::IsNullOrWhiteSpace($value)) { $value.Trim() }
+    }
+}
+
+function New-GitPathspecFile {
+    param([Parameter(Mandatory = $true)][string]$Root, [Parameter(Mandatory = $true)][string]$FilesFromPath)
+    $rootFull = [System.IO.Path]::GetFullPath($Root).TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
+    $paths = New-Object System.Collections.Generic.List[string]
+    foreach ($entry in Read-FilesFromValues -Path $FilesFromPath) {
+        $full = if ([System.IO.Path]::IsPathRooted($entry)) {
+            [System.IO.Path]::GetFullPath($entry)
+        }
+        else {
+            [System.IO.Path]::GetFullPath((Join-Path $Root $entry))
+        }
+        if (-not $full.EndsWith('.cs', [System.StringComparison]::OrdinalIgnoreCase)) { continue }
+        if (-not $full.StartsWith($rootFull, [System.StringComparison]::OrdinalIgnoreCase)) { continue }
+        $rel = $full.Substring($rootFull.Length).Replace('\', '/')
+        if ($rel) { $paths.Add($rel) }
+    }
+    $paths = @($paths | Sort-Object -Unique)
+    if ($paths.Count -eq 0) { return $null }
+    $pathspec = Join-Path $env:TEMP ("SparrowCommentFix.git-pathspec.$stamp.$PID")
+    [System.IO.File]::WriteAllText($pathspec, (($paths -join [char]0) + [char]0), $utf8NoBom)
+    return $pathspec
+}
+
+function Get-PathspecEntries {
+    param([Parameter(Mandatory = $true)][string]$PathspecFile)
+    [System.IO.File]::ReadAllText($PathspecFile, $utf8NoBom).Split([char]0) | Where-Object { $_ }
+}
+
+function Test-GitTargetChanged {
+    param([Parameter(Mandatory = $true)][string]$Root, [string]$PathspecFile)
+    if ($PathspecFile) {
+        $wanted = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
+        foreach ($rel in Get-PathspecEntries -PathspecFile $PathspecFile) { [void]$wanted.Add($rel.Replace('\', '/')) }
+        $changed = @(& git -C $Root diff --name-only 2>$null)
+        foreach ($path in $changed) {
+            if ($wanted.Contains(([string]$path).Replace('\', '/'))) { return $true }
+        }
+        return $false
+    }
+    $csDirty = @(& git -C $Root status --porcelain -- '*.cs') | Where-Object { $_ }
+    return $csDirty.Count -gt 0
+}
+
+function Backup-GitTargets {
+    param([Parameter(Mandatory = $true)][string]$Root, [string]$PathspecFile)
+    if (-not $PathspecFile) { return $null }
+    $backup = Join-Path $env:TEMP ("SparrowCommentFix.backup.$stamp.$PID." + [guid]::NewGuid().ToString('N'))
+    foreach ($rel in Get-PathspecEntries -PathspecFile $PathspecFile) {
+        $src = Join-Path $Root ($rel.Replace('/', [System.IO.Path]::DirectorySeparatorChar))
+        if (-not (Test-Path -LiteralPath $src -PathType Leaf)) { continue }
+        $dst = Join-Path $backup ($rel.Replace('/', [System.IO.Path]::DirectorySeparatorChar))
+        $parent = Split-Path -Parent $dst
+        if ($parent) { New-Item -ItemType Directory -Path $parent -Force | Out-Null }
+        Copy-Item -LiteralPath $src -Destination $dst -Force
+    }
+    return $backup
+}
+
+function Restore-GitTargets {
+    param([Parameter(Mandatory = $true)][string]$Root, [string]$PathspecFile, [string]$BackupDir)
+    if ($PathspecFile -and $BackupDir) {
+        foreach ($rel in Get-PathspecEntries -PathspecFile $PathspecFile) {
+            $src = Join-Path $BackupDir ($rel.Replace('/', [System.IO.Path]::DirectorySeparatorChar))
+            if (-not (Test-Path -LiteralPath $src -PathType Leaf)) { continue }
+            $dst = Join-Path $Root ($rel.Replace('/', [System.IO.Path]::DirectorySeparatorChar))
+            Copy-Item -LiteralPath $src -Destination $dst -Force
+        }
+    }
+    else {
+        & git -C $Root checkout -- '*.cs' 2>&1 | Out-Null
+    }
+}
+
 function Invoke-GitCommitStep {
-    param([Parameter(Mandatory = $true)][string]$Root, [Parameter(Mandatory = $true)][string]$Message)
+    param([Parameter(Mandatory = $true)][string]$Root, [Parameter(Mandatory = $true)][string]$Message, [string]$PathspecFile)
+    if ($PathspecFile) {
+        if (-not (Test-GitTargetChanged -Root $Root -PathspecFile $PathspecFile)) { return 'nochange' }
+        for ($attempt = 1; $attempt -le 5; $attempt++) {
+            & git -C $Root commit -q -m $Message --only --pathspec-from-file=$PathspecFile --pathspec-file-nul 2>&1 | Out-Null
+            if ($LASTEXITCODE -eq 0) { return 'committed' }
+            if (-not (Test-GitTargetChanged -Root $Root -PathspecFile $PathspecFile)) { return 'committed' }
+            Start-Sleep -Milliseconds (400 * $attempt)
+            $lock = Join-Path $Root '.git\index.lock'
+            if (Test-Path -LiteralPath $lock) { Remove-Item -LiteralPath $lock -Force -ErrorAction SilentlyContinue }
+        }
+        return 'failed'
+    }
+
     & git -C $Root add -- '*.cs' 2>&1 | Out-Null
     & git -C $Root diff --cached --quiet
     if ($LASTEXITCODE -eq 0) { return 'nochange' }
@@ -370,7 +491,13 @@ try {
     $failed = $false
     $grand = 0
     $gateReverted = 0
+    $gitPathspecFile = $null
+    if ($FilesFrom) { $gitPathspecFile = New-GitPathspecFile -Root $root -FilesFromPath $FilesFrom }
+    else { $gitPathspecFile = New-GitPathspecFile -Root $root -FilesFromPath $csvForTool }
+    if (-not $gitPathspecFile) { throw "대상 소스 루트 아래 .cs pathspec 생성에 실패했습니다." }
+
     foreach ($r in $Rules) {
+        $backupDir = if ($gateActive -and -not $DryRun) { Backup-GitTargets -Root $root -PathspecFile $gitPathspecFile } else { $null }
         $toolArgs = @('--files-from', $csvForTool, '--rules', $r, '--root', $root)
         if ($DryRun) { $toolArgs += '--dry-run' }
         if ($IncludeGenerated) { $toolArgs += '--include-generated' }
@@ -400,19 +527,23 @@ try {
             # 컴파일 게이트: 커밋 앞에서 $VerifyCmd 실행. 실패하면 이 규칙의 미커밋 *.cs edits를 revert하고 커밋 skip.
             # (revert pathspec는 커밋의 git add와 동일한 '*.cs' — 대상 루트 아래 추적 .cs만 직전 커밋 상태로 되돌림.)
             # 이 규칙이 실제로 .cs를 안 바꿨으면(no-op) 느린 빌드를 낭비하지 않도록 게이트를 건너뛴다(커밋도 nochange 처리).
-            $csDirty = @(& git -C $root status --porcelain -- '*.cs') | Where-Object { $_ }
-            if ($gateActive -and $csDirty.Count -gt 0) {
+            $hasRuleChanges = $false
+            if ($nChanged -and [int]$nChanged -gt 0) { $hasRuleChanges = $true }
+            elseif ($nEdits -and [int]$nEdits -gt 0) { $hasRuleChanges = $true }
+            elseif (Test-GitTargetChanged -Root $root -PathspecFile $gitPathspecFile) { $hasRuleChanges = $true }
+            if ($gateActive -and $hasRuleChanges) {
                 $gexit = Invoke-VerifyGate -Cmd $VerifyCmd -LogFile $logPath
                 if ($gexit -ne 0) {
-                    & git -C $root checkout -- '*.cs' 2>&1 | Out-Null
+                    Restore-GitTargets -Root $root -PathspecFile $gitPathspecFile -BackupDir $backupDir
                     Write-Host "  [GATE] rule $r reverted: verify failed(exit $gexit)"
                     Add-Content -LiteralPath $logPath -Value "[GATE] rule $r reverted: verify failed(exit $gexit)"
                     $gateReverted++
+                    if ($backupDir) { Remove-Item -LiteralPath $backupDir -Recurse -Force -ErrorAction SilentlyContinue }
                     continue
                 }
                 Write-Host "  게이트    : 통과(exit 0) -> 커밋 진행"
             }
-            $res = Invoke-GitCommitStep -Root $root -Message "sparrow(B): $($labels[$r]) (SparrowCommentFix)"
+            $res = Invoke-GitCommitStep -Root $root -Message "sparrow(B): $($labels[$r]) (SparrowCommentFix)" -PathspecFile $gitPathspecFile
             switch ($res) {
                 'committed' { Write-Host "  커밋      : sparrow(B): $($labels[$r])" }
                 'nochange'  { Write-Host "  커밋      : 변경 없음 -> 건너뜀 (이 규칙에서 바뀐 .cs 없음)" }
@@ -421,6 +552,7 @@ try {
         }
         elseif ($NoCommit) { Write-Host "  커밋      : -NoCommit -> 커밋 안 함 (파일만 수정됨)" }
         else { Write-Host "  커밋      : -Commit 미지정 -> 커밋 안 함 (파일만 수정됨)" }
+        if ($backupDir) { Remove-Item -LiteralPath $backupDir -Recurse -Force -ErrorAction SilentlyContinue }
     }
     $ErrorActionPreference = 'Stop'
 

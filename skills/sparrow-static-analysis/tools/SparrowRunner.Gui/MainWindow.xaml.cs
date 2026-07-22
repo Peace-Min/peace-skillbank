@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -24,9 +25,14 @@ namespace SparrowRunner.Gui
         private readonly string _toolsDir;
         private readonly Dictionary<string, RuleInfo> _ruleInfos = new Dictionary<string, RuleInfo>(StringComparer.Ordinal);
         private CancellationTokenSource? _cts;
+        private CancellationTokenSource? _scopeCts;
         private Process? _currentProcess;
         private string? _lastTrackCOutputDir;
         private RuleManagerWindow? _ruleManager;
+        private SourceScope? _currentScope;
+        private bool _currentScopeIncludesGenerated;
+
+        public ObservableCollection<SourceScopeNode> ScopeRoots { get; } = new ObservableCollection<SourceScopeNode>();
 
         public MainWindow()
         {
@@ -38,7 +44,11 @@ namespace SparrowRunner.Gui
             AppendLog("GUI 준비 완료");
             InitializeRuleInfo();
             ShowRuleInfo(nameof(ASObjectVarSafe));
-            Loaded += (_, _) => UpdateSummary();
+            Loaded += async (_, _) =>
+            {
+                UpdateSummary();
+                await RefreshScopeAsync(showErrors: false);
+            };
         }
 
         private void RulesTabs_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -160,16 +170,38 @@ namespace SparrowRunner.Gui
             }
 
             string target = TargetPathBox.Text.Trim().Trim('"');
-            if ((runTrackA || runTrackB) && (string.IsNullOrEmpty(target) || (!File.Exists(target) && !Directory.Exists(target))))
+            if (string.IsNullOrEmpty(target) || (!File.Exists(target) && !Directory.Exists(target)))
             {
                 MessageBox.Show(this, "대상 .sln/.csproj 또는 소스 폴더를 먼저 선택하세요.", "입력 확인",
                     MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
-            var jobs = BuildJobs(target);
+            SourceScope scope = await EnsureScopeAsync(target);
+            IReadOnlyList<string> selectedFiles = scope.SelectedFiles;
+            if (selectedFiles.Count == 0)
+            {
+                MessageBox.Show(this, "선택된 .cs 파일이 없습니다. 좌측 작업 범위에서 파일을 선택하세요.", "범위 확인",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            string scopeManifest;
+            try
+            {
+                scopeManifest = ScopeManifestWriter.WriteTemp(selectedFiles);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, "범위 manifest 생성 실패: " + ex.Message, "범위 확인",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
+
+            var jobs = BuildJobs(target, scopeManifest);
             if ((runTrackA || runTrackB) && jobs.Count == 0)
             {
+                TryDeleteFile(scopeManifest);
                 MessageBox.Show(this, "실행할 Track 또는 규칙을 하나 이상 선택하세요.", "규칙 확인",
                     MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
@@ -178,6 +210,7 @@ namespace SparrowRunner.Gui
             string trackCXls = TrackCXlsPathBox.Text.Trim().Trim('"');
             if (runTrackC && (string.IsNullOrEmpty(trackCXls) || !File.Exists(trackCXls)))
             {
+                TryDeleteFile(scopeManifest);
                 MessageBox.Show(this, "Track C 결과 XLS 파일을 먼저 선택하세요.", "입력 확인",
                     MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
@@ -186,6 +219,7 @@ namespace SparrowRunner.Gui
             string referencesRoot = TrackCReferencesPathBox.Text.Trim().Trim('"');
             if (runTrackC && !ValidateTrackCReferences(referencesRoot))
             {
+                TryDeleteFile(scopeManifest);
                 return;
             }
 
@@ -195,6 +229,8 @@ namespace SparrowRunner.Gui
             OpenTrackCOutputButton.IsEnabled = false;
             AppendLog("");
             if (runTrackA || runTrackB) AppendLog("target: " + target);
+            AppendLog("scope: " + selectedFiles.Count + " selected / " + scope.TotalFiles + " discovered"
+                      + (scope.ExcludedFiles > 0 ? " / " + scope.ExcludedFiles + " excluded" : ""));
             if (runTrackC) AppendLog("track-c xls: " + trackCXls);
             AppendLog("jobs: " + (jobs.Count + (runTrackC ? 1 : 0)));
             AppendLog(new string('-', 72));
@@ -212,7 +248,7 @@ namespace SparrowRunner.Gui
                 {
                     _cts.Token.ThrowIfCancellationRequested();
                     SummaryModeText.Text = "Track C XLS/LLM 작업 패키지 생성 중";
-                    _lastTrackCOutputDir = await RunTrackCAsync(trackCXls, referencesRoot, _cts.Token);
+                    _lastTrackCOutputDir = await RunTrackCAsync(trackCXls, referencesRoot, scope.RootPath, scopeManifest, _cts.Token);
                     OpenTrackCOutputButton.IsEnabled = Directory.Exists(_lastTrackCOutputDir);
                 }
 
@@ -241,6 +277,7 @@ namespace SparrowRunner.Gui
                 _currentProcess = null;
                 _cts.Dispose();
                 _cts = null;
+                TryDeleteFile(scopeManifest);
                 SetRunning(false);
                 UpdateSummary();
             }
@@ -307,9 +344,124 @@ namespace SparrowRunner.Gui
         private void TargetPathBox_TextChanged(object sender, TextChangedEventArgs e)
         {
             UpdateSummary();
+            _ = RefreshScopeAsync(showErrors: false);
         }
 
-        private List<RunnerJob> BuildJobs(string target)
+        private async void RefreshScopeButton_Click(object sender, RoutedEventArgs e)
+        {
+            await RefreshScopeAsync(showErrors: true);
+        }
+
+        private void SelectAllScopeButton_Click(object sender, RoutedEventArgs e)
+        {
+            foreach (SourceScopeNode root in ScopeRoots) root.SetSubtree(true);
+            UpdateSummary();
+        }
+
+        private void ClearScopeButton_Click(object sender, RoutedEventArgs e)
+        {
+            foreach (SourceScopeNode root in ScopeRoots) root.SetSubtree(false);
+            UpdateSummary();
+        }
+
+        private void ScopeCheckBox_Changed(object sender, RoutedEventArgs e)
+        {
+            UpdateSummary();
+        }
+
+        private async Task RefreshScopeAsync(bool showErrors)
+        {
+            if (!IsLoaded && !showErrors) return;
+
+            string target = TargetPathBox.Text.Trim().Trim('"');
+            if (string.IsNullOrWhiteSpace(target) || (!File.Exists(target) && !Directory.Exists(target)))
+            {
+                _currentScope = null;
+                ScopeRoots.Clear();
+                ScopeStatusText.Text = "대상 경로를 선택하세요.";
+                UpdateSummary();
+                return;
+            }
+
+            _scopeCts?.Cancel();
+            _scopeCts?.Dispose();
+            _scopeCts = new CancellationTokenSource();
+            CancellationToken token = _scopeCts.Token;
+
+            try
+            {
+                ScopeStatusText.Text = "소스 파일을 탐색하는 중...";
+                bool includeGenerated = IncludeGeneratedCheck.IsChecked == true;
+                SourceScope? previousScope = _currentScope;
+                HashSet<string>? previousSelection = null;
+                string expectedRoot = ResolveTargetRoot(target);
+                if (previousScope != null && SamePath(previousScope.RootPath, expectedRoot))
+                {
+                    int previousSelectable = previousScope.RootNode.EnumerateFiles()
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .Count();
+                    IReadOnlyList<string> selected = previousScope.SelectedFiles;
+                    if (selected.Count > 0 && selected.Count < previousSelectable)
+                    {
+                        previousSelection = new HashSet<string>(selected, StringComparer.OrdinalIgnoreCase);
+                    }
+                }
+
+                SourceScope scope = await SourceScopeDiscovery.DiscoverAsync(target, includeGenerated, token);
+                if (token.IsCancellationRequested) return;
+                if (previousSelection != null)
+                {
+                    scope.RootNode.ApplySelection(previousSelection);
+                }
+
+                _currentScope = scope;
+                _currentScopeIncludesGenerated = includeGenerated;
+                ScopeRoots.Clear();
+                ScopeRoots.Add(scope.RootNode);
+                UpdateSummary();
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (Exception ex)
+            {
+                _currentScope = null;
+                ScopeRoots.Clear();
+                ScopeStatusText.Text = "범위 탐색 실패: " + ex.Message;
+                if (showErrors)
+                {
+                    MessageBox.Show(this, ex.Message, "범위 탐색 실패", MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
+            }
+        }
+
+        private async Task<SourceScope> EnsureScopeAsync(string target)
+        {
+            string expectedRoot = ResolveTargetRoot(target);
+            bool includeGenerated = IncludeGeneratedCheck.IsChecked == true;
+            if (_currentScope != null && _currentScopeIncludesGenerated == includeGenerated && SamePath(_currentScope.RootPath, expectedRoot))
+            {
+                return _currentScope;
+            }
+
+            SourceScope scope = await SourceScopeDiscovery.DiscoverAsync(target, includeGenerated, CancellationToken.None);
+            _currentScope = scope;
+            _currentScopeIncludesGenerated = includeGenerated;
+            ScopeRoots.Clear();
+            ScopeRoots.Add(scope.RootNode);
+            UpdateSummary();
+            return scope;
+        }
+
+        private static bool SamePath(string left, string right)
+        {
+            return string.Equals(
+                Path.GetFullPath(left).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+                Path.GetFullPath(right).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+                StringComparison.OrdinalIgnoreCase);
+        }
+
+        private List<RunnerJob> BuildJobs(string target, string filesFrom)
         {
             var jobs = new List<RunnerJob>();
             if (RunTrackASyntaxCheck.IsChecked != true && RunTrackBCheck.IsChecked != true)
@@ -381,6 +533,8 @@ namespace SparrowRunner.Gui
                 job.Arguments.Add(string.Join(",", job.Rules));
                 job.Arguments.Add("-LogDir");
                 job.Arguments.Add(job.LogDir);
+                job.Arguments.Add("-FilesFrom");
+                job.Arguments.Add(filesFrom);
 
                 if (DryRunCheck.IsChecked == true) job.Arguments.Add("-DryRun");
                 else if (CommitCheck.IsChecked == true) job.Arguments.Add("-Commit");
@@ -450,7 +604,7 @@ namespace SparrowRunner.Gui
             }
         }
 
-        private async Task<string> RunTrackCAsync(string inputXls, string referencesRoot, CancellationToken cancellationToken)
+        private async Task<string> RunTrackCAsync(string inputXls, string referencesRoot, string sourceRoot, string filesFrom, CancellationToken cancellationToken)
         {
             string guidesDir = Path.Combine(referencesRoot, "checkers");
             string promptPath = Path.Combine(referencesRoot, "triage", "triage-prompt.md");
@@ -470,7 +624,7 @@ namespace SparrowRunner.Gui
                 cancellationToken.ThrowIfCancellationRequested();
                 try
                 {
-                    ExportOptions exportOptions = BuildTrackCExportOptions(inputXls, tempRoot);
+                    ExportOptions exportOptions = BuildTrackCExportOptions(inputXls, tempRoot, sourceRoot, filesFrom);
 
                     log.WriteLine("");
                     log.WriteLine(">>> Track C XLS/LLM requests 생성");
@@ -530,7 +684,7 @@ namespace SparrowRunner.Gui
             }, cancellationToken);
         }
 
-        private ExportOptions BuildTrackCExportOptions(string inputXls, string outputDir)
+        private ExportOptions BuildTrackCExportOptions(string inputXls, string outputDir, string sourceRoot, string filesFrom)
         {
             var severities = new HashSet<string>(StringComparer.Ordinal);
             if (TrackCSevVeryHigh.IsChecked == true) severities.Add("매우위험");
@@ -543,6 +697,8 @@ namespace SparrowRunner.Gui
             {
                 InputPath = inputXls,
                 OutDir = outputDir,
+                RootPath = sourceRoot,
+                FilesFrom = filesFrom,
                 Severities = severities,
                 Max = ParseNullableInt(TrackCMaxBox.Text)
             };
@@ -595,6 +751,21 @@ namespace SparrowRunner.Gui
             catch
             {
                 // Temporary parse output is best-effort cleanup only.
+            }
+        }
+
+        private static void TryDeleteFile(string? path)
+        {
+            try
+            {
+                if (!string.IsNullOrEmpty(path) && File.Exists(path))
+                {
+                    File.Delete(path);
+                }
+            }
+            catch
+            {
+                // Temporary scope manifest cleanup is best-effort only.
             }
         }
 
@@ -799,6 +970,10 @@ namespace SparrowRunner.Gui
 
         private void RuleControl_CheckedChanged(object sender, RoutedEventArgs e)
         {
+            if (ReferenceEquals(sender, IncludeGeneratedCheck))
+            {
+                _ = RefreshScopeAsync(showErrors: false);
+            }
             UpdateSummary();
         }
 
@@ -851,23 +1026,31 @@ namespace SparrowRunner.Gui
                 ASArrayVarNarrowing, ASForHoist, BBlockPromote);
             int total = trackA + trackB;
             bool trackC = RunTrackCCheck.IsChecked == true;
+            int selectedFiles = _currentScope?.SelectedFiles.Count ?? 0;
+            int totalFiles = _currentScope?.TotalFiles ?? 0;
+            int excludedFiles = _currentScope?.ExcludedFiles ?? 0;
+
+            if (_currentScope != null)
+            {
+                ScopeStatusText.Text = $"{selectedFiles}개 선택 / {totalFiles}개 발견"
+                    + (excludedFiles > 0 ? $" / {excludedFiles}개 제외" : "");
+            }
 
             string target = TargetPathBox.Text.Trim();
             SummaryTargetText.Text = string.IsNullOrEmpty(target)
-                ? (trackC ? "Track C 단독 실행 가능" : "대상 경로가 필요합니다.")
+                ? "대상 경로가 필요합니다."
                 : target;
             SummaryRulesText.Text = trackC
-                ? $"선택된 규칙 {total}개 · Track C 포함"
-                : $"선택된 규칙 {total}개";
+                ? $"선택 규칙 {total}개 · Track C 포함"
+                : $"선택 규칙 {total}개";
 
             string mode = DryRunCheck.IsChecked == true
-                ? "DryRun 모드: 파일을 변경하지 않고 후보만 확인합니다."
+                ? "DryRun: 파일을 변경하지 않고 후보만 확인"
                 : CommitCheck.IsChecked == true
-                    ? "규칙별 커밋 모드: 규칙 단위로 변경을 나눠 남깁니다."
-                    : "수정만 적용: 커밋은 생성하지 않습니다.";
-            SummaryModeText.Text = $"{mode} / Track A {trackA}개 · Track B {trackB}개 · Track C {(trackC ? "ON" : "OFF")} · 검토필요 {reviewNeeded}개";
+                    ? "규칙별 커밋: 규칙 단위로 변경을 묶음"
+                    : "파일만 수정: 커밋은 생성하지 않음";
+            SummaryModeText.Text = $"{mode} / A {trackA} · B {trackB} · C {(trackC ? "ON" : "OFF")} · 검토필요 {reviewNeeded} · 선택 파일 {selectedFiles}";
         }
-
         private static int CountChecked(params CheckBox[] boxes)
         {
             return boxes.Count(b => b.IsChecked == true);
@@ -915,6 +1098,10 @@ namespace SparrowRunner.Gui
             StopButton.IsEnabled = running;
             BrowseFileButton.IsEnabled = !running;
             BrowseFolderButton.IsEnabled = !running;
+            RefreshScopeButton.IsEnabled = !running;
+            SelectAllScopeButton.IsEnabled = !running;
+            ClearScopeButton.IsEnabled = !running;
+            ScopeTree.IsEnabled = !running;
             BrowseTrackCXlsButton.IsEnabled = !running;
             BrowseTrackCOutputButton.IsEnabled = !running;
             BrowseTrackCReferencesButton.IsEnabled = !running;

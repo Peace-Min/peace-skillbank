@@ -1,11 +1,12 @@
 <Window x:Class="SparrowRunner.Gui.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Sparrow Runner"
-        Width="1320" Height="960"
-        MinWidth="1120" MinHeight="860"
+        xmlns:local="clr-namespace:SparrowRunner.Gui"
+        Title="Sparrow Helper"
+        Width="1360" Height="860"
+        MinWidth="1040" MinHeight="720"
         WindowStartupLocation="CenterScreen"
-        Background="#F4F6F8"
+        Background="#F6F8FA"
         FontFamily="Segoe UI, Malgun Gothic" FontSize="13">
 
     <Window.Resources>
@@ -19,8 +20,8 @@
         <Style x:Key="SectionTitle" TargetType="TextBlock">
             <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="FontSize" Value="15"/>
-            <Setter Property="Margin" Value="0,0,0,10"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="Margin" Value="0,0,0,8"/>
         </Style>
 
         <Style x:Key="MutedText" TargetType="TextBlock">
@@ -29,9 +30,9 @@
         </Style>
 
         <Style TargetType="Button">
-            <Setter Property="Height" Value="36"/>
-            <Setter Property="MinWidth" Value="92"/>
-            <Setter Property="Padding" Value="14,0"/>
+            <Setter Property="Height" Value="34"/>
+            <Setter Property="MinWidth" Value="86"/>
+            <Setter Property="Padding" Value="13,0"/>
             <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
             <Setter Property="Background" Value="#FFFFFF"/>
             <Setter Property="BorderBrush" Value="#D1D6DB"/>
@@ -44,7 +45,7 @@
                         <Border Background="{TemplateBinding Background}"
                                 BorderBrush="{TemplateBinding BorderBrush}"
                                 BorderThickness="{TemplateBinding BorderThickness}"
-                                CornerRadius="10">
+                                CornerRadius="8">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
                     </ControlTemplate>
@@ -59,10 +60,10 @@
         </Style>
 
         <Style x:Key="InputBox" TargetType="TextBox">
-            <Setter Property="Height" Value="38"/>
-            <Setter Property="Padding" Value="12,0"/>
+            <Setter Property="Height" Value="36"/>
+            <Setter Property="Padding" Value="10,0"/>
             <Setter Property="VerticalContentAlignment" Value="Center"/>
-            <Setter Property="Background" Value="#F8FAFB"/>
+            <Setter Property="Background" Value="#FFFFFF"/>
             <Setter Property="BorderBrush" Value="#D1D6DB"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
@@ -70,62 +71,24 @@
 
         <Style TargetType="CheckBox">
             <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
-            <Setter Property="Margin" Value="0,0,0,10"/>
+            <Setter Property="Margin" Value="0,0,0,8"/>
             <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="CheckBox">
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="22"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <Border x:Name="CheckBoxMark" Width="18" Height="18"
-                                    Background="#FFFFFF" BorderBrush="#C7D0D9" BorderThickness="1.4"
-                                    CornerRadius="5" VerticalAlignment="Center">
-                                <TextBlock x:Name="CheckGlyph" Text="✓" Foreground="#FFFFFF"
-                                           FontSize="12" FontWeight="Bold"
-                                           HorizontalAlignment="Center" VerticalAlignment="Center"
-                                           Visibility="Collapsed"/>
-                            </Border>
-                            <ContentPresenter Grid.Column="1" Margin="6,0,0,0"
-                                              VerticalAlignment="Center"
-                                              RecognizesAccessKey="True"/>
-                        </Grid>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsChecked" Value="True">
-                                <Setter TargetName="CheckBoxMark" Property="Background" Value="{StaticResource AccentBrush}"/>
-                                <Setter TargetName="CheckBoxMark" Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
-                                <Setter TargetName="CheckGlyph" Property="Visibility" Value="Visible"/>
-                            </Trigger>
-                            <Trigger Property="IsEnabled" Value="False">
-                                <Setter Property="Opacity" Value="0.45"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
         </Style>
 
         <Style x:Key="RuleCheck" TargetType="CheckBox" BasedOn="{StaticResource {x:Type CheckBox}}">
             <Setter Property="FontSize" Value="13"/>
-            <Setter Property="Padding" Value="0"/>
-        </Style>
-
-        <Style TargetType="TabControl">
-            <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="Background" Value="Transparent"/>
         </Style>
 
         <Style TargetType="TabItem">
             <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
-            <Setter Property="Padding" Value="14,8"/>
+            <Setter Property="Padding" Value="13,8"/>
             <Setter Property="Margin" Value="0,0,4,0"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="TabItem">
-                        <Border x:Name="TabBorder" Background="Transparent" CornerRadius="10" Padding="{TemplateBinding Padding}">
+                        <Border x:Name="TabBorder" Background="Transparent" CornerRadius="8" Padding="{TemplateBinding Padding}">
                             <ContentPresenter ContentSource="Header" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
                         <ControlTemplate.Triggers>
@@ -138,382 +101,314 @@
                 </Setter.Value>
             </Setter>
         </Style>
+
+        <HierarchicalDataTemplate DataType="{x:Type local:SourceScopeNode}" ItemsSource="{Binding Children}">
+            <CheckBox IsThreeState="{Binding HasChildren}"
+                      IsChecked="{Binding IsChecked, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                      Checked="ScopeCheckBox_Changed"
+                      Unchecked="ScopeCheckBox_Changed"
+                      Indeterminate="ScopeCheckBox_Changed"
+                      Margin="0,2,0,2">
+                <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis"/>
+            </CheckBox>
+        </HierarchicalDataTemplate>
+
+        <Style TargetType="TreeViewItem">
+            <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
+        </Style>
     </Window.Resources>
 
-    <Grid Margin="18">
+    <Grid Margin="16">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
-            <RowDefinition Height="132"/>
+            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
         <Grid Grid.Row="0" Margin="0,0,0,12">
             <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
-            <StackPanel>
-                <TextBlock Text="Sparrow Helper" FontSize="24" FontWeight="Bold"
-                           Foreground="{StaticResource TextPrimaryBrush}"/>
-                <TextBlock Text="스패로우 코드 규칙과 주석/레이아웃 자동수정을 한 화면에서 선택하고 실행합니다."
-                           Foreground="{StaticResource TextSecondaryBrush}" Margin="0,4,0,0"/>
+            <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,18,0">
+                <TextBlock Text="Sparrow Helper" FontSize="22" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}"/>
+                <TextBlock Text="Track A/B/C를 같은 파일 범위로 실행합니다." Style="{StaticResource MutedText}" Margin="0,2,0,0"/>
             </StackPanel>
-            <Border Grid.Column="1" Background="#E8F2FF" CornerRadius="18"
-                    Padding="14,8" VerticalAlignment="Top">
-                <TextBlock Text="A/B/C 통합" Foreground="{StaticResource AccentBrush}"
-                           FontWeight="SemiBold" FontSize="12"/>
-            </Border>
+            <TextBox x:Name="TargetPathBox" Grid.Column="1" Style="{StaticResource InputBox}" TextChanged="TargetPathBox_TextChanged"
+                     VerticalAlignment="Center"/>
+            <Button x:Name="BrowseFileButton" Grid.Column="2" Content="파일 선택" Margin="8,0,0,0" Click="BrowseFileButton_Click"/>
+            <Button x:Name="BrowseFolderButton" Grid.Column="3" Content="폴더 선택" Margin="8,0,0,0" Click="BrowseFolderButton_Click"/>
+            <Button x:Name="RefreshScopeButton" Grid.Column="4" Content="새로고침" Margin="8,0,0,0" Click="RefreshScopeButton_Click"/>
         </Grid>
 
-        <Border Grid.Row="1" Background="{StaticResource PanelBrush}" CornerRadius="18"
-                BorderBrush="{StaticResource LineBrush}" BorderThickness="1"
-                Padding="14" Margin="0,0,0,12">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-                <StackPanel>
-                    <TextBlock Text="대상 경로" Style="{StaticResource SectionTitle}" Margin="0,0,0,8"/>
-                <TextBox x:Name="TargetPathBox" Style="{StaticResource InputBox}" TextChanged="TargetPathBox_TextChanged"/>
-                </StackPanel>
-                <Button x:Name="BrowseFileButton" Grid.Column="1" Content="파일 선택"
-                        Margin="12,27,0,0" Click="BrowseFileButton_Click"/>
-                <Button x:Name="BrowseFolderButton" Grid.Column="2" Content="폴더 선택"
-                        Margin="8,27,0,0" Click="BrowseFolderButton_Click"/>
-            </Grid>
-        </Border>
-
-        <Grid Grid.Row="2">
+        <Grid Grid.Row="1">
             <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="310"/>
+                <ColumnDefinition Width="12"/>
                 <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="460"/>
             </Grid.ColumnDefinitions>
 
-            <Border Background="{StaticResource PanelBrush}" CornerRadius="18"
-                    BorderBrush="{StaticResource LineBrush}" BorderThickness="1"
-                    Padding="18" Margin="0,0,18,0">
-                <TabControl x:Name="RulesTabs" BorderThickness="0" Background="Transparent" SelectionChanged="RulesTabs_SelectionChanged">
-                    <TabItem Header="Track A 코드 규칙">
-                        <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="0,16,0,0">
-                            <StackPanel>
-                                <CheckBox x:Name="RunTrackASyntaxCheck"
-                                          Content="Track A Roslyn 자동수정 실행"
-                                          IsChecked="True" FontWeight="SemiBold"
-                                          Style="{StaticResource RuleCheck}"/>
-
-                                <TextBlock Text="기본 자동수정" Style="{StaticResource SectionTitle}" Margin="0,14,0,10"/>
-                                <UniformGrid Columns="2">
-                                    <CheckBox x:Name="ASObjectVarSafe" Content="객체 생성 명시 타입을 var로 변경" IsChecked="True" Style="{StaticResource RuleCheck}"/>
-                                    <CheckBox x:Name="ASObviousVar" Content="명확한 지역변수 타입을 var로 변경" IsChecked="True" Style="{StaticResource RuleCheck}"/>
-                                    <CheckBox x:Name="ASArrayVarSafe" Content="배열 초기화 문법 간소화" IsChecked="True" Style="{StaticResource RuleCheck}"/>
-                                    <CheckBox x:Name="ASParens" Content="논리식 괄호 명확화" IsChecked="True" Style="{StaticResource RuleCheck}"/>
-                                </UniformGrid>
-
-                                <TextBlock Text="선택 자동수정" Style="{StaticResource SectionTitle}" Margin="0,18,0,10"/>
-                                <UniformGrid Columns="2">
-                                    <CheckBox x:Name="ASForeachCast" Content="[검토필요] foreach Cast&lt;T&gt; + var" Style="{StaticResource RuleCheck}"/>
-                                    <CheckBox x:Name="ASObjectInitializer" Content="연속 대입을 object initializer로 통합" Style="{StaticResource RuleCheck}"/>
-                                    <CheckBox x:Name="ASNullVar" Content="[검토필요] typed null var 초기화" Style="{StaticResource RuleCheck}"/>
-                                    <CheckBox x:Name="ASObjectVarNarrowing" Content="[검토필요] 상위 타입 선언을 var로 축소" Style="{StaticResource RuleCheck}"/>
-                                    <CheckBox x:Name="ASLocalConst" Content="[검토필요] 지역 const를 var로 변경" Style="{StaticResource RuleCheck}"/>
-                                    <CheckBox x:Name="ASArrayVarNarrowing" Content="[검토필요] 배열 선언을 var + new[]로 축소" Style="{StaticResource RuleCheck}"/>
-                                    <CheckBox x:Name="ASForVar" Content="for 루프 초기화 변수를 var로 변경" Style="{StaticResource RuleCheck}"/>
-                                    <CheckBox x:Name="ASFieldSplit" Content="한 줄 다중 필드 선언 분리" Style="{StaticResource RuleCheck}"/>
-                                    <CheckBox x:Name="ASEmptyStmt" Content="불필요한 빈 문장 제거" Style="{StaticResource RuleCheck}"/>
-                                    <CheckBox x:Name="ASForHoist" Content="[검토필요] for 다중 선언자 분리" Style="{StaticResource RuleCheck}"/>
-                                </UniformGrid>
-                            </StackPanel>
-                        </ScrollViewer>
-                    </TabItem>
-
-                    <TabItem Header="Track B 주석/레이아웃">
-                        <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="0,16,0,0">
-                            <StackPanel>
-                                <CheckBox x:Name="RunTrackBCheck"
-                                          Content="Track B 주석/레이아웃 자동수정 실행"
-                                          IsChecked="True" FontWeight="SemiBold"
-                                          Style="{StaticResource RuleCheck}"/>
-
-                                <TextBlock Text="기본 주석 규칙" Style="{StaticResource SectionTitle}" Margin="0,14,0,10"/>
-                                <UniformGrid Columns="2">
-                                    <CheckBox x:Name="BTrailing" Content="코드 뒤 주석을 위 줄로 이동" IsChecked="True" Style="{StaticResource RuleCheck}"/>
-                                    <CheckBox x:Name="BSpace" Content="주석 기호 뒤 공백 추가" IsChecked="True" Style="{StaticResource RuleCheck}"/>
-                                    <CheckBox x:Name="BPeriod" Content="주석 끝 마침표 추가" IsChecked="True" Style="{StaticResource RuleCheck}"/>
-                                    <CheckBox x:Name="BCapitalize" Content="주석 첫 영문 대문자화" IsChecked="True" Style="{StaticResource RuleCheck}"/>
-                                </UniformGrid>
-
-                                <TextBlock Text="선택 레이아웃/주석 규칙" Style="{StaticResource SectionTitle}" Margin="0,18,0,10"/>
-                                <UniformGrid Columns="2">
-                                    <CheckBox x:Name="BFlatten" Content="별표/Doxygen 블록 주석 평탄화" Style="{StaticResource RuleCheck}"/>
-                                    <CheckBox x:Name="BMemberBlank" Content="멤버 선언 사이 빈 줄 추가" Style="{StaticResource RuleCheck}"/>
-                                    <CheckBox x:Name="BOneDeclaration" Content="한 줄 다중 선언 분리" Style="{StaticResource RuleCheck}"/>
-                                    <CheckBox x:Name="BOneStatement" Content="한 줄 다중 구문 분리" Style="{StaticResource RuleCheck}"/>
-                                    <CheckBox x:Name="BContinuation" Content="여러 줄 문장 들여쓰기 보정" Style="{StaticResource RuleCheck}"/>
-                                    <CheckBox x:Name="BLinqAlign" Content="LINQ 쿼리 절 정렬" Style="{StaticResource RuleCheck}"/>
-                                    <CheckBox x:Name="BBlockPromote" Content="[검토필요] inline block 주석 이동" Style="{StaticResource RuleCheck}"/>
-                                </UniformGrid>
-                            </StackPanel>
-                        </ScrollViewer>
-                    </TabItem>
-
-                    <TabItem x:Name="TrackCTab" Header="Track C XLS/LLM 작업">
-                        <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="0,16,0,0">
-                            <StackPanel>
-                                <Grid Margin="0,0,0,18">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="10"/>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="10"/>
-                                        <ColumnDefinition Width="*"/>
-                                    </Grid.ColumnDefinitions>
-                                    <Border Background="#F8FAFB" BorderBrush="#E5E8EB" BorderThickness="1" CornerRadius="12" Padding="14">
-                                        <StackPanel>
-                                            <TextBlock Text="1" Foreground="{StaticResource AccentBrush}" FontWeight="Bold" FontSize="18"/>
-                                            <TextBlock Text="XLS 읽기" Foreground="{StaticResource TextPrimaryBrush}" FontWeight="SemiBold" Margin="0,6,0,3"/>
-                                            <TextBlock Text="Sparrow 결과 XLS를 내부에서만 읽습니다." Style="{StaticResource MutedText}" TextWrapping="Wrap"/>
-                                        </StackPanel>
-                                    </Border>
-                                    <Border Grid.Column="2" Background="#F8FAFB" BorderBrush="#E5E8EB" BorderThickness="1" CornerRadius="12" Padding="14">
-                                        <StackPanel>
-                                            <TextBlock Text="2" Foreground="{StaticResource AccentBrush}" FontWeight="Bold" FontSize="18"/>
-                                            <TextBlock Text="요청 생성" Foreground="{StaticResource TextPrimaryBrush}" FontWeight="SemiBold" Margin="0,6,0,3"/>
-                                            <TextBlock Text="체커 가이드와 검출 항목을 합쳐 requests를 만듭니다." Style="{StaticResource MutedText}" TextWrapping="Wrap"/>
-                                        </StackPanel>
-                                    </Border>
-                                    <Border Grid.Column="4" Background="#F8FAFB" BorderBrush="#E5E8EB" BorderThickness="1" CornerRadius="12" Padding="14">
-                                        <StackPanel>
-                                            <TextBlock Text="3" Foreground="{StaticResource AccentBrush}" FontWeight="Bold" FontSize="18"/>
-                                            <TextBlock Text="수정 작업" Foreground="{StaticResource TextPrimaryBrush}" FontWeight="SemiBold" Margin="0,6,0,3"/>
-                                            <TextBlock Text="requests 폴더만 LLM에게 전달합니다." Style="{StaticResource MutedText}" TextWrapping="Wrap"/>
-                                        </StackPanel>
-                                    </Border>
-                                </Grid>
-
-                                <CheckBox x:Name="RunTrackCCheck"
-                                          Content="Track C 패키지 생성 실행"
-                                          FontWeight="SemiBold"
-                                          Style="{StaticResource RuleCheck}"/>
-
-                                <Border Background="#F8FAFB" BorderBrush="#E5E8EB" BorderThickness="1"
-                                        CornerRadius="12" Padding="14" Margin="0,4,0,4">
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel VerticalAlignment="Center">
-                                            <TextBlock Text="체커 룰(가이드) 관리" Foreground="{StaticResource TextPrimaryBrush}"
-                                                       FontWeight="SemiBold"/>
-                                            <TextBlock Text="미등록 체커의 가이드를 목록에서 추가·삭제합니다. 추가한 룰은 다음 Track C 실행부터 반영됩니다."
-                                                       Style="{StaticResource MutedText}" TextWrapping="Wrap" Margin="0,3,0,0"/>
-                                        </StackPanel>
-                                        <Button Grid.Column="1" x:Name="OpenRuleManagerButton" Content="체커 룰 관리"
-                                                Margin="12,0,0,0" VerticalAlignment="Center"
-                                                Click="OpenRuleManagerButton_Click"/>
-                                    </Grid>
-                                </Border>
-
-                                <Grid Margin="0,10,0,16">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="14"/>
-                                        <ColumnDefinition Width="*"/>
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel>
-                                        <TextBlock Text="입력" Style="{StaticResource SectionTitle}" Margin="0,0,0,8"/>
-                                        <TextBlock Text="Sparrow 결과 XLS" Style="{StaticResource MutedText}" Margin="0,0,0,4"/>
-                                        <Grid Margin="0,0,0,10">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="Auto"/>
-                                            </Grid.ColumnDefinitions>
-                                            <TextBox x:Name="TrackCXlsPathBox" Style="{StaticResource InputBox}" IsReadOnly="True"/>
-                                            <Button x:Name="BrowseTrackCXlsButton" Grid.Column="1" Content="XLS 선택"
-                                                    Margin="8,0,0,0" Click="BrowseTrackCXlsButton_Click"/>
-                                        </Grid>
-
-                                        <TextBlock Text="references 경로" Style="{StaticResource MutedText}" Margin="0,0,0,4"/>
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="Auto"/>
-                                            </Grid.ColumnDefinitions>
-                                            <TextBox x:Name="TrackCReferencesPathBox" Style="{StaticResource InputBox}"/>
-                                            <Button x:Name="BrowseTrackCReferencesButton" Grid.Column="1" Content="폴더 선택"
-                                                    Margin="8,0,0,0" Click="BrowseTrackCReferencesButton_Click"/>
-                                        </Grid>
-                                    </StackPanel>
-
-                                    <StackPanel Grid.Column="2">
-                                        <TextBlock Text="산출물" Style="{StaticResource SectionTitle}" Margin="0,0,0,8"/>
-                                        <TextBlock Text="출력 폴더" Style="{StaticResource MutedText}" Margin="0,0,0,4"/>
-                                        <Grid Margin="0,0,0,8">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="Auto"/>
-                                            </Grid.ColumnDefinitions>
-                                            <TextBox x:Name="TrackCOutputPathBox" Style="{StaticResource InputBox}"/>
-                                            <Button x:Name="BrowseTrackCOutputButton" Grid.Column="1" Content="폴더 선택"
-                                                    Margin="8,0,0,0" Click="BrowseTrackCOutputButton_Click"/>
-                                        </Grid>
-                                        <TextBlock Text="비우면 XLS 옆 &lt;파일명&gt;.requests 폴더에 생성합니다." Style="{StaticResource MutedText}" TextWrapping="Wrap"/>
-                                        <Border Background="#EEF6FF" CornerRadius="10" Padding="12" Margin="0,12,0,0">
-                                            <TextBlock Text="생성: requests 폴더만. 내부 파싱 산출물은 GUI 출력에 남기지 않습니다."
-                                                       Foreground="{StaticResource AccentBrush}" FontSize="12" TextWrapping="Wrap"/>
-                                        </Border>
-                                    </StackPanel>
-                                </Grid>
-
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="14"/>
-                                        <ColumnDefinition Width="*"/>
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel>
-                                        <TextBlock Text="필터" Style="{StaticResource SectionTitle}" Margin="0,0,0,8"/>
-                                        <UniformGrid Columns="2" Margin="0,0,0,10">
-                                            <StackPanel Margin="0,0,10,0">
-                                                <TextBlock Text="체커 키" Style="{StaticResource MutedText}" Margin="0,0,0,4"/>
-                                                <TextBox x:Name="TrackCCheckerBox" Style="{StaticResource InputBox}"/>
-                                            </StackPanel>
-                                            <StackPanel>
-                                                <TextBlock Text="최대 건수" Style="{StaticResource MutedText}" Margin="0,0,0,4"/>
-                                                <TextBox x:Name="TrackCMaxBox" Style="{StaticResource InputBox}"/>
-                                            </StackPanel>
-                                        </UniformGrid>
-
-                                        <TextBlock Text="심각도" Style="{StaticResource MutedText}" Margin="0,0,0,6"/>
-                                        <UniformGrid Columns="3">
-                                            <CheckBox x:Name="TrackCSevVeryHigh" Content="매우위험" Style="{StaticResource RuleCheck}"/>
-                                            <CheckBox x:Name="TrackCSevHigh" Content="높음" Style="{StaticResource RuleCheck}"/>
-                                            <CheckBox x:Name="TrackCSevRisk" Content="위험" Style="{StaticResource RuleCheck}"/>
-                                            <CheckBox x:Name="TrackCSevMedium" Content="보통" Style="{StaticResource RuleCheck}"/>
-                                            <CheckBox x:Name="TrackCSevLow" Content="낮음" Style="{StaticResource RuleCheck}"/>
-                                        </UniformGrid>
-                                    </StackPanel>
-
-                                    <StackPanel Grid.Column="2">
-                                        <TextBlock Text="요청 범위" Style="{StaticResource SectionTitle}" Margin="0,0,0,8"/>
-                                        <Border Background="#F8FAFB" BorderBrush="#E5E8EB" BorderThickness="1" CornerRadius="12" Padding="14">
-                                            <StackPanel>
-                                                <TextBlock Text="Track A/B/C 전체 검출을 LLM 요청으로 생성합니다." Foreground="{StaticResource TextPrimaryBrush}" FontWeight="SemiBold" Margin="0,0,0,8"/>
-                                                <TextBlock Text="Track C는 Track A/B 자동수정 후 남은 엣지 케이스까지 사람이 판단할 수 있도록 범위를 나누지 않습니다."
-                                                           Style="{StaticResource MutedText}" TextWrapping="Wrap" Margin="0,4,0,0"/>
-                                            </StackPanel>
-                                        </Border>
-                                    </StackPanel>
-                                </Grid>
-                            </StackPanel>
-                        </ScrollViewer>
-                    </TabItem>
-
-                    <TabItem Header="옵션">
-                        <StackPanel Margin="0,16,0,0">
-                            <TextBlock Text="실행 방식" Style="{StaticResource SectionTitle}"/>
-                            <CheckBox x:Name="CommitCheck" Content="규칙별 커밋 생성" IsChecked="True" Style="{StaticResource RuleCheck}"/>
-                            <CheckBox x:Name="DryRunCheck" Content="DryRun으로 변경 후보만 확인"
-                                      Checked="DryRunCheck_Changed" Unchecked="DryRunCheck_Changed"
-                                      Style="{StaticResource RuleCheck}"/>
-                            <CheckBox x:Name="IncludeGeneratedCheck" Content="Track B 생성 파일 포함" Style="{StaticResource RuleCheck}"/>
-                            <TextBlock Text="DryRun을 켜면 커밋은 자동으로 비활성화됩니다."
-                                       Style="{StaticResource MutedText}" Margin="0,10,0,0"/>
+            <Border Grid.Column="0" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource LineBrush}"
+                    BorderThickness="1" CornerRadius="12" Padding="12">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <Grid Grid.Row="0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel>
+                            <TextBlock Text="작업 범위" Style="{StaticResource SectionTitle}"/>
+                            <TextBlock x:Name="ScopeStatusText" Text="대상 경로를 선택하세요." Style="{StaticResource MutedText}"
+                                       TextWrapping="Wrap"/>
                         </StackPanel>
-                    </TabItem>
-                </TabControl>
+                        <Button x:Name="SelectAllScopeButton" Grid.Column="1" Content="전체" MinWidth="58"
+                                Margin="8,0,0,0" Click="SelectAllScopeButton_Click"/>
+                        <Button x:Name="ClearScopeButton" Grid.Column="2" Content="해제" MinWidth="58"
+                                Margin="6,0,0,0" Click="ClearScopeButton_Click"/>
+                    </Grid>
+                    <TextBlock Grid.Row="1" Text="bin/obj/.git/.vs/packages 및 생성 파일은 기본 제외됩니다."
+                               Style="{StaticResource MutedText}" TextWrapping="Wrap" Margin="0,10,0,8"/>
+                    <TreeView x:Name="ScopeTree" Grid.Row="2"
+                              ItemsSource="{Binding ScopeRoots, RelativeSource={RelativeSource AncestorType=Window}}"
+                              BorderThickness="0" Background="Transparent"
+                              VirtualizingStackPanel.IsVirtualizing="True"
+                              VirtualizingStackPanel.VirtualizationMode="Recycling"
+                              ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                              ScrollViewer.VerticalScrollBarVisibility="Auto"/>
+                </Grid>
             </Border>
 
-            <Grid Grid.Column="1">
+            <Grid Grid.Column="2">
                 <Grid.RowDefinitions>
-                    <RowDefinition Height="124"/>
                     <RowDefinition Height="*"/>
+                    <RowDefinition Height="210"/>
                 </Grid.RowDefinitions>
 
-                <Border Background="{StaticResource PanelBrush}" CornerRadius="16"
-                        BorderBrush="{StaticResource LineBrush}" BorderThickness="1"
-                        Padding="16" Margin="0,0,0,12">
+                <Border Grid.Row="0" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource LineBrush}"
+                        BorderThickness="1" CornerRadius="12" Padding="14">
+                    <TabControl x:Name="RulesTabs" BorderThickness="0" Background="Transparent" SelectionChanged="RulesTabs_SelectionChanged">
+                        <TabItem Header="Track A 코드 규칙">
+                            <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="0,12,0,0">
+                                <StackPanel>
+                                    <CheckBox x:Name="RunTrackASyntaxCheck" Content="Track A Roslyn 자동수정 실행"
+                                              IsChecked="True" FontWeight="SemiBold" Style="{StaticResource RuleCheck}"/>
+                                    <TextBlock Text="기본 자동수정" Style="{StaticResource SectionTitle}" Margin="0,12,0,8"/>
+                                    <UniformGrid Columns="2">
+                                        <CheckBox x:Name="ASObjectVarSafe" Content="객체 생성 명시 타입을 var로 변경" IsChecked="True" Style="{StaticResource RuleCheck}"/>
+                                        <CheckBox x:Name="ASObviousVar" Content="명확한 지역변수 타입을 var로 변경" IsChecked="True" Style="{StaticResource RuleCheck}"/>
+                                        <CheckBox x:Name="ASArrayVarSafe" Content="배열 초기화 문법 간소화" IsChecked="True" Style="{StaticResource RuleCheck}"/>
+                                        <CheckBox x:Name="ASParens" Content="논리식 괄호 명확화" IsChecked="True" Style="{StaticResource RuleCheck}"/>
+                                    </UniformGrid>
+                                    <TextBlock Text="선택 자동수정" Style="{StaticResource SectionTitle}" Margin="0,14,0,8"/>
+                                    <UniformGrid Columns="2">
+                                        <CheckBox x:Name="ASForeachCast" Content="[검토필요] foreach Cast&lt;T&gt; + var" Style="{StaticResource RuleCheck}"/>
+                                        <CheckBox x:Name="ASObjectInitializer" Content="연속 대입을 object initializer로 통합" Style="{StaticResource RuleCheck}"/>
+                                        <CheckBox x:Name="ASNullVar" Content="[검토필요] typed null var 초기화" Style="{StaticResource RuleCheck}"/>
+                                        <CheckBox x:Name="ASObjectVarNarrowing" Content="[검토필요] 상위 타입 선언을 var로 축소" Style="{StaticResource RuleCheck}"/>
+                                        <CheckBox x:Name="ASLocalConst" Content="[검토필요] 지역 const를 var로 변경" Style="{StaticResource RuleCheck}"/>
+                                        <CheckBox x:Name="ASArrayVarNarrowing" Content="[검토필요] 배열 선언을 var + new[]로 축소" Style="{StaticResource RuleCheck}"/>
+                                        <CheckBox x:Name="ASForVar" Content="for 초기화절 변수를 var로 변경" Style="{StaticResource RuleCheck}"/>
+                                        <CheckBox x:Name="ASFieldSplit" Content="한 줄 다중 필드 선언 분리" Style="{StaticResource RuleCheck}"/>
+                                        <CheckBox x:Name="ASEmptyStmt" Content="잉여 빈문장 제거" Style="{StaticResource RuleCheck}"/>
+                                        <CheckBox x:Name="ASForHoist" Content="[검토필요] for 다중 선언자 hoist 분해" Style="{StaticResource RuleCheck}"/>
+                                    </UniformGrid>
+                                </StackPanel>
+                            </ScrollViewer>
+                        </TabItem>
+
+                        <TabItem Header="Track B 주석/레이아웃">
+                            <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="0,12,0,0">
+                                <StackPanel>
+                                    <CheckBox x:Name="RunTrackBCheck" Content="Track B 주석/레이아웃 자동수정 실행"
+                                              IsChecked="True" FontWeight="SemiBold" Style="{StaticResource RuleCheck}"/>
+                                    <TextBlock Text="기본 주석 규칙" Style="{StaticResource SectionTitle}" Margin="0,12,0,8"/>
+                                    <UniformGrid Columns="2">
+                                        <CheckBox x:Name="BTrailing" Content="코드 뒤 주석을 윗줄로 이동" IsChecked="True" Style="{StaticResource RuleCheck}"/>
+                                        <CheckBox x:Name="BSpace" Content="주석 기호 뒤 공백 추가" IsChecked="True" Style="{StaticResource RuleCheck}"/>
+                                        <CheckBox x:Name="BPeriod" Content="주석 끝 마침표 추가" IsChecked="True" Style="{StaticResource RuleCheck}"/>
+                                        <CheckBox x:Name="BCapitalize" Content="주석 첫 영문 대문자화" IsChecked="True" Style="{StaticResource RuleCheck}"/>
+                                    </UniformGrid>
+                                    <TextBlock Text="선택 레이아웃/주석 규칙" Style="{StaticResource SectionTitle}" Margin="0,14,0,8"/>
+                                    <UniformGrid Columns="2">
+                                        <CheckBox x:Name="BFlatten" Content="별표/Doxygen 블록 주석 평탄화" Style="{StaticResource RuleCheck}"/>
+                                        <CheckBox x:Name="BMemberBlank" Content="멤버 선언 사이 빈 줄 추가" Style="{StaticResource RuleCheck}"/>
+                                        <CheckBox x:Name="BOneDeclaration" Content="한 줄 다중 선언 분리" Style="{StaticResource RuleCheck}"/>
+                                        <CheckBox x:Name="BOneStatement" Content="한 줄 다중 구문 분리" Style="{StaticResource RuleCheck}"/>
+                                        <CheckBox x:Name="BContinuation" Content="여러 줄 문장 들여쓰기 보정" Style="{StaticResource RuleCheck}"/>
+                                        <CheckBox x:Name="BLinqAlign" Content="LINQ query 절 정렬" Style="{StaticResource RuleCheck}"/>
+                                        <CheckBox x:Name="BBlockPromote" Content="[검토필요] inline block 주석 이동" Style="{StaticResource RuleCheck}"/>
+                                    </UniformGrid>
+                                </StackPanel>
+                            </ScrollViewer>
+                        </TabItem>
+
+                        <TabItem x:Name="TrackCTab" Header="Track C XLS/LLM">
+                            <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="0,12,0,0">
+                                <StackPanel>
+                                    <CheckBox x:Name="RunTrackCCheck" Content="Track C requests 패키지 생성 실행"
+                                              FontWeight="SemiBold" Style="{StaticResource RuleCheck}"/>
+                                    <Grid Margin="0,10,0,12">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="12"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel>
+                                            <TextBlock Text="입력" Style="{StaticResource SectionTitle}"/>
+                                            <TextBlock Text="Sparrow 결과 XLS" Style="{StaticResource MutedText}" Margin="0,0,0,4"/>
+                                            <Grid Margin="0,0,0,8">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <TextBox x:Name="TrackCXlsPathBox" Style="{StaticResource InputBox}" IsReadOnly="True"/>
+                                                <Button x:Name="BrowseTrackCXlsButton" Grid.Column="1" Content="XLS 선택"
+                                                        Margin="8,0,0,0" Click="BrowseTrackCXlsButton_Click"/>
+                                            </Grid>
+                                            <TextBlock Text="references 경로" Style="{StaticResource MutedText}" Margin="0,0,0,4"/>
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <TextBox x:Name="TrackCReferencesPathBox" Style="{StaticResource InputBox}"/>
+                                                <Button x:Name="BrowseTrackCReferencesButton" Grid.Column="1" Content="폴더 선택"
+                                                        Margin="8,0,0,0" Click="BrowseTrackCReferencesButton_Click"/>
+                                            </Grid>
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="2">
+                                            <TextBlock Text="출력/관리" Style="{StaticResource SectionTitle}"/>
+                                            <TextBlock Text="출력 폴더" Style="{StaticResource MutedText}" Margin="0,0,0,4"/>
+                                            <Grid Margin="0,0,0,8">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <TextBox x:Name="TrackCOutputPathBox" Style="{StaticResource InputBox}"/>
+                                                <Button x:Name="BrowseTrackCOutputButton" Grid.Column="1" Content="폴더 선택"
+                                                        Margin="8,0,0,0" Click="BrowseTrackCOutputButton_Click"/>
+                                            </Grid>
+                                            <Button x:Name="OpenRuleManagerButton" Content="체커 룰 관리"
+                                                    HorizontalAlignment="Left" Click="OpenRuleManagerButton_Click"/>
+                                            <TextBlock Text="선택된 파일 범위와 매칭되는 XLS 항목만 requests로 생성됩니다."
+                                                       Style="{StaticResource MutedText}" TextWrapping="Wrap" Margin="0,8,0,0"/>
+                                        </StackPanel>
+                                    </Grid>
+                                    <TextBlock Text="필터" Style="{StaticResource SectionTitle}"/>
+                                    <UniformGrid Columns="2" Margin="0,0,0,10">
+                                        <StackPanel Margin="0,0,10,0">
+                                            <TextBlock Text="체커 키" Style="{StaticResource MutedText}" Margin="0,0,0,4"/>
+                                            <TextBox x:Name="TrackCCheckerBox" Style="{StaticResource InputBox}"/>
+                                        </StackPanel>
+                                        <StackPanel>
+                                            <TextBlock Text="최대 건수" Style="{StaticResource MutedText}" Margin="0,0,0,4"/>
+                                            <TextBox x:Name="TrackCMaxBox" Style="{StaticResource InputBox}"/>
+                                        </StackPanel>
+                                    </UniformGrid>
+                                    <TextBlock Text="심각도" Style="{StaticResource MutedText}" Margin="0,0,0,6"/>
+                                    <UniformGrid Columns="5">
+                                        <CheckBox x:Name="TrackCSevVeryHigh" Content="매우위험" Style="{StaticResource RuleCheck}"/>
+                                        <CheckBox x:Name="TrackCSevHigh" Content="높음" Style="{StaticResource RuleCheck}"/>
+                                        <CheckBox x:Name="TrackCSevRisk" Content="위험" Style="{StaticResource RuleCheck}"/>
+                                        <CheckBox x:Name="TrackCSevMedium" Content="보통" Style="{StaticResource RuleCheck}"/>
+                                        <CheckBox x:Name="TrackCSevLow" Content="낮음" Style="{StaticResource RuleCheck}"/>
+                                    </UniformGrid>
+                                </StackPanel>
+                            </ScrollViewer>
+                        </TabItem>
+
+                        <TabItem Header="옵션">
+                            <StackPanel Margin="0,12,0,0">
+                                <TextBlock Text="실행 방식" Style="{StaticResource SectionTitle}"/>
+                                <CheckBox x:Name="CommitCheck" Content="규칙별 커밋 생성" IsChecked="True" Style="{StaticResource RuleCheck}"/>
+                                <CheckBox x:Name="DryRunCheck" Content="DryRun으로 변경 후보만 확인"
+                                          Checked="DryRunCheck_Changed" Unchecked="DryRunCheck_Changed"
+                                          Style="{StaticResource RuleCheck}"/>
+                                <CheckBox x:Name="IncludeGeneratedCheck" Content="Track B 생성 파일 포함" Style="{StaticResource RuleCheck}"/>
+                            </StackPanel>
+                        </TabItem>
+                    </TabControl>
+                </Border>
+
+                <Border Grid.Row="1" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource LineBrush}"
+                        BorderThickness="1" CornerRadius="12" Padding="14" Margin="0,12,0,0">
                     <Grid>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
                         </Grid.RowDefinitions>
-                        <TextBlock Text="실행 요약" Style="{StaticResource SectionTitle}"/>
-                        <TextBlock x:Name="SummaryTargetText" Grid.Row="1" Text="대상 경로가 필요합니다."
-                                   Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="NoWrap"
-                                   TextTrimming="CharacterEllipsis" Margin="0,0,0,8"/>
-                        <TextBlock x:Name="SummaryRulesText" Grid.Row="2" Text="선택된 규칙 0개"
-                                   Foreground="{StaticResource TextPrimaryBrush}" FontWeight="SemiBold" Margin="0,0,0,4"/>
-                        <TextBlock x:Name="SummaryModeText" Grid.Row="3" Text="규칙별 커밋 모드"
-                                   Foreground="{StaticResource TextSecondaryBrush}" FontSize="12"
-                                   TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"/>
-                    </Grid>
-                </Border>
-
-                <Border Grid.Row="1" Background="#111827" CornerRadius="16" Padding="16"
-                        MinHeight="320">
-                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                        <StackPanel>
-                            <TextBlock x:Name="RuleInfoTitle" Foreground="#FFFFFF"
-                                       FontSize="16" FontWeight="SemiBold"/>
-                            <TextBlock x:Name="RuleInfoBody" Margin="0,8,0,12"
-                                       Foreground="#BFC6D1" TextWrapping="Wrap"/>
-
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="12"/>
-                                    <ColumnDefinition Width="*"/>
-                                </Grid.ColumnDefinitions>
-
-                                <StackPanel Grid.Column="0">
-                                    <Border Background="#253044" CornerRadius="8" Padding="10,4"
-                                            HorizontalAlignment="Left" Margin="0,0,0,6">
-                                        <TextBlock Text="Before" Foreground="#D1D5DB" FontSize="11" FontWeight="SemiBold"/>
-                                    </Border>
-                                    <TextBox x:Name="RuleBeforeBox"
-                                             MinHeight="104"
-                                             IsReadOnly="True" IsUndoEnabled="False"
-                                             FontFamily="Consolas" FontSize="12"
-                                             VerticalContentAlignment="Top"
-                                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
-                                             TextWrapping="NoWrap" Background="#0B1220" Foreground="#E5E7EB"
-                                             BorderBrush="#253044" Padding="10"/>
-                                </StackPanel>
-
-                                <StackPanel Grid.Column="2">
-                                    <Border Background="#E8F2FF" CornerRadius="8" Padding="10,4"
-                                            HorizontalAlignment="Left" Margin="0,0,0,6">
-                                        <TextBlock Text="After" Foreground="#0064FF" FontSize="11" FontWeight="SemiBold"/>
-                                    </Border>
-                                    <TextBox x:Name="RuleAfterBox"
-                                             MinHeight="104"
-                                             IsReadOnly="True" IsUndoEnabled="False"
-                                             FontFamily="Consolas" FontSize="12"
-                                             VerticalContentAlignment="Top"
-                                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
-                                             TextWrapping="NoWrap" Background="#F8FAFF" Foreground="#191F28"
-                                             BorderBrush="#C9DDFF" Padding="10"/>
-                                </StackPanel>
+                        <Grid Grid.Row="0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel>
+                                <TextBlock x:Name="RuleInfoTitle" FontSize="15" FontWeight="SemiBold"
+                                           Foreground="{StaticResource TextPrimaryBrush}"/>
+                                <TextBlock x:Name="RuleInfoBody" Margin="0,4,0,8" Style="{StaticResource MutedText}"
+                                           TextWrapping="Wrap"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" MinWidth="260" Margin="16,0,0,0">
+                                <TextBlock x:Name="SummaryTargetText" Text="대상 경로가 필요합니다."
+                                           Foreground="{StaticResource TextSecondaryBrush}" TextTrimming="CharacterEllipsis"/>
+                                <TextBlock x:Name="SummaryRulesText" Text="선택 규칙 0개"
+                                           Foreground="{StaticResource TextPrimaryBrush}" FontWeight="SemiBold" Margin="0,4,0,0"/>
+                                <TextBlock x:Name="SummaryModeText" Text="규칙별 커밋 모드"
+                                           Foreground="{StaticResource TextSecondaryBrush}" FontSize="12"
+                                           TextTrimming="CharacterEllipsis" Margin="0,3,0,0"/>
+                            </StackPanel>
+                        </Grid>
+                        <Grid Grid.Row="1">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="12"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid Grid.Column="0">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="*"/>
+                                </Grid.RowDefinitions>
+                                <TextBlock Text="Before" Foreground="{StaticResource TextTertiaryBrush}" FontWeight="SemiBold" FontSize="12" Margin="0,0,0,5"/>
+                                <TextBox x:Name="RuleBeforeBox" Grid.Row="1" IsReadOnly="True" IsUndoEnabled="False"
+                                         FontFamily="Consolas" FontSize="12" VerticalContentAlignment="Top"
+                                         VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                         TextWrapping="NoWrap" Background="#0B1220" Foreground="#E5E7EB"
+                                         BorderBrush="#253044" Padding="10"/>
                             </Grid>
-                        </StackPanel>
-                    </ScrollViewer>
+                            <Grid Grid.Column="2">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="*"/>
+                                </Grid.RowDefinitions>
+                                <TextBlock Text="After" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" FontSize="12" Margin="0,0,0,5"/>
+                                <TextBox x:Name="RuleAfterBox" Grid.Row="1" IsReadOnly="True" IsUndoEnabled="False"
+                                         FontFamily="Consolas" FontSize="12" VerticalContentAlignment="Top"
+                                         VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                         TextWrapping="NoWrap" Background="#F8FAFF" Foreground="#191F28"
+                                         BorderBrush="#C9DDFF" Padding="10"/>
+                            </Grid>
+                        </Grid>
+                    </Grid>
                 </Border>
             </Grid>
         </Grid>
 
-        <Border Grid.Row="3" Background="{StaticResource PanelBrush}" CornerRadius="18"
-                BorderBrush="{StaticResource LineBrush}" BorderThickness="1"
-                Padding="14" Margin="0,12,0,0">
+        <Border Grid.Row="2" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource LineBrush}"
+                BorderThickness="1" CornerRadius="12" Padding="12" Margin="0,12,0,0">
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
                 <Grid>
                     <Grid.ColumnDefinitions>
@@ -537,15 +432,15 @@
                     <TextBlock x:Name="StatusText" Grid.Column="6" Text="대기 중"
                                VerticalAlignment="Center" Foreground="{StaticResource TextTertiaryBrush}"/>
                 </Grid>
-
-                <TextBox x:Name="LogBox" Grid.Row="1" Margin="0,12,0,0"
-                         Height="Auto"
-                         IsReadOnly="True" IsUndoEnabled="False"
-                         FontFamily="Consolas" FontSize="12"
-                         VerticalContentAlignment="Top"
-                         VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
-                         TextWrapping="NoWrap" Background="#111827" Foreground="#D1D5DB"
-                         BorderThickness="0" Padding="12"/>
+                <Expander Grid.Row="1" Header="실행 로그" Margin="0,10,0,0" IsExpanded="False">
+                    <TextBox x:Name="LogBox" Margin="0,8,0,0" Height="160"
+                             IsReadOnly="True" IsUndoEnabled="False"
+                             FontFamily="Consolas" FontSize="12"
+                             VerticalContentAlignment="Top"
+                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                             TextWrapping="NoWrap" Background="#111827" Foreground="#D1D5DB"
+                             BorderThickness="0" Padding="12"/>
+                </Expander>
             </Grid>
         </Border>
     </Grid>

@@ -21,7 +21,7 @@ namespace SparrowXlsExport
         {
             try { Console.OutputEncoding = new UTF8Encoding(false); } catch { /* stdout may be redirected */ }
 
-            string? input = null, outDir = null, checker = null, status = null;
+            string? input = null, outDir = null, checker = null, status = null, rootPath = null, filesFrom = null;
             var severities = new HashSet<string>(StringComparer.Ordinal);
             int? max = null;
 
@@ -31,6 +31,8 @@ namespace SparrowXlsExport
                 switch (a)
                 {
                     case "--out": if (!TryNext(args, ref i, out outDir)) return Usage("--out requires a value"); break;
+                    case "--root": if (!TryNext(args, ref i, out rootPath)) return Usage("--root requires a value"); break;
+                    case "--files-from": if (!TryNext(args, ref i, out filesFrom)) return Usage("--files-from requires a value"); break;
                     case "--checker": if (!TryNext(args, ref i, out checker)) return Usage("--checker requires a value"); break;
                     case "--status": if (!TryNext(args, ref i, out status)) return Usage("--status requires a value"); break;
                     case "--severity":
@@ -59,6 +61,8 @@ namespace SparrowXlsExport
                     OutDir = outDir,
                     Checker = checker,
                     Status = status,
+                    RootPath = rootPath,
+                    FilesFrom = filesFrom,
                     Severities = severities,
                     Max = max,
                 };
@@ -82,7 +86,7 @@ namespace SparrowXlsExport
         private static int Usage(string message)
         {
             Console.Error.WriteLine("error: " + message);
-            Console.Error.WriteLine("usage: SparrowXlsExport <input.xls> [--out DIR] [--severity 낮음,보통,높음] [--checker SUBSTR] [--status SUBSTR] [--max N]");
+            Console.Error.WriteLine("usage: SparrowXlsExport <input.xls> [--out DIR] [--root SRC_ROOT] [--files-from FILES.csv] [--severity 낮음,보통,높음] [--checker SUBSTR] [--status SUBSTR] [--max N]");
             return 2;
         }
     }

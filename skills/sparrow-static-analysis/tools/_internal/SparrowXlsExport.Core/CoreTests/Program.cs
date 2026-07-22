@@ -74,6 +74,9 @@ internal static class Program
             Console.WriteLine("\n==== I. 항목 md 필드표 (무기여 컬럼 제외 / 이중 앵커 보존) ====");
             TestItemMdFieldTable(work);
 
+            Console.WriteLine("\n==== F. FilesFrom source scope filter ====");
+            TestFilesFromScopeFilter(work);
+
             Check(File.Exists(consoleExe), "precondition: console exe exists", consoleExe);
             if (!fixturesOnly) Check(File.Exists(realXls), "precondition: real xls exists", realXls);
             Check(File.Exists(runTriage), "precondition: Run-Triage.ps1 exists", runTriage);
@@ -385,6 +388,103 @@ internal static class Program
         Check(!md.Contains("그 라인만 고치고", StringComparison.Ordinal)
               && !md.Contains("이 라인만 고치고", StringComparison.Ordinal),
               "I: ⚠️ 블록에 '그 라인만 고치고' 단일라인 제약 없음");
+    }
+
+    private static void TestFilesFromScopeFilter(string work)
+    {
+        string root = Path.Combine(work, "scope-root");
+        string src = Path.Combine(root, "src");
+        string lib = Path.Combine(root, "lib");
+        string dup1 = Path.Combine(root, "dup1");
+        string dup2 = Path.Combine(root, "dup2");
+        Directory.CreateDirectory(src);
+        Directory.CreateDirectory(lib);
+        Directory.CreateDirectory(dup1);
+        Directory.CreateDirectory(dup2);
+
+        string fileA = Path.Combine(src, "FileA.cs");
+        string fileB = Path.Combine(lib, "FileB.cs");
+        string fileC = Path.Combine(src, "FileC.cs");
+        string unique = Path.Combine(src, "Unique.cs");
+        string duplicate1 = Path.Combine(dup1, "Duplicate.cs");
+        string duplicate2 = Path.Combine(dup2, "Duplicate.cs");
+        foreach (string file in new[] { fileA, fileB, fileC, unique, duplicate1, duplicate2 })
+        {
+            File.WriteAllText(file, "class X {}\n", new UTF8Encoding(false));
+        }
+
+        string filesFrom = Path.Combine(work, "scope.csv");
+        File.WriteAllText(filesFrom,
+            "파일명\n"
+            + CsvLine(fileA) + "\n"
+            + CsvLine(fileB) + "\n"
+            + CsvLine(Path.Combine("src", "FileC.cs")) + "\n"
+            + CsvLine(unique) + "\n"
+            + CsvLine(duplicate1) + "\n",
+            new UTF8Encoding(false));
+
+        string xls = Path.Combine(work, "scope.xls");
+        WriteSyntheticXls(xls,
+            new[]
+            {
+                "ID", "체커 키", "위험도", "파일명", "라인", "경로", "체커 설명", "소스 코드",
+            },
+            new[]
+            {
+                new[] { "9001", "SCOPE_ABSOLUTE", "보통", "FileA.cs", "10", fileA, "absolute selected", "  10: A();" },
+                new[] { "9002", "SCOPE_DIRECTORY", "보통", "FileB.cs", "11", lib, "directory + filename selected", "  11: B();" },
+                new[] { "9003", "SCOPE_RELATIVE", "보통", "FileC.cs", "12", "src/FileC.cs", "relative selected", "  12: C();" },
+                new[] { "9004", "SCOPE_BASENAME", "보통", "Unique.cs", "13", "", "unique basename selected", "  13: U();" },
+                new[] { "9005", "SCOPE_DUPLICATE", "보통", "Duplicate.cs", "14", "", "duplicate basename skipped", "  14: D();" },
+                new[] { "9006", "SCOPE_OUTSIDE", "보통", "Outside.cs", "15", Path.Combine(root, "outside", "Outside.cs"), "outside skipped", "  15: O();" },
+            });
+
+        string outDir = Path.Combine(work, "scope_out");
+        ExportResult result = SparrowExporter.Run(new ExportOptions
+        {
+            InputPath = xls,
+            OutDir = outDir,
+            RootPath = root,
+            FilesFrom = filesFrom,
+        }, TextWriter.Null);
+        Check(result.WrittenCount == 4, "F: scope filter keeps only absolute/dir+file/relative/unique basename rows",
+              "written=" + result.WrittenCount);
+        string index = ReadText(Path.Combine(outDir, "index.csv"));
+        Check(index.Contains("SCOPE_ABSOLUTE", StringComparison.Ordinal)
+              && index.Contains("SCOPE_DIRECTORY", StringComparison.Ordinal)
+              && index.Contains("SCOPE_RELATIVE", StringComparison.Ordinal)
+              && index.Contains("SCOPE_BASENAME", StringComparison.Ordinal),
+              "F: expected scoped checker keys are present");
+        Check(!index.Contains("SCOPE_DUPLICATE", StringComparison.Ordinal)
+              && !index.Contains("SCOPE_OUTSIDE", StringComparison.Ordinal),
+              "F: duplicate basename in full source root and outside rows are excluded");
+
+        string maxOut = Path.Combine(work, "scope_max_out");
+        ExportResult maxResult = SparrowExporter.Run(new ExportOptions
+        {
+            InputPath = xls,
+            OutDir = maxOut,
+            RootPath = root,
+            FilesFrom = filesFrom,
+            Max = 2,
+        }, TextWriter.Null);
+        Check(maxResult.WrittenCount == 2, "F: Max applies after scope filter", "written=" + maxResult.WrittenCount);
+
+        string emptyFilesFrom = Path.Combine(work, "scope-empty.csv");
+        File.WriteAllText(emptyFilesFrom, "파일명\n", new UTF8Encoding(false));
+        ExportResult emptyResult = SparrowExporter.Run(new ExportOptions
+        {
+            InputPath = xls,
+            OutDir = Path.Combine(work, "scope_empty_out"),
+            RootPath = root,
+            FilesFrom = emptyFilesFrom,
+        }, TextWriter.Null);
+        Check(emptyResult.WrittenCount == 0, "F: empty files-from matches zero rows", "written=" + emptyResult.WrittenCount);
+    }
+
+    private static string CsvLine(string value)
+    {
+        return "\"" + value.Replace("\"", "\"\"") + "\"";
     }
 
     // Minimal BIFF (.xls) writer for the synthetic GetXlsCheckerKeys check.

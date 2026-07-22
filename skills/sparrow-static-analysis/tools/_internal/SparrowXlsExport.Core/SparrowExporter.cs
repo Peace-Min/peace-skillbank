@@ -41,6 +41,12 @@ namespace SparrowXlsExport.Core
 
         /// <summary>Cap on the number of written items; null =&gt; no cap.</summary>
         public int? Max;
+
+        /// <summary>Source root used to resolve relative XLS paths and relative files-from entries.</summary>
+        public string? RootPath;
+
+        /// <summary>CSV/newline list of selected source files. When set, rows outside this file set are skipped.</summary>
+        public string? FilesFrom;
     }
 
     /// <summary>Structured result of a successful export (also written as the human summary to the log).</summary>
@@ -174,8 +180,15 @@ namespace SparrowXlsExport.Core
 
             string GV(string[] vals, string name) => headerToIdx.TryGetValue(name, out int i) ? vals[i] : "";
 
-            // Filters (AND-combined). severity = exact-match set; checker/status = case-insensitive substring.
-            var matched = records.Where(rec =>
+            var scopedRecords = records;
+            SourceScopeMatcher? scopeMatcher = SourceScopeMatcher.Create(opts.RootPath, opts.FilesFrom);
+            if (scopeMatcher != null)
+            {
+                scopedRecords = records.Where(rec => scopeMatcher.Keep(GV(rec.Vals, CPath), GV(rec.Vals, CFileName))).ToList();
+            }
+
+            // Filters (AND-combined). Scope is applied first; severity = exact-match set; checker/status = case-insensitive substring.
+            var matched = scopedRecords.Where(rec =>
             {
                 if (severities.Count > 0 && !severities.Contains(GV(rec.Vals, CSeverity).Trim())) return false;
                 if (checker != null && GV(rec.Vals, CCheckerKey).IndexOf(checker, StringComparison.OrdinalIgnoreCase) < 0) return false;
@@ -256,6 +269,262 @@ namespace SparrowXlsExport.Core
                 SeverityCounts = sevCounts.Select(x => (x.Sev, x.C)).ToList(),
                 MergedRegions = mergedRegions,
             };
+        }
+
+        private sealed class SourceScopeMatcher
+        {
+            private readonly string? _root;
+            private readonly HashSet<string> _selected;
+            private readonly Dictionary<string, List<string>> _byName;
+            private readonly Dictionary<string, List<string>> _allByName;
+
+            private SourceScopeMatcher(string? root, HashSet<string> selected, IEnumerable<string> allSourceFiles)
+            {
+                _root = root;
+                _selected = selected;
+                _byName = selected
+                    .GroupBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase)
+                    .ToDictionary(g => g.Key ?? "", g => g.ToList(), StringComparer.OrdinalIgnoreCase);
+                _allByName = allSourceFiles
+                    .GroupBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase)
+                    .ToDictionary(g => g.Key ?? "", g => g.ToList(), StringComparer.OrdinalIgnoreCase);
+            }
+
+            public static SourceScopeMatcher? Create(string? rootPath, string? filesFrom)
+            {
+                if (string.IsNullOrWhiteSpace(filesFrom)) return null;
+                string filesFromFull = Path.GetFullPath(filesFrom.Trim().Trim('"'));
+                if (!File.Exists(filesFromFull)) throw new FileNotFoundException("files-from not found: " + filesFromFull);
+
+                string? root = string.IsNullOrWhiteSpace(rootPath) ? null : Path.GetFullPath(rootPath.Trim().Trim('"'));
+                var selected = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (string entry in ReadFilesFrom(filesFromFull))
+                {
+                    if (string.IsNullOrWhiteSpace(entry)) continue;
+                    string full = Path.IsPathRooted(entry)
+                        ? Path.GetFullPath(entry)
+                        : Path.GetFullPath(Path.Combine(root ?? Directory.GetCurrentDirectory(), entry));
+                    if (full.EndsWith(".cs", StringComparison.OrdinalIgnoreCase))
+                    {
+                        selected.Add(full);
+                    }
+                }
+
+                IEnumerable<string> allSourceFiles = root != null && Directory.Exists(root)
+                    ? EnumerateCsFiles(root)
+                    : selected;
+                return new SourceScopeMatcher(root, selected, allSourceFiles);
+            }
+
+            public bool Keep(string pathCell, string fileNameCell)
+            {
+                string fileName = (fileNameCell ?? "").Trim();
+                string path = (pathCell ?? "").Trim();
+
+                foreach (string candidate in BuildCandidates(path, fileName))
+                {
+                    if (_selected.Contains(candidate)) return true;
+                }
+
+                if (path.Length == 0 && fileName.Length > 0 &&
+                    _byName.TryGetValue(Path.GetFileName(fileName), out List<string>? sameName) &&
+                    sameName.Count == 1 &&
+                    _allByName.TryGetValue(Path.GetFileName(fileName), out List<string>? sameNameInRoot) &&
+                    sameNameInRoot.Count == 1)
+                {
+                    return true;
+                }
+
+                return false;
+            }
+
+            private IEnumerable<string> BuildCandidates(string path, string fileName)
+            {
+                if (path.Length == 0) yield break;
+
+                string normalizedPath = path.Replace('/', Path.DirectorySeparatorChar).Trim();
+                var rawCandidates = new List<string>();
+
+                if (Path.IsPathRooted(normalizedPath))
+                {
+                    rawCandidates.Add(normalizedPath);
+                    if (fileName.Length > 0) rawCandidates.Add(Path.Combine(normalizedPath, fileName));
+                }
+                else if (_root != null)
+                {
+                    rawCandidates.Add(Path.Combine(_root, normalizedPath));
+                    if (fileName.Length > 0) rawCandidates.Add(Path.Combine(_root, normalizedPath, fileName));
+                }
+
+                foreach (string raw in rawCandidates)
+                {
+                    string full;
+                    try
+                    {
+                        full = Path.GetFullPath(raw);
+                    }
+                    catch
+                    {
+                        continue;
+                    }
+
+                    if (_root != null && !IsUnderRoot(full, _root)) continue;
+                    yield return full;
+                }
+            }
+
+            private static bool IsUnderRoot(string path, string root)
+            {
+                string rootWithSlash = root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                                      + Path.DirectorySeparatorChar;
+                string full = path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                return full.Equals(root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar), StringComparison.OrdinalIgnoreCase)
+                       || full.StartsWith(rootWithSlash, StringComparison.OrdinalIgnoreCase);
+            }
+
+            private static IEnumerable<string> ReadFilesFrom(string path)
+            {
+                List<string[]> rows = ParseCsv(File.ReadAllText(path));
+                if (rows.Count == 0) yield break;
+
+                int col = PickColumn(rows[0]);
+                int start = IsHeader(rows[0], col) ? 1 : 0;
+                for (int i = start; i < rows.Count; i++)
+                {
+                    if (col >= rows[i].Length) continue;
+                    string value = rows[i][col].Trim();
+                    if (value.Length > 0) yield return value;
+                }
+            }
+
+            private static IEnumerable<string> EnumerateCsFiles(string root)
+            {
+                var stack = new Stack<string>();
+                stack.Push(root);
+                while (stack.Count > 0)
+                {
+                    string dir = stack.Pop();
+                    IEnumerable<string> files;
+                    try
+                    {
+                        files = Directory.EnumerateFiles(dir, "*.cs", SearchOption.TopDirectoryOnly).ToList();
+                    }
+                    catch
+                    {
+                        files = Array.Empty<string>();
+                    }
+
+                    foreach (string file in files)
+                    {
+                        string full;
+                        try { full = Path.GetFullPath(file); }
+                        catch { continue; }
+                        yield return full;
+                    }
+
+                    IEnumerable<string> dirs;
+                    try
+                    {
+                        dirs = Directory.EnumerateDirectories(dir).ToList();
+                    }
+                    catch
+                    {
+                        dirs = Array.Empty<string>();
+                    }
+
+                    foreach (string child in dirs)
+                    {
+                        stack.Push(child);
+                    }
+                }
+            }
+
+            private static int PickColumn(string[] header)
+            {
+                string[] names = { "파일명", "경로", "path", "filepath", "file", "fullpath" };
+                foreach (string name in names)
+                {
+                    for (int i = 0; i < header.Length; i++)
+                    {
+                        if (string.Equals(header[i].Trim(), name, StringComparison.OrdinalIgnoreCase)) return i;
+                    }
+                }
+
+                return 0;
+            }
+
+            private static bool IsHeader(string[] row, int col)
+            {
+                if (col < 0 || col >= row.Length) return false;
+                string cell = row[col].Trim();
+                return string.Equals(cell, "파일명", StringComparison.OrdinalIgnoreCase)
+                       || string.Equals(cell, "경로", StringComparison.OrdinalIgnoreCase)
+                       || string.Equals(cell, "path", StringComparison.OrdinalIgnoreCase)
+                       || string.Equals(cell, "filepath", StringComparison.OrdinalIgnoreCase)
+                       || string.Equals(cell, "file", StringComparison.OrdinalIgnoreCase)
+                       || string.Equals(cell, "fullpath", StringComparison.OrdinalIgnoreCase);
+            }
+
+            private static List<string[]> ParseCsv(string text)
+            {
+                var rows = new List<string[]>();
+                var row = new List<string>();
+                var cell = new StringBuilder();
+                bool quoted = false;
+
+                for (int i = 0; i < text.Length; i++)
+                {
+                    char ch = text[i];
+                    if (quoted)
+                    {
+                        if (ch == '"')
+                        {
+                            if (i + 1 < text.Length && text[i + 1] == '"')
+                            {
+                                cell.Append('"');
+                                i++;
+                            }
+                            else
+                            {
+                                quoted = false;
+                            }
+                        }
+                        else
+                        {
+                            cell.Append(ch);
+                        }
+                    }
+                    else
+                    {
+                        if (ch == '"') quoted = true;
+                        else if (ch == ',')
+                        {
+                            row.Add(cell.ToString());
+                            cell.Clear();
+                        }
+                        else if (ch == '\r' || ch == '\n')
+                        {
+                            if (ch == '\r' && i + 1 < text.Length && text[i + 1] == '\n') i++;
+                            row.Add(cell.ToString());
+                            rows.Add(row.ToArray());
+                            row.Clear();
+                            cell.Clear();
+                        }
+                        else
+                        {
+                            cell.Append(ch);
+                        }
+                    }
+                }
+
+                if (cell.Length > 0 || row.Count > 0)
+                {
+                    row.Add(cell.ToString());
+                    rows.Add(row.ToArray());
+                }
+
+                return rows;
+            }
         }
 
         private static string BuildItemMd(string[] vals, List<(string Header, int Col)> columns,

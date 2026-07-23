@@ -135,7 +135,7 @@
             </Grid.ColumnDefinitions>
             <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,18,0">
                 <TextBlock Text="Sparrow Helper" FontSize="22" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}"/>
-                <TextBlock Text="Track A/B/C를 같은 파일 범위로 실행합니다." Style="{StaticResource MutedText}" Margin="0,2,0,0"/>
+                <TextBlock Text="현재 선택한 탭의 트랙만 실행합니다." Style="{StaticResource MutedText}" Margin="0,2,0,0"/>
             </StackPanel>
             <TextBox x:Name="TargetPathBox" Grid.Column="1" Style="{StaticResource InputBox}" TextChanged="TargetPathBox_TextChanged"
                      VerticalAlignment="Center"/>
@@ -196,12 +196,10 @@
                 <Border Grid.Row="0" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource LineBrush}"
                         BorderThickness="1" CornerRadius="12" Padding="14">
                     <TabControl x:Name="RulesTabs" BorderThickness="0" Background="Transparent" SelectionChanged="RulesTabs_SelectionChanged">
-                        <TabItem Header="Track A 코드 규칙">
+                        <TabItem x:Name="TrackATab" Header="Track A 코드 규칙">
                             <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="0,12,0,0">
                                 <StackPanel>
-                                    <CheckBox x:Name="RunTrackASyntaxCheck" Content="Track A Roslyn 자동수정 실행"
-                                              IsChecked="True" FontWeight="SemiBold" Style="{StaticResource RuleCheck}"/>
-                                    <TextBlock Text="기본 자동수정" Style="{StaticResource SectionTitle}" Margin="0,12,0,8"/>
+                                    <TextBlock Text="기본 자동수정" Style="{StaticResource SectionTitle}" Margin="0,0,0,8"/>
                                     <UniformGrid Columns="2">
                                         <CheckBox x:Name="ASObjectVarSafe" Content="객체 생성 명시 타입을 var로 변경" IsChecked="True" Style="{StaticResource RuleCheck}"/>
                                         <CheckBox x:Name="ASObviousVar" Content="명확한 지역변수 타입을 var로 변경" IsChecked="True" Style="{StaticResource RuleCheck}"/>
@@ -225,12 +223,10 @@
                             </ScrollViewer>
                         </TabItem>
 
-                        <TabItem Header="Track B 주석/레이아웃">
+                        <TabItem x:Name="TrackBTab" Header="Track B 주석/레이아웃">
                             <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="0,12,0,0">
                                 <StackPanel>
-                                    <CheckBox x:Name="RunTrackBCheck" Content="Track B 주석/레이아웃 자동수정 실행"
-                                              IsChecked="True" FontWeight="SemiBold" Style="{StaticResource RuleCheck}"/>
-                                    <TextBlock Text="기본 주석 규칙" Style="{StaticResource SectionTitle}" Margin="0,12,0,8"/>
+                                    <TextBlock Text="기본 주석 규칙" Style="{StaticResource SectionTitle}" Margin="0,0,0,8"/>
                                     <UniformGrid Columns="2">
                                         <CheckBox x:Name="BTrailing" Content="코드 뒤 주석을 윗줄로 이동" IsChecked="True" Style="{StaticResource RuleCheck}"/>
                                         <CheckBox x:Name="BSpace" Content="주석 기호 뒤 공백 추가" IsChecked="True" Style="{StaticResource RuleCheck}"/>
@@ -254,9 +250,7 @@
                         <TabItem x:Name="TrackCTab" Header="Track C XLS/LLM">
                             <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="0,12,0,0">
                                 <StackPanel>
-                                    <CheckBox x:Name="RunTrackCCheck" Content="Track C requests 패키지 생성 실행"
-                                              FontWeight="SemiBold" Style="{StaticResource RuleCheck}"/>
-                                    <Grid Margin="0,10,0,12">
+                                    <Grid Margin="0,0,0,12">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*"/>
                                             <ColumnDefinition Width="12"/>
@@ -319,7 +313,7 @@
                             </ScrollViewer>
                         </TabItem>
 
-                        <TabItem Header="옵션">
+                        <TabItem x:Name="OptionsTab" Header="옵션">
                             <StackPanel Margin="0,12,0,0">
                                 <TextBlock Text="실행 방식" Style="{StaticResource SectionTitle}"/>
                                 <CheckBox x:Name="CommitCheck" Content="규칙별 커밋 생성" IsChecked="True" Style="{StaticResource RuleCheck}"/>

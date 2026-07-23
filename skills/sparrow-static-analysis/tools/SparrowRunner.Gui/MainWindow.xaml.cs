@@ -24,6 +24,12 @@ namespace SparrowRunner.Gui
         private readonly string _skillRoot;
         private readonly string _toolsDir;
 
+        // Track C 안내는 실행 체크박스가 아니라 탭 선택으로 표시하므로 문자열 키로 등록한다.
+        private const string TrackCInfoKey = "__TrackCInfo";
+
+        // 활성 탭이 곧 실행 트랙이다. 옵션 탭은 실행 트랙이 아니다(None).
+        private enum ActiveTrack { A, B, C, None }
+
         // Track C 체커 가이드는 스킬 번들에 동봉된 고정 폴더다(에어갭 반입 단위). 사용자 편집 불가.
         private string ReferencesRoot => Path.Combine(_skillRoot, "references");
         private readonly Dictionary<string, RuleInfo> _ruleInfos = new Dictionary<string, RuleInfo>(StringComparer.Ordinal);
@@ -48,18 +54,69 @@ namespace SparrowRunner.Gui
             ShowRuleInfo(nameof(ASObjectVarSafe));
             Loaded += async (_, _) =>
             {
+                UpdateRunButtonForTrack();
                 UpdateSummary();
                 await RefreshScopeAsync(showErrors: false);
             };
         }
 
+        private ActiveTrack CurrentTrack()
+        {
+            object? selected = RulesTabs.SelectedItem;
+            if (ReferenceEquals(selected, TrackATab)) return ActiveTrack.A;
+            if (ReferenceEquals(selected, TrackBTab)) return ActiveTrack.B;
+            if (ReferenceEquals(selected, TrackCTab)) return ActiveTrack.C;
+            return ActiveTrack.None; // 옵션 탭 등 실행 트랙이 아님
+        }
+
+        private void UpdateRunButtonForTrack()
+        {
+            switch (CurrentTrack())
+            {
+                case ActiveTrack.A:
+                    RunButton.Content = "Track A 실행";
+                    RunButton.ToolTip = null;
+                    RunButton.IsEnabled = _cts == null;
+                    break;
+                case ActiveTrack.B:
+                    RunButton.Content = "Track B 실행";
+                    RunButton.ToolTip = null;
+                    RunButton.IsEnabled = _cts == null;
+                    break;
+                case ActiveTrack.C:
+                    RunButton.Content = "Track C 실행";
+                    RunButton.ToolTip = null;
+                    RunButton.IsEnabled = _cts == null;
+                    break;
+                default:
+                    // 옵션 탭은 공통 설정이라 실행 트랙이 아니다. 버튼 비활성 + 안내.
+                    RunButton.Content = "실행";
+                    RunButton.ToolTip = "실행할 트랙 탭(A/B/C)을 선택하세요.";
+                    RunButton.IsEnabled = false;
+                    break;
+            }
+        }
+
         private void RulesTabs_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             if (!ReferenceEquals(e.OriginalSource, RulesTabs)) return;
-            if (RulesTabs.SelectedItem == TrackCTab)
+            // TabControl 초기 선택은 InitializeComponent 도중(다른 명명 요소 생성 전) 발생할 수 있으므로 로드 후에만 처리한다.
+            if (!IsLoaded) return;
+
+            UpdateRunButtonForTrack();
+            switch (CurrentTrack())
             {
-                ShowRuleInfo(nameof(RunTrackCCheck));
+                case ActiveTrack.A:
+                    ShowRuleInfo(nameof(ASObjectVarSafe));
+                    break;
+                case ActiveTrack.B:
+                    ShowRuleInfo(nameof(BTrailing));
+                    break;
+                case ActiveTrack.C:
+                    ShowRuleInfo(TrackCInfoKey);
+                    break;
             }
+            UpdateSummary();
         }
 
         private void BrowseFileButton_Click(object sender, RoutedEventArgs e)
@@ -142,15 +199,16 @@ namespace SparrowRunner.Gui
 
         private async void RunButton_Click(object sender, RoutedEventArgs e)
         {
-            bool runTrackA = RunTrackASyntaxCheck.IsChecked == true;
-            bool runTrackB = RunTrackBCheck.IsChecked == true;
-            bool runTrackC = RunTrackCCheck.IsChecked == true;
-            if (!runTrackA && !runTrackB && !runTrackC)
+            // 활성 탭이 곧 실행 트랙이다. 옵션 탭(None)은 실행 대상이 아니며 버튼도 비활성이지만 방어적으로 가드한다.
+            ActiveTrack track = CurrentTrack();
+            if (track == ActiveTrack.None)
             {
-                MessageBox.Show(this, "실행할 Track을 하나 이상 선택하세요.", "Track 확인",
-                    MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
+
+            bool runTrackA = track == ActiveTrack.A;
+            bool runTrackB = track == ActiveTrack.B;
+            bool runTrackC = track == ActiveTrack.C;
 
             string target = TargetPathBox.Text.Trim().Trim('"');
             if (string.IsNullOrEmpty(target) || (!File.Exists(target) && !Directory.Exists(target)))
@@ -181,11 +239,11 @@ namespace SparrowRunner.Gui
                 return;
             }
 
-            var jobs = BuildJobs(target, scopeManifest);
+            var jobs = BuildJobs(target, scopeManifest, runTrackA, runTrackB);
             if ((runTrackA || runTrackB) && jobs.Count == 0)
             {
                 TryDeleteFile(scopeManifest);
-                MessageBox.Show(this, "실행할 Track 또는 규칙을 하나 이상 선택하세요.", "규칙 확인",
+                MessageBox.Show(this, "실행할 규칙을 하나 이상 선택하세요.", "규칙 확인",
                     MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
@@ -443,10 +501,10 @@ namespace SparrowRunner.Gui
                 StringComparison.OrdinalIgnoreCase);
         }
 
-        private List<RunnerJob> BuildJobs(string target, string filesFrom)
+        private List<RunnerJob> BuildJobs(string target, string filesFrom, bool runTrackA, bool runTrackB)
         {
             var jobs = new List<RunnerJob>();
-            if (RunTrackASyntaxCheck.IsChecked != true && RunTrackBCheck.IsChecked != true)
+            if (!runTrackA && !runTrackB)
             {
                 return jobs;
             }
@@ -454,7 +512,7 @@ namespace SparrowRunner.Gui
             string logDir = ResolveTargetRoot(target);
             Directory.CreateDirectory(logDir);
 
-            if (RunTrackASyntaxCheck.IsChecked == true)
+            if (runTrackA)
             {
                 var rules = CollectRules(
                     (ASObjectVarSafe, "objectvar-safe"),
@@ -482,7 +540,7 @@ namespace SparrowRunner.Gui
                 }
             }
 
-            if (RunTrackBCheck.IsChecked == true)
+            if (runTrackB)
             {
                 var rules = CollectRules(
                     (BTrailing, "trailing"),
@@ -812,10 +870,6 @@ namespace SparrowRunner.Gui
 
         private void InitializeRuleInfo()
         {
-            AddRuleInfo(RunTrackASyntaxCheck, "Track A Roslyn",
-                "코드 규칙 자동수정을 실행합니다.",
-                "var, object initializer, 배열 초기화, foreach 루프 변수, 괄호, 다중 선언 계열을 처리합니다.",
-                "선택된 Track A 규칙만 -Rules로 전달됩니다.");
             AddRuleInfo(ASObjectVarSafe, "객체 생성 명시 타입을 var로 변경",
                 "선언 타입과 생성 타입이 같은 지역변수를 var로 바꿉니다.",
                 "체커: PRACTICE.OBJECT_INSTANTIATION.NOT_USED_IMPLICIT_TYPING. 정적 타입 축소가 없는 기본 안전 규칙입니다.",
@@ -873,10 +927,6 @@ namespace SparrowRunner.Gui
                 "루프 스코프가 바뀌므로 검토필요 커밋 대상입니다.",
                 "for (int i = 0, j = 0; i < n; i++)\r\n// ->\r\nvar j = 0;\r\nfor (var i = 0; i < n; i++)");
 
-            AddRuleInfo(RunTrackBCheck, "Track B 주석/레이아웃",
-                "주석 문장 규칙과 일부 레이아웃 규칙을 텍스트 기반으로 보정합니다.",
-                "COMMENT.*, BETWEEN_MEMBER_DEFINITION, ONE_DECLARATION/STATEMENT, LINQ alignment, continuation indentation 계열.",
-                "선택된 Track B 규칙만 -Rules로 전달됩니다.");
             AddRuleInfo(BTrailing, "코드 뒤 주석을 위 줄로 이동",
                 "코드 뒤에 붙은 주석을 코드 위의 독립 주석 줄로 이동하고 문장 규칙을 맞춥니다.",
                 "체커: 독립된 줄의 주석 작성 권장, 주석 앞 빈 줄 계열.",
@@ -922,7 +972,7 @@ namespace SparrowRunner.Gui
                 "체커: 독립된 줄의 주석 작성 권장/별표 블록 제한. 검토필요 커밋 대상입니다.",
                 "DoWork(); /* done */\r\n// ->\r\n// Done.\r\nDoWork();");
 
-            AddRuleInfo(RunTrackCCheck, "Track C XLS 작업 패키지 생성",
+            AddRuleInfo(TrackCInfoKey, "Track C XLS 작업 패키지 생성",
                 "Sparrow 결과 XLS를 읽고 폐쇄망 LLM에게 넘길 self-contained requests 폴더만 생성합니다.",
                 "Track C는 소스 자동수정이 아니라 폐쇄망 LLM이 바로 수정 방향을 잡도록 입력을 정리하는 결정론 패키징 단계입니다. GUI 출력에는 items/index/checkers/worklist 같은 내부 산출물을 남기지 않습니다.",
                 "issues.xls\r\n// ->\r\nrequests/\r\n  FORWARD_NULL/\r\n    5001_FORWARD_NULL.md");
@@ -938,6 +988,13 @@ namespace SparrowRunner.Gui
                 "Track B가 generated 파일로 판단한 파일까지 수정 대상에 포함합니다.",
                 "기본은 제외입니다. 생성 코드까지 Sparrow 대상이면 켜고, 아니면 꺼두는 편이 안전합니다.",
                 "체크: -IncludeGenerated 전달\r\n해제: 생성 파일 제외");
+        }
+
+        // 체크박스가 없는 안내(예: Track C)는 문자열 키로 등록한다. 탭 선택 시 ShowRuleInfo(key)로 표시한다.
+        private void AddRuleInfo(string key, string title, string summary, string checker, string example)
+        {
+            var (before, after) = SplitExample(example);
+            _ruleInfos[key] = new RuleInfo(title, summary, checker, before, after);
         }
 
         private void AddRuleInfo(CheckBox checkBox, string title, string summary, string checker, string example)
@@ -1009,19 +1066,7 @@ namespace SparrowRunner.Gui
         {
             if (!IsLoaded) return;
 
-            int trackA = RunTrackASyntaxCheck.IsChecked == true
-                ? CountChecked(ASObjectVarSafe, ASObviousVar, ASArrayVarSafe, ASParens, ASForeachCast,
-                    ASObjectInitializer, ASNullVar, ASObjectVarNarrowing, ASLocalConst, ASArrayVarNarrowing,
-                    ASForVar, ASFieldSplit, ASEmptyStmt, ASForHoist)
-                : 0;
-            int trackB = RunTrackBCheck.IsChecked == true
-                ? CountChecked(BTrailing, BSpace, BPeriod, BCapitalize, BFlatten, BMemberBlank,
-                    BOneDeclaration, BOneStatement, BContinuation, BLinqAlign, BBlockPromote)
-                : 0;
-            int reviewNeeded = CountChecked(ASForeachCast, ASNullVar, ASObjectVarNarrowing, ASLocalConst,
-                ASArrayVarNarrowing, ASForHoist, BBlockPromote);
-            int total = trackA + trackB;
-            bool trackC = RunTrackCCheck.IsChecked == true;
+            ActiveTrack track = CurrentTrack();
             int selectedFiles = _currentScope?.SelectedFiles.Count ?? 0;
             int totalFiles = _currentScope?.TotalFiles ?? 0;
             int excludedFiles = _currentScope?.ExcludedFiles ?? 0;
@@ -1036,16 +1081,50 @@ namespace SparrowRunner.Gui
             SummaryTargetText.Text = string.IsNullOrEmpty(target)
                 ? "대상 경로가 필요합니다."
                 : target;
-            SummaryRulesText.Text = trackC
-                ? $"선택 규칙 {total}개 · Track C 포함"
-                : $"선택 규칙 {total}개";
 
             string mode = DryRunCheck.IsChecked == true
                 ? "DryRun: 파일을 변경하지 않고 후보만 확인"
                 : CommitCheck.IsChecked == true
                     ? "규칙별 커밋: 규칙 단위로 변경을 묶음"
                     : "파일만 수정: 커밋은 생성하지 않음";
-            SummaryModeText.Text = $"{mode} / A {trackA} · B {trackB} · C {(trackC ? "ON" : "OFF")} · 검토필요 {reviewNeeded} · 선택 파일 {selectedFiles}";
+
+            switch (track)
+            {
+                case ActiveTrack.A:
+                {
+                    int count = CountChecked(ASObjectVarSafe, ASObviousVar, ASArrayVarSafe, ASParens, ASForeachCast,
+                        ASObjectInitializer, ASNullVar, ASObjectVarNarrowing, ASLocalConst, ASArrayVarNarrowing,
+                        ASForVar, ASFieldSplit, ASEmptyStmt, ASForHoist);
+                    int review = CountChecked(ASForeachCast, ASNullVar, ASObjectVarNarrowing, ASLocalConst,
+                        ASArrayVarNarrowing, ASForHoist);
+                    SummaryRulesText.Text = $"실행 트랙 A · 선택 규칙 {count}개";
+                    SummaryModeText.Text = $"{mode} · 검토필요 {review} · 선택 파일 {selectedFiles}";
+                    break;
+                }
+                case ActiveTrack.B:
+                {
+                    int count = CountChecked(BTrailing, BSpace, BPeriod, BCapitalize, BFlatten, BMemberBlank,
+                        BOneDeclaration, BOneStatement, BContinuation, BLinqAlign, BBlockPromote);
+                    int review = CountChecked(BBlockPromote);
+                    SummaryRulesText.Text = $"실행 트랙 B · 선택 규칙 {count}개";
+                    SummaryModeText.Text = $"{mode} · 검토필요 {review} · 선택 파일 {selectedFiles}";
+                    break;
+                }
+                case ActiveTrack.C:
+                {
+                    int severity = CountChecked(TrackCSevVeryHigh, TrackCSevHigh, TrackCSevRisk, TrackCSevMedium, TrackCSevLow);
+                    SummaryRulesText.Text = severity > 0
+                        ? $"실행 트랙 C · 심각도 {severity}종 필터"
+                        : "실행 트랙 C · 전체 심각도";
+                    SummaryModeText.Text = $"XLS → requests 패키지 생성 · 선택 파일 {selectedFiles}";
+                    break;
+                }
+                default:
+                    // 옵션 탭: 실행 트랙이 아니다.
+                    SummaryRulesText.Text = "실행할 트랙 탭(A/B/C)을 선택하세요";
+                    SummaryModeText.Text = $"옵션 탭은 공통 설정입니다 · 선택 파일 {selectedFiles}";
+                    break;
+            }
         }
         private static int CountChecked(params CheckBox[] boxes)
         {
@@ -1090,7 +1169,9 @@ namespace SparrowRunner.Gui
 
         private void SetRunning(bool running)
         {
-            RunButton.IsEnabled = !running;
+            // 실행 중에는 무조건 비활성. 종료 후에는 활성 트랙(옵션 탭이면 비활성)에 맞춰 상태를 복원한다.
+            if (running) RunButton.IsEnabled = false;
+            else UpdateRunButtonForTrack();
             StopButton.IsEnabled = running;
             BrowseFileButton.IsEnabled = !running;
             BrowseFolderButton.IsEnabled = !running;

@@ -274,16 +274,9 @@
                                                 <Button x:Name="BrowseTrackCXlsButton" Grid.Column="1" Content="XLS 선택"
                                                         Margin="8,0,0,0" Click="BrowseTrackCXlsButton_Click"/>
                                             </Grid>
-                                            <TextBlock Text="references 경로" Style="{StaticResource MutedText}" Margin="0,0,0,4"/>
-                                            <Grid>
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="*"/>
-                                                    <ColumnDefinition Width="Auto"/>
-                                                </Grid.ColumnDefinitions>
-                                                <TextBox x:Name="TrackCReferencesPathBox" Style="{StaticResource InputBox}"/>
-                                                <Button x:Name="BrowseTrackCReferencesButton" Grid.Column="1" Content="폴더 선택"
-                                                        Margin="8,0,0,0" Click="BrowseTrackCReferencesButton_Click"/>
-                                            </Grid>
+                                            <TextBlock Text="체커 가이드: 스킬 references 폴더 고정"
+                                                       Foreground="{StaticResource TextTertiaryBrush}" FontSize="12"
+                                                       TextWrapping="Wrap" Margin="0,0,0,4"/>
                                         </StackPanel>
                                         <StackPanel Grid.Column="2">
                                             <TextBlock Text="출력/관리" Style="{StaticResource SectionTitle}"/>

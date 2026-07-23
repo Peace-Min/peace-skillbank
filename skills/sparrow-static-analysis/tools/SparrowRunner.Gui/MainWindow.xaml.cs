@@ -23,6 +23,9 @@ namespace SparrowRunner.Gui
     {
         private readonly string _skillRoot;
         private readonly string _toolsDir;
+
+        // Track C 체커 가이드는 스킬 번들에 동봉된 고정 폴더다(에어갭 반입 단위). 사용자 편집 불가.
+        private string ReferencesRoot => Path.Combine(_skillRoot, "references");
         private readonly Dictionary<string, RuleInfo> _ruleInfos = new Dictionary<string, RuleInfo>(StringComparer.Ordinal);
         private CancellationTokenSource? _cts;
         private CancellationTokenSource? _scopeCts;
@@ -40,7 +43,6 @@ namespace SparrowRunner.Gui
 
             _skillRoot = ResolveSkillRoot();
             _toolsDir = Path.Combine(_skillRoot, "tools");
-            TrackCReferencesPathBox.Text = Path.Combine(_skillRoot, "references");
             AppendLog("GUI 준비 완료");
             InitializeRuleInfo();
             ShowRuleInfo(nameof(ASObjectVarSafe));
@@ -118,14 +120,9 @@ namespace SparrowRunner.Gui
 
         private void OpenRuleManagerButton_Click(object sender, RoutedEventArgs e)
         {
-            // Guides dir = the same references\checkers Track C prepare uses. Fall back to the skill default
-            // when the references box is empty. The store creates the folder on first Add if it is missing.
-            string referencesRoot = TrackCReferencesPathBox.Text.Trim().Trim('"');
-            if (string.IsNullOrEmpty(referencesRoot))
-            {
-                referencesRoot = Path.Combine(_skillRoot, "references");
-            }
-            string guidesDir = Path.Combine(referencesRoot, "checkers");
+            // Guides dir = the same references\checkers Track C prepare uses. references is a fixed
+            // bundled folder. The store creates the checkers folder on first Add if it is missing.
+            string guidesDir = Path.Combine(ReferencesRoot, "checkers");
             string? xls = string.IsNullOrWhiteSpace(TrackCXlsPathBox.Text)
                 ? null
                 : TrackCXlsPathBox.Text.Trim().Trim('"');
@@ -141,20 +138,6 @@ namespace SparrowRunner.Gui
             window.Closed += (_, _) => _ruleManager = null;
             _ruleManager = window;
             window.Show();
-        }
-
-        private void BrowseTrackCReferencesButton_Click(object sender, RoutedEventArgs e)
-        {
-            var dlg = new OpenFolderDialog
-            {
-                Title = "sparrow-static-analysis references 폴더 선택"
-            };
-            string current = TrackCReferencesPathBox.Text.Trim();
-            if (Directory.Exists(current)) dlg.InitialDirectory = current;
-            if (dlg.ShowDialog(this) == true)
-            {
-                TrackCReferencesPathBox.Text = dlg.FolderName;
-            }
         }
 
         private async void RunButton_Click(object sender, RoutedEventArgs e)
@@ -216,8 +199,7 @@ namespace SparrowRunner.Gui
                 return;
             }
 
-            string referencesRoot = TrackCReferencesPathBox.Text.Trim().Trim('"');
-            if (runTrackC && !ValidateTrackCReferences(referencesRoot))
+            if (runTrackC && !ValidateTrackCReferences(ReferencesRoot))
             {
                 TryDeleteFile(scopeManifest);
                 return;
@@ -248,7 +230,7 @@ namespace SparrowRunner.Gui
                 {
                     _cts.Token.ThrowIfCancellationRequested();
                     SummaryModeText.Text = "Track C XLS/LLM 작업 패키지 생성 중";
-                    _lastTrackCOutputDir = await RunTrackCAsync(trackCXls, referencesRoot, scope.RootPath, scopeManifest, _cts.Token);
+                    _lastTrackCOutputDir = await RunTrackCAsync(trackCXls, ReferencesRoot, scope.RootPath, scopeManifest, _cts.Token);
                     OpenTrackCOutputButton.IsEnabled = Directory.Exists(_lastTrackCOutputDir);
                 }
 
@@ -806,8 +788,9 @@ namespace SparrowRunner.Gui
         {
             if (string.IsNullOrEmpty(referencesRoot) || !Directory.Exists(referencesRoot))
             {
-                MessageBox.Show(this, "Track C references 폴더를 찾을 수 없습니다.", "references 확인",
-                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(this,
+                    "체커 가이드 폴더(references)를 찾을 수 없습니다. 스킬 폴더 전체를 반입했는지 확인하세요:\n\n" + referencesRoot,
+                    "references 확인", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return false;
             }
 
@@ -818,7 +801,8 @@ namespace SparrowRunner.Gui
             if (!Directory.Exists(guidesDir) || !File.Exists(promptPath) || !File.Exists(conventionsPath) || !File.Exists(templatePath))
             {
                 MessageBox.Show(this,
-                    "Track C references 경로가 올바르지 않습니다.\n\n필요 항목:\n- checkers 폴더\n- triage/triage-prompt.md\n- triage/folder-instruction-template.md\n- project-conventions.md",
+                    "체커 가이드 폴더(references)의 구성이 올바르지 않습니다. 스킬 폴더 전체를 반입했는지 확인하세요.\n\n" + referencesRoot
+                    + "\n\n필요 항목:\n- checkers 폴더\n- triage/triage-prompt.md\n- triage/folder-instruction-template.md\n- project-conventions.md",
                     "references 확인", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return false;
             }
@@ -1116,12 +1100,10 @@ namespace SparrowRunner.Gui
             ScopeTree.IsEnabled = !running;
             BrowseTrackCXlsButton.IsEnabled = !running;
             BrowseTrackCOutputButton.IsEnabled = !running;
-            BrowseTrackCReferencesButton.IsEnabled = !running;
             RulesTabs.IsEnabled = !running;
             TargetPathBox.IsEnabled = !running;
             TrackCXlsPathBox.IsEnabled = !running;
             TrackCOutputPathBox.IsEnabled = !running;
-            TrackCReferencesPathBox.IsEnabled = !running;
             StatusText.Text = running ? "실행 중..." : "대기 중";
         }
 

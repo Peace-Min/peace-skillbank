@@ -10,6 +10,7 @@ param(
     [switch]$IncludeSparrowRealXlsForHoistTests, # opt-in: also run the real-xls forhoist detect+fix regression (verbatim xls code; needs .NET SDK + Roslyn)
     [switch]$IncludeSparrowRealXlsContinuationDeepTests, # opt-in: also run the real-xls deep-continuation normalize regression (verbatim xls code; needs .NET SDK + Roslyn)
     [switch]$IncludeSparrowRealXlsBlockPromoteTests, # opt-in: also run the real-xls blockpromote detect+fix regression (inline /* */ -> // above stmt; needs .NET SDK + Roslyn)
+    [switch]$IncludeSparrowRealXlsScopeLoopTests, # opt-in: also run the real-xls Track C scope-selection loop (cross-PC dir/file scoping; needs .NET SDK + the xls in Downloads; self-skips if absent)
     [switch]$IncludeSparrowExhaustiveXls # opt-in: exhaustive Track A/B coverage over the REAL OSTES xls (needs .NET SDK + the xls in Downloads; self-skips if absent)
 )
 
@@ -291,6 +292,16 @@ $sparrowRealXlsBlockPromote = Join-Path $RepositoryRoot "tests\sparrow-realxls-b
 Assert-Condition (Test-Path -LiteralPath $sparrowRealXlsBlockPromote) "Missing Sparrow real-xls blockpromote test script"
 Test-PowerShellSyntax -Path $sparrowRealXlsBlockPromote
 if ($IncludeSparrowRealXlsBlockPromoteTests) { & $sparrowRealXlsBlockPromote -RepositoryRoot $RepositoryRoot }
+
+# Track C directory/file SCOPE selection (team collaboration): reconstruct the REAL project structure from
+# the OSTES xls into a mirror checkout at a DIFFERENT root (cross-PC) and loop many folder/file selections
+# through SparrowXlsExport (--files-from + --root), asserting Tier-2 relative-tail matching narrows exactly to
+# the selection (per-folder counts, View-vs-ViewModel boundary, disjoint union, wrong-selection [범위 불일치]
+# diagnostic, idempotency, no cross-folder leak). Self-skips (not fails) when the .xls/SDK is absent.
+$sparrowRealXlsScopeLoop = Join-Path $RepositoryRoot "tests\sparrow-realxls-scope-loop-tests.ps1"
+Assert-Condition (Test-Path -LiteralPath $sparrowRealXlsScopeLoop) "Missing Sparrow real-xls scope-loop test script"
+Test-PowerShellSyntax -Path $sparrowRealXlsScopeLoop
+if ($IncludeSparrowRealXlsScopeLoopTests) { & $sparrowRealXlsScopeLoop -RepositoryRoot $RepositoryRoot }
 
 # EXHAUSTIVE Sparrow Track A/B xls coverage: extract the REAL flagged code of EVERY Track A/B finding in the
 # OSTES issues .xls, generate a parseable snippet for each, run the matching tool+rule over all of them, and

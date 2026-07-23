@@ -631,6 +631,18 @@ namespace SparrowRunner.Gui
                     log.WriteLine("[1/3] XLS 내부 파싱: GUI 출력에는 중간 산출물을 남기지 않습니다.");
                     ExportResult parse = SparrowExporter.Run(exportOptions, null);
 
+                    // 범위 필터 진단: 선택한 소스가 이 xls의 검출 경로와 하나도 안 맞으면(다른 체크아웃/잘못된 폴더)
+                    // 조용한 빈 결과 대신 운영자에게 원인을 로그로 알린다. Tier-2 모호 매칭은 소프트 경고로 남긴다.
+                    if (parse.ScopeDiagnostic != null)
+                    {
+                        log.WriteLine("");
+                        log.WriteLine(parse.ScopeDiagnostic);
+                    }
+                    if (parse.ScopeAmbiguousWarning != null)
+                    {
+                        log.WriteLine(parse.ScopeAmbiguousWarning);
+                    }
+
                     cancellationToken.ThrowIfCancellationRequested();
                     log.WriteLine("[2/3] LLM 작업 요청 조립: requests만 최종 산출물로 사용합니다.");
                     var prepareOptions = new PrepareOptions

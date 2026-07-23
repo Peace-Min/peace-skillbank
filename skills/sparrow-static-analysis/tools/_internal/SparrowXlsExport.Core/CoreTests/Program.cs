@@ -77,6 +77,9 @@ internal static class Program
             Console.WriteLine("\n==== F. FilesFrom source scope filter ====");
             TestFilesFromScopeFilter(work);
 
+            Console.WriteLine("\n==== G. Cross-PC relative-tail scope match + diagnostics ====");
+            TestCrossPcScopeFilter(work);
+
             Check(File.Exists(consoleExe), "precondition: console exe exists", consoleExe);
             if (!fixturesOnly) Check(File.Exists(realXls), "precondition: real xls exists", realXls);
             Check(File.Exists(runTriage), "precondition: Run-Triage.ps1 exists", runTriage);
@@ -480,6 +483,113 @@ internal static class Program
             FilesFrom = emptyFilesFrom,
         }, TextWriter.Null);
         Check(emptyResult.WrittenCount == 0, "F: empty files-from matches zero rows", "written=" + emptyResult.WrittenCount);
+    }
+
+    // G. Cross-PC scope: ONE shared xls (paths from PC-A's D:\ checkout) filtered against a teammate's selection
+    // taken from a DIFFERENT root (their own checkout). Tier-2 relative-tail matching must make same-named files
+    // at different absolute roots match, at a directory boundary, and must emit the [범위 불일치] diagnostic when a
+    // non-empty selection matches nothing (the real, empirically-proven failure), plus a [범위 경고] on ambiguity.
+    private static void TestCrossPcScopeFilter(string work)
+    {
+        // Teammate-B's OWN checkout root; the xls carries PC-A's unrelated D:\ paths that DO NOT exist here.
+        string root = Path.Combine(work, "g-myproj", "OSTES");
+        string viewDir = Path.Combine(root, "View");
+        Directory.CreateDirectory(viewDir);
+        string fooSel = Path.Combine(viewDir, "Foo.cs");
+        string rootFooSel = Path.Combine(root, "Foo.cs");   // a second file whose tail is just "Foo.cs" (ambiguity source)
+        foreach (string f in new[] { fooSel, rootFooSel }) File.WriteAllText(f, "class X {}\n", new UTF8Encoding(false));
+
+        // --- G1: cross-drive relative match (THE failing scenario) + directory-boundary correctness ---
+        string filesFrom1 = Path.Combine(work, "g1.csv");
+        File.WriteAllText(filesFrom1, "파일명\n" + CsvLine(fooSel) + "\n", new UTF8Encoding(false));   // select ONLY View\Foo.cs
+
+        string xls1 = Path.Combine(work, "g1.xls");
+        WriteSyntheticXls(xls1,
+            new[] { "ID", "체커 키", "위험도", "파일명", "라인", "경로", "체커 설명", "소스 코드" },
+            new[]
+            {
+                // different DRIVE, same relative tail View\Foo.cs -> Tier-2 KEEP
+                new[] { "1", "G_CROSS_DRIVE", "보통", "Foo.cs", "10", @"D:\Work\OSTES\branches\rel\OSTES\View\Foo.cs", "cross-drive", "  10: A();" },
+                // same basename, WRONG parent dir (OtherView) -> boundary must REJECT
+                new[] { "2", "G_WRONG_BOUNDARY", "보통", "Foo.cs", "11", @"D:\Work\OSTES\OtherView\Foo.cs", "false boundary", "  11: B();" },
+                // deeper path ending at a real boundary (SubView\View\Foo.cs) -> Tier-2 KEEP
+                new[] { "3", "G_DEEP_BOUNDARY", "보통", "Foo.cs", "12", @"D:\Work\OSTES\SubView\View\Foo.cs", "deep boundary", "  12: C();" },
+            });
+
+        string out1 = Path.Combine(work, "g1_out");
+        ExportResult r1 = SparrowExporter.Run(new ExportOptions
+        {
+            InputPath = xls1, OutDir = out1, RootPath = root, FilesFrom = filesFrom1,
+        }, TextWriter.Null);
+        string idx1 = ReadText(Path.Combine(out1, "index.csv"));
+        Check(r1.WrittenCount == 2, "G1: cross-drive + deep-boundary kept, wrong-boundary dropped", "written=" + r1.WrittenCount);
+        Check(idx1.Contains("G_CROSS_DRIVE", StringComparison.Ordinal), "G1: cross-drive (D:\\ vs local root, same tail) KEPT via Tier-2");
+        Check(idx1.Contains("G_DEEP_BOUNDARY", StringComparison.Ordinal), "G1: SubView\\View\\Foo.cs matches View\\Foo.cs at boundary");
+        Check(!idx1.Contains("G_WRONG_BOUNDARY", StringComparison.Ordinal), "G1: OtherView\\Foo.cs does NOT match View\\Foo.cs (no false boundary)");
+        Check(!r1.ScopeMismatch && r1.ScopeDiagnostic == null, "G1: some rows matched -> no [범위 불일치] diagnostic");
+        Check(r1.ScopeAmbiguousWarning == null, "G1: single selected tail -> no ambiguity warning");
+
+        // --- G2: total zero-match under a non-empty selection -> [범위 불일치] diagnostic + WrittenCount 0 ---
+        string filesFrom2 = Path.Combine(work, "g2.csv");
+        File.WriteAllText(filesFrom2, "파일명\n" + CsvLine(fooSel) + "\n", new UTF8Encoding(false));   // select View\Foo.cs
+
+        string xls2 = Path.Combine(work, "g2.xls");
+        WriteSyntheticXls(xls2,
+            new[] { "ID", "체커 키", "위험도", "파일명", "라인", "경로", "체커 설명", "소스 코드" },
+            new[]
+            {
+                new[] { "1", "G_NOMATCH_A", "보통", "Bar.cs", "10", @"D:\Work\OSTES\Service\Bar.cs", "no tail match", "  10: A();" },
+                new[] { "2", "G_NOMATCH_B", "보통", "Baz.cs", "11", @"D:\Work\OSTES\Model\Baz.cs", "no tail match", "  11: B();" },
+            });
+
+        string out2 = Path.Combine(work, "g2_out");
+        ExportResult r2 = SparrowExporter.Run(new ExportOptions
+        {
+            InputPath = xls2, OutDir = out2, RootPath = root, FilesFrom = filesFrom2,
+        }, TextWriter.Null);
+        Check(r2.WrittenCount == 0, "G2: non-empty selection matching no xls row writes 0", "written=" + r2.WrittenCount);
+        Check(r2.ScopeMismatch, "G2: ScopeMismatch flag set on total zero-match under a non-empty selection");
+        Check(r2.ScopeDiagnostic != null && r2.ScopeDiagnostic!.Contains("[범위 불일치]", StringComparison.Ordinal),
+              "G2: [범위 불일치] diagnostic present", r2.ScopeDiagnostic ?? "(null)");
+        Check(r2.ScopeDiagnostic != null && r2.ScopeDiagnostic!.Contains("2건 중 0건", StringComparison.Ordinal),
+              "G2: diagnostic reports N-of-0 matched (2건 중 0건)");
+        Check(r2.ScopeDiagnostic != null && r2.ScopeDiagnostic!.Contains(@"D:\Work\OSTES\Service\Bar.cs", StringComparison.Ordinal),
+              "G2: diagnostic includes an example xls 경로");
+        Check(r2.ScopeDiagnostic != null && r2.ScopeDiagnostic!.Contains(Path.Combine("View", "Foo.cs"), StringComparison.Ordinal),
+              "G2: diagnostic includes an example selected relative tail");
+
+        // --- G2b: legitimate zero-finding selection is NOT flagged as a mismatch (empty selection) ---
+        string emptySel = Path.Combine(work, "g2b.csv");
+        File.WriteAllText(emptySel, "파일명\n", new UTF8Encoding(false));
+        ExportResult r2b = SparrowExporter.Run(new ExportOptions
+        {
+            InputPath = xls2, OutDir = Path.Combine(work, "g2b_out"), RootPath = root, FilesFrom = emptySel,
+        }, TextWriter.Null);
+        Check(r2b.WrittenCount == 0 && !r2b.ScopeMismatch && r2b.ScopeDiagnostic == null,
+              "G2b: empty selection -> 0 written but NO mismatch diagnostic (not the wrong-root case)");
+
+        // --- G3: ambiguous over-match. Selecting both View\Foo.cs (tail View\Foo.cs) and Foo.cs (tail Foo.cs)
+        // makes an xls row D:\...\View\Foo.cs hit BOTH tails -> kept + [범위 경고] warning. ---
+        string filesFrom3 = Path.Combine(work, "g3.csv");
+        File.WriteAllText(filesFrom3, "파일명\n" + CsvLine(fooSel) + "\n" + CsvLine(rootFooSel) + "\n", new UTF8Encoding(false));
+
+        string xls3 = Path.Combine(work, "g3.xls");
+        WriteSyntheticXls(xls3,
+            new[] { "ID", "체커 키", "위험도", "파일명", "라인", "경로", "체커 설명", "소스 코드" },
+            new[]
+            {
+                new[] { "1", "G_AMBIGUOUS", "보통", "Foo.cs", "10", @"D:\Work\OSTES\rel\View\Foo.cs", "matches View\\Foo.cs and Foo.cs", "  10: A();" },
+            });
+
+        string out3 = Path.Combine(work, "g3_out");
+        ExportResult r3 = SparrowExporter.Run(new ExportOptions
+        {
+            InputPath = xls3, OutDir = out3, RootPath = root, FilesFrom = filesFrom3,
+        }, TextWriter.Null);
+        Check(r3.WrittenCount == 1, "G3: ambiguous row kept (fail-open for coverage)", "written=" + r3.WrittenCount);
+        Check(r3.ScopeAmbiguousWarning != null && r3.ScopeAmbiguousWarning!.Contains("[범위 경고]", StringComparison.Ordinal),
+              "G3: [범위 경고] ambiguous over-match warning present", r3.ScopeAmbiguousWarning ?? "(null)");
+        Check(!r3.ScopeMismatch, "G3: ambiguous-but-matched -> not a mismatch");
     }
 
     private static string CsvLine(string value)

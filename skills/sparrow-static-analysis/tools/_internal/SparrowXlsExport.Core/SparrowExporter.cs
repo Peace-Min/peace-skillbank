@@ -64,6 +64,21 @@ namespace SparrowXlsExport.Core
         public int UniqueCheckers;
         public IReadOnlyList<(string Sev, int Count)> SeverityCounts = Array.Empty<(string, int)>();
         public int MergedRegions;
+
+        /// <summary>
+        /// True when scope filtering (FilesFrom) was active with a non-empty selection over a non-empty xls,
+        /// yet NOTHING matched (Tier-1 absolute AND Tier-2 relative-tail both failed for every row). This is the
+        /// tell-tale "wrong project / different checkout path structure" situation — distinct from a legitimate
+        /// selection that genuinely has zero findings.
+        /// </summary>
+        public bool ScopeMismatch;
+
+        /// <summary>Actionable Korean diagnostic ([범위 불일치] block) when <see cref="ScopeMismatch"/>; else null.</summary>
+        public string? ScopeDiagnostic;
+
+        /// <summary>Softer Korean note ([범위 경고]) when some rows were kept via an AMBIGUOUS Tier-2 relative-tail
+        /// over-match (matched more than one distinct selected file); null when no ambiguous matches occurred.</summary>
+        public string? ScopeAmbiguousWarning;
     }
 
     /// <summary>Deterministic Sparrow .xls -&gt; split-outputs exporter. Stateless; safe to call repeatedly.</summary>
@@ -187,6 +202,13 @@ namespace SparrowXlsExport.Core
                 scopedRecords = records.Where(rec => scopeMatcher.Keep(GV(rec.Vals, CPath), GV(rec.Vals, CFileName))).ToList();
             }
 
+            // Scope diagnostics: distinguish a total path-structure mismatch (0 kept from a non-empty selection over a
+            // non-empty xls — the cross-PC "wrong checkout root" case) from a legitimate zero-finding selection, and
+            // surface an ambiguous Tier-2 over-match note. Populated on ExportResult for the CLI (stderr) and GUI (log).
+            string? scopeDiagnostic = null;
+            string? scopeAmbiguousWarning = null;
+            scopeMatcher?.BuildDiagnostics(records.Count, out scopeDiagnostic, out scopeAmbiguousWarning);
+
             // Filters (AND-combined). Scope is applied first; severity = exact-match set; checker/status = case-insensitive substring.
             var matched = scopedRecords.Where(rec =>
             {
@@ -268,15 +290,38 @@ namespace SparrowXlsExport.Core
                 UniqueCheckers = uniqueCheckers,
                 SeverityCounts = sevCounts.Select(x => (x.Sev, x.C)).ToList(),
                 MergedRegions = mergedRegions,
+                ScopeMismatch = scopeDiagnostic != null,
+                ScopeDiagnostic = scopeDiagnostic,
+                ScopeAmbiguousWarning = scopeAmbiguousWarning,
             };
         }
 
+        // Cross-PC scope filter. The collaboration model is ONE authoritative Sparrow xls (paths from PC-A's
+        // checkout, e.g. D:\Work\OSTES\...) whose findings a team divides by file; each teammate selects files
+        // from their OWN checkout at their OWN root (e.g. C:\myproj\OSTES\...). So matching MUST be drive/prefix-
+        // independent. Three tiers, applied in order per row:
+        //   Tier 1 — absolute exact (same-PC, fastest): any BuildCandidates() absolute path is in _selected.
+        //   Tier 2 — relative-tail (cross-PC): the xls 경로 ENDS WITH a selected file's path-relative-to-_root at a
+        //            directory boundary (full relative tail, not just basename, to minimize over-match).
+        //   Tier 3 — empty-경로 basename fallback: only when the xls 경로 is empty AND the basename is unique both in
+        //            the selection and under _root.
         private sealed class SourceScopeMatcher
         {
             private readonly string? _root;
             private readonly HashSet<string> _selected;
             private readonly Dictionary<string, List<string>> _byName;
             private readonly Dictionary<string, List<string>> _allByName;
+
+            // Tier 2 index: normalized (separator + case folded) relative tail -> selected absolute paths that
+            // produced it. A tail keyed to >1 selected path, or one row hitting >1 tail, is an ambiguous over-match.
+            private readonly Dictionary<string, List<string>> _relTailMap;
+            private readonly List<string> _relTailDisplay = new List<string>();   // original-case tails, for diagnostics
+
+            // Outcome accounting across the whole run (Keep is called once per data row).
+            private int _examined;        // rows the scope filter looked at
+            private int _kept;            // rows kept by any tier
+            private int _ambiguousKept;   // rows kept via an AMBIGUOUS Tier-2 match (>=2 distinct tails)
+            private readonly List<string> _sampleXlsPaths = new List<string>();   // first couple non-empty 경로 values
 
             private SourceScopeMatcher(string? root, HashSet<string> selected, IEnumerable<string> allSourceFiles)
             {
@@ -288,6 +333,27 @@ namespace SparrowXlsExport.Core
                 _allByName = allSourceFiles
                     .GroupBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase)
                     .ToDictionary(g => g.Key ?? "", g => g.ToList(), StringComparer.OrdinalIgnoreCase);
+
+                // Precompute the relative-tail -> selected map once. Only files genuinely UNDER _root yield a clean
+                // relative tail; anything outside (rooted elsewhere / .. traversal) is skipped for Tier 2.
+                _relTailMap = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+                if (_root != null)
+                {
+                    foreach (string sel in selected)
+                    {
+                        string? tail = GetRelativeTail(_root, sel);
+                        if (tail == null) continue;
+                        string norm = NormalizeTail(tail);
+                        if (norm.Length == 0) continue;
+                        if (!_relTailMap.TryGetValue(norm, out List<string>? list))
+                        {
+                            list = new List<string>();
+                            _relTailMap[norm] = list;
+                            _relTailDisplay.Add(tail);
+                        }
+                        list.Add(sel);
+                    }
+                }
             }
 
             public static SourceScopeMatcher? Create(string? rootPath, string? filesFrom)
@@ -318,24 +384,126 @@ namespace SparrowXlsExport.Core
 
             public bool Keep(string pathCell, string fileNameCell)
             {
+                _examined++;
                 string fileName = (fileNameCell ?? "").Trim();
                 string path = (pathCell ?? "").Trim();
+                RecordSampleXlsPath(path);
 
+                // Tier 1 — absolute exact (same-PC).
                 foreach (string candidate in BuildCandidates(path, fileName))
                 {
-                    if (_selected.Contains(candidate)) return true;
+                    if (_selected.Contains(candidate)) { _kept++; return true; }
                 }
 
+                // Tier 2 — relative-tail (cross-PC). Requires _root; skipped when 경로 is empty.
+                if (TryMatchRelativeTail(path, out bool ambiguous))
+                {
+                    _kept++;
+                    if (ambiguous) _ambiguousKept++;
+                    return true;
+                }
+
+                // Tier 3 — empty-경로 basename fallback (unchanged): basename unique in selection AND under root.
                 if (path.Length == 0 && fileName.Length > 0 &&
                     _byName.TryGetValue(Path.GetFileName(fileName), out List<string>? sameName) &&
                     sameName.Count == 1 &&
                     _allByName.TryGetValue(Path.GetFileName(fileName), out List<string>? sameNameInRoot) &&
                     sameNameInRoot.Count == 1)
                 {
+                    _kept++;
                     return true;
                 }
 
                 return false;
+            }
+
+            // Tier 2: does the xls 경로 end with any selected file's full relative-to-root tail, at a directory
+            // boundary? A boundary means the whole normalized path equals the tail, or the char just before the tail
+            // is a separator — so tail "View\Foo.cs" matches "...\View\Foo.cs" and "...\SubView\View\Foo.cs" but NOT
+            // "...\OtherView\Foo.cs". Sets ambiguous=true (still a match — fail open) when the row hits >=2 distinct
+            // selected tails, i.e. the finding could belong to more than one selected file.
+            private bool TryMatchRelativeTail(string path, out bool ambiguous)
+            {
+                ambiguous = false;
+                if (_root == null || _relTailMap.Count == 0 || path.Length == 0) return false;
+
+                string norm = NormalizeTail(path);
+                int matchedTails = 0;
+                foreach (string tail in _relTailMap.Keys)
+                {
+                    if (norm.Length < tail.Length) continue;
+                    if (norm.Equals(tail, StringComparison.Ordinal) ||
+                        norm.EndsWith(Path.DirectorySeparatorChar + tail, StringComparison.Ordinal))
+                    {
+                        matchedTails++;
+                        if (matchedTails >= 2) break;
+                    }
+                }
+
+                if (matchedTails == 0) return false;
+                ambiguous = matchedTails >= 2;
+                return true;
+            }
+
+            private void RecordSampleXlsPath(string path)
+            {
+                if (path.Length == 0 || _sampleXlsPaths.Count >= 2) return;
+                if (!_sampleXlsPaths.Contains(path, StringComparer.OrdinalIgnoreCase)) _sampleXlsPaths.Add(path);
+            }
+
+            // Full relative tail of a selected absolute path under root (original case, separators preserved), or null
+            // when it is not genuinely under root (rooted elsewhere / different drive / .. traversal).
+            private static string? GetRelativeTail(string root, string selected)
+            {
+                string relative;
+                try { relative = Path.GetRelativePath(root, selected); }
+                catch { return null; }
+                if (string.IsNullOrEmpty(relative) || relative == ".") return null;
+                if (Path.IsPathRooted(relative)) return null;   // GetRelativePath returns absolute when on another drive
+                if (relative == ".." ||
+                    relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal) ||
+                    relative.StartsWith("../", StringComparison.Ordinal))
+                    return null;
+                return relative;
+            }
+
+            // Normalize a path/tail for cross-PC comparison: fold '/' and '\' to the platform separator and lowercase
+            // (Windows paths are case-insensitive). Used for both the tail keys and the xls 경로 at match time.
+            private static string NormalizeTail(string s)
+            {
+                return s.Replace('/', Path.DirectorySeparatorChar)
+                        .Replace('\\', Path.DirectorySeparatorChar)
+                        .Trim()
+                        .ToLowerInvariant();
+            }
+
+            // Build the run-level scope diagnostics. mismatch = the actionable [범위 불일치] block emitted ONLY for a
+            // total zero-match under a non-empty selection over a non-empty xls (the cross-PC wrong-root case);
+            // ambiguousWarning = the softer [범위 경고] note when some rows were kept via ambiguous Tier-2 over-match.
+            public void BuildDiagnostics(int totalDataRows, out string? mismatch, out string? ambiguousWarning)
+            {
+                mismatch = null;
+                ambiguousWarning = null;
+
+                if (_selected.Count > 0 && _examined > 0 && _kept == 0)
+                {
+                    string xlsEx = _sampleXlsPaths.Count > 0 ? string.Join("  |  ", _sampleXlsPaths) : "(경로 없음)";
+                    string selEx = _relTailDisplay.Count > 0
+                        ? string.Join("  |  ", _relTailDisplay.Take(2))
+                        : "(상대경로 없음)";
+                    mismatch =
+                        "[범위 불일치] 선택한 소스(" + (_root ?? "(root 미지정)") + ")의 상대경로가 이 xls의 검출 경로와 하나도 "
+                        + "일치하지 않습니다. 같은 프로젝트의 다른 체크아웃인지, 선택 폴더가 맞는지 확인하세요. "
+                        + "(xls 검출 " + totalDataRows.ToString(CultureInfo.InvariantCulture) + "건 중 0건 매칭)\n"
+                        + "  xls 예: " + xlsEx + "   /   선택 예: " + selEx;
+                }
+
+                if (_ambiguousKept > 0)
+                {
+                    ambiguousWarning =
+                        "[범위 경고] 상대경로가 여러 선택 파일과 겹치는 검출 "
+                        + _ambiguousKept.ToString(CultureInfo.InvariantCulture) + "건은 포함했습니다.";
+                }
             }
 
             private IEnumerable<string> BuildCandidates(string path, string fileName)

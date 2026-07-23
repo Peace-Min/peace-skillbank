@@ -66,7 +66,19 @@ namespace SparrowXlsExport
                     Severities = severities,
                     Max = max,
                 };
-                SparrowExporter.Run(opts, Console.Out);   // Core writes the identical stdout summary.
+                ExportResult result = SparrowExporter.Run(opts, Console.Out);   // Core writes the identical stdout summary.
+
+                // Scope diagnostics go to STDERR so they never perturb the byte-compared stdout summary. Total
+                // zero-match under a non-empty selection is NOT a crash (exit stays 0) but must be loud, not silent.
+                if (result.ScopeDiagnostic != null)
+                {
+                    Console.Error.WriteLine();
+                    Console.Error.WriteLine(result.ScopeDiagnostic);
+                }
+                if (result.ScopeAmbiguousWarning != null)
+                {
+                    Console.Error.WriteLine(result.ScopeAmbiguousWarning);
+                }
                 return 0;
             }
             catch (Exception ex)

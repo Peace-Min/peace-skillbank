@@ -653,9 +653,6 @@ namespace SparrowRunner.Gui
 
             string finalOutputRoot = ResolveTrackCOutputRoot(inputXls, TrackCOutputPathBox.Text);
             string tracksValue = BuildTrackCTracksValue();
-            string? checkerValue = string.IsNullOrWhiteSpace(TrackCCheckerBox.Text) ? null : TrackCCheckerBox.Text.Trim();
-            string? severityValue = BuildTrackCSeverityValue();
-            int? maxValue = ParseNullableInt(TrackCMaxBox.Text);
             var log = new DispatcherTextWriter(Dispatcher, AppendLog);
 
             return await Task.Run(() =>
@@ -694,10 +691,7 @@ namespace SparrowRunner.Gui
                         ConventionsPath = conventionsPath,
                         TemplatePath = templatePath,
                         OutDir = parse.OutputDir,
-                        Checker = checkerValue,
-                        Severity = severityValue,
-                        Tracks = tracksValue,
-                        Max = maxValue
+                        Tracks = tracksValue
                     };
                     PrepareResult prepare = TriagePreparer.Prepare(prepareOptions, null);
 
@@ -738,27 +732,15 @@ namespace SparrowRunner.Gui
 
         private ExportOptions BuildTrackCExportOptions(string inputXls, string outputDir, string sourceRoot, string filesFrom)
         {
-            var severities = new HashSet<string>(StringComparer.Ordinal);
-            if (TrackCSevVeryHigh.IsChecked == true) severities.Add("매우위험");
-            if (TrackCSevHigh.IsChecked == true) severities.Add("높음");
-            if (TrackCSevRisk.IsChecked == true) severities.Add("위험");
-            if (TrackCSevMedium.IsChecked == true) severities.Add("보통");
-            if (TrackCSevLow.IsChecked == true) severities.Add("낮음");
-
-            var options = new ExportOptions
+            // 전건 수정 정책: 심각도/체커/Max 필터 없이 Sparrow 검출 전건을 대상으로 한다.
+            // (범위 필터 filesFrom/RootPath 은 팀 분담용 파일/폴더 선택이며 검출 제외가 아님.)
+            return new ExportOptions
             {
                 InputPath = inputXls,
                 OutDir = outputDir,
                 RootPath = sourceRoot,
-                FilesFrom = filesFrom,
-                Severities = severities,
-                Max = ParseNullableInt(TrackCMaxBox.Text)
+                FilesFrom = filesFrom
             };
-
-            string checker = TrackCCheckerBox.Text.Trim();
-            if (!string.IsNullOrEmpty(checker)) options.Checker = checker;
-
-            return options;
         }
 
         private static string ResolveTrackCOutputRoot(string inputXls, string configuredOutput)
@@ -824,22 +806,6 @@ namespace SparrowRunner.Gui
         private string BuildTrackCTracksValue()
         {
             return "A,B,C";
-        }
-
-        private string? BuildTrackCSeverityValue()
-        {
-            var severities = new List<string>();
-            if (TrackCSevVeryHigh.IsChecked == true) severities.Add("매우위험");
-            if (TrackCSevHigh.IsChecked == true) severities.Add("높음");
-            if (TrackCSevRisk.IsChecked == true) severities.Add("위험");
-            if (TrackCSevMedium.IsChecked == true) severities.Add("보통");
-            if (TrackCSevLow.IsChecked == true) severities.Add("낮음");
-            return severities.Count == 0 ? null : string.Join(",", severities);
-        }
-
-        private static int? ParseNullableInt(string value)
-        {
-            return int.TryParse(value.Trim(), out int parsed) ? parsed : null;
         }
 
         private bool ValidateTrackCReferences(string referencesRoot)
@@ -1112,10 +1078,7 @@ namespace SparrowRunner.Gui
                 }
                 case ActiveTrack.C:
                 {
-                    int severity = CountChecked(TrackCSevVeryHigh, TrackCSevHigh, TrackCSevRisk, TrackCSevMedium, TrackCSevLow);
-                    SummaryRulesText.Text = severity > 0
-                        ? $"실행 트랙 C · 심각도 {severity}종 필터"
-                        : "실행 트랙 C · 전체 심각도";
+                    SummaryRulesText.Text = "실행 트랙 C · 검출 전건(필터 없음)";
                     SummaryModeText.Text = $"XLS → requests 패키지 생성 · 선택 파일 {selectedFiles}";
                     break;
                 }

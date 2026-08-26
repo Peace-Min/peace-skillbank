@@ -45,7 +45,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$script:ToolVersion = '0.2.0'
+$script:ToolVersion = '0.3.0'
 $script:Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 if (-not $Dump -and $DumpPositional) { $Dump = $DumpPositional }
 
@@ -382,6 +382,46 @@ function Limit-Lines([string]$Text, [int]$Max) {
 }
 
 # ------------------------------------------------- managed stack grouping
+# ------------------------------------------ lock contention (auto-resolved)
+# SOS encodes MonitorHeld as 1 (owned) + 2 per waiting thread. So 1 = owned with
+# NO waiters (healthy); >= 3 means at least one thread is actually blocked.
+function Get-LockContention([string]$SyncBlkText) {
+    $rows = New-Object System.Collections.Generic.List[object]
+    if (-not $SyncBlkText) { return $rows }
+    foreach ($line in ($SyncBlkText -split "\r?\n")) {
+        if ($line -match '^\s*(\d+)\s+[0-9a-fA-F]+\s+(\d+)\s+\d+\s+[0-9a-fA-F]+\s+([0-9a-fA-F]+)\s') {
+            $held = [int]$Matches[2]
+            if ($held -ge 3) {
+                $rows.Add(@{
+                    Index    = $Matches[1]
+                    Held     = $held
+                    Waiters  = [int](($held - 1) / 2)
+                    OwnerTid = $Matches[3].ToLowerInvariant()
+                })
+            }
+        }
+    }
+    return $rows
+}
+
+# first frame that names real code, skipping SOS bookkeeping frames
+function Get-TopManagedFrame($Group) {
+    foreach ($f in $Group.Frames) {
+        if ($f -notmatch '^\[(GCFrame|HelperMethodFrame|DebuggerU2M|InlinedCallFrame|ContextTransitionFrame)') { return $f }
+    }
+    foreach ($f in $Group.Frames) {
+        if ($f -match '^\[[A-Za-z0-9_]+[^\]]*\]\s+(\S.+)$') { return $Matches[1] }
+    }
+    return '<no resolvable managed frame>'
+}
+
+function Find-GroupForTid($Groups, [string]$Tid) {
+    foreach ($g in $Groups) {
+        foreach ($t in $g.Value.Tids) { if ($t.ToLowerInvariant() -eq $Tid) { return $g } }
+    }
+    return $null
+}
+
 function Get-ManagedStackGroups([string]$ClrStackText) {
     $threads = New-Object System.Collections.Generic.List[object]
     $cur = $null
@@ -445,7 +485,7 @@ function Invoke-Analyze {
         $OutDir = Join-Path (Get-Location).Path ("dmp-triage-out\{0}-{1}" -f $dumpName, $stamp)
     }
     $rawDir = Join-Path $OutDir 'raw'
-    New-Item -ItemType Directory -Force -Path $rawDir | Out-Null
+    New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
     Write-Info "output: $OutDir"
 
     # ---- 1. pre-triage (pure PS, no dependencies)
@@ -454,6 +494,8 @@ function Invoke-Analyze {
     $pre = Read-MinidumpPreTriage -Path $Dump -ModuleCsvPath $modCsv
     foreach ($l in $pre.Lines) { Write-Host "    $l" }
 
+    $script:SlimFindings = New-Object System.Collections.Generic.List[string]
+    $script:SlimGroups = New-Object System.Collections.Generic.List[string]
     $report = New-Object System.Collections.Generic.List[string]
     $report.Add('# DMP Triage Report')
     $report.Add('')
@@ -489,6 +531,7 @@ function Invoke-Analyze {
         return
     }
     Write-Info "cdb: $cdb"
+    New-Item -ItemType Directory -Force -Path $rawDir | Out-Null
 
     $symArg = $null
     $symParts = @()
@@ -559,7 +602,7 @@ q
 .echo ===SECTION:managed_setup===
 .cordll -ve -u -l
 .loadby sos clr
-.load C:\Windows\Microsoft.NET\Framework64\v4.0.30319\sos.dll
+.loadby sos coreclr
 .chain
 .echo ===SECTION:threads===
 !threads
@@ -687,6 +730,51 @@ q
                 $report.Add('> and re-run with -SupportFiles <folder>.')
                 $report.Add('')
             }
+            # -- 7.0 auto-resolved contention join (done in code, not by the LLM)
+            $clrEarly = $managedSections['clrstack']
+            $groupsEarly = @()
+            if ($clrEarly) { $groupsEarly = @(Get-ManagedStackGroups $clrEarly) }
+            $contention = Get-LockContention $managedSections['syncblk']
+
+            $report.Add('### 7.0 Lock contention, auto-resolved (READ THIS FIRST)')
+            $report.Add('')
+            $report.Add('MonitorHeld encodes 1 (owned) + 2 per waiting thread, so only values >= 3 mean a')
+            $report.Add('thread is actually blocked. Rows below are already joined to their stacks.')
+            $report.Add('')
+            $report.Add('```')
+            if ($contention.Count -eq 0) {
+                $report.Add('NO MANAGED LOCK CONTENTION (no SyncBlock with MonitorHeld >= 3).')
+                $report.Add('If the process is hung, the cause is elsewhere: see section 5 (native stacks).')
+                $script:SlimFindings.Add('NO MANAGED LOCK CONTENTION (no SyncBlock with MonitorHeld >= 3).')
+            } else {
+                $blockedOwners = 0
+                foreach ($c in $contention) {
+                    $g = Find-GroupForTid $groupsEarly $c.OwnerTid
+                    $frame = if ($g) { Get-TopManagedFrame $g.Value } else { '<owner thread not found in managed stacks>' }
+                    # the blocking API sits in a SOS bookkeeping frame, so scan every frame
+                    $blockApi = ''
+                    if ($g) {
+                        foreach ($f in $g.Value.Frames) {
+                            if ($f -match '(System\.Threading\.Monitor\.(?:Enter|Wait)|WaitHandle\.WaitOne|Thread\.Join)') {
+                                $blockApi = $Matches[1]; break
+                            }
+                        }
+                    }
+                    if ($blockApi) { $blockedOwners++ }
+                    $state = if ($blockApi) { "BLOCKED in $blockApi, inside $frame" } else { "running $frame" }
+                    $line = ('CONTENDED SyncBlock {0}: MonitorHeld {1} ({2} waiter(s)) | owner OS tid {3} | owner is {4}' -f $c.Index, $c.Held, $c.Waiters, $c.OwnerTid, $state)
+                    $report.Add($line)
+                    $script:SlimFindings.Add($line)
+                }
+                if ($contention.Count -ge 2 -and $blockedOwners -ge 2) {
+                    $verdict = ('DEADLOCK PATTERN: {0} lock owners are themselves blocked waiting on a lock -> cycle.' -f $blockedOwners)
+                    $report.Add('')
+                    $report.Add($verdict)
+                    $script:SlimFindings.Add($verdict)
+                }
+            }
+            $report.Add('```')
+            $report.Add('')
             $report.Add('### 7.1 !threads')
             $report.Add('```')
             $report.Add((Limit-Lines $thr 140))
@@ -701,7 +789,7 @@ q
             $report.Add('')
             $clr = $managedSections['clrstack']
             if ($clr) {
-                $groups = @(Get-ManagedStackGroups $clr)
+                $groups = $groupsEarly
                 if ($groups.Count -gt 0) {
                     $gi = 0
                     foreach ($g in $groups) {
@@ -709,6 +797,18 @@ q
                         if ($gi -gt 25) { $report.Add("_... more groups in raw/managed.log_"); break }
                         $tids = $g.Value.Tids -join ', '
                         $report.Add("**Group $gi - $($g.Value.Tids.Count) thread(s)** (OS tid: $tids)")
+                        if ($g.Value.Tids.Count -le 3 -and -not $g.Value.Label) {
+                            $script:SlimGroups.Add("**Group $gi - $($g.Value.Tids.Count) thread(s)** (OS tid: $tids)")
+                            $script:SlimGroups.Add('```')
+                            $sfc = 0
+                            foreach ($sf in $g.Value.Frames) {
+                                $sfc++
+                                if ($sfc -gt 12) { $script:SlimGroups.Add('    ...'); break }
+                                $script:SlimGroups.Add("    $sf")
+                            }
+                            $script:SlimGroups.Add('```')
+                            $script:SlimGroups.Add('')
+                        }
                         if ($g.Value.Label) {
                             $report.Add("_$($g.Value.Label)_")
                         } else {
@@ -749,11 +849,44 @@ q
 
     $report.Add('---')
     $report.Add('Raw logs: `raw/native.log`, `raw/managed.log`. Full module inventory: `modules.csv`.')
-    $report.Add('Feed THIS FILE to the LLM first; pull raw log sections only when it asks for more.')
+    $report.Add('LLM: read section 1 and section 7.0 first (about 2 KB). Everything else only if those two')
+    $report.Add('are inconclusive. A slim extract of exactly those parts is written to report-slim.md.')
 
     $reportPath = Join-Path $OutDir 'report.md'
     Set-Content -Path $reportPath -Value $report -Encoding UTF8
+
+    # -- report-slim.md : the minimum set a small/offline model can hold in context
+    $slim = New-Object System.Collections.Generic.List[string]
+    $slim.Add('# DMP Triage - slim report (for small/offline models)')
+    $slim.Add('')
+    $slim.Add("- Dump: ``$Dump`` ($($pre.FileSizeText))")
+    $slim.Add("- Full report with all sections: ``report.md`` in this same folder")
+    $slim.Add('')
+    $slim.Add('## 1. What this dump is')
+    $slim.Add('```')
+    foreach ($l in $pre.Lines) { $slim.Add($l) }
+    $slim.Add('```')
+    $slim.Add('')
+    $slim.Add('## 2. Lock contention, already resolved for you')
+    $slim.Add('```')
+    if ($script:SlimFindings -and $script:SlimFindings.Count -gt 0) {
+        foreach ($l in $script:SlimFindings) { $slim.Add($l) }
+    } else {
+        $slim.Add('Managed (.NET) analysis did not run for this dump - see report.md section 7.')
+    }
+    $slim.Add('```')
+    $slim.Add('')
+    $slim.Add('## 3. Small thread groups (1-3 threads: the interesting ones)')
+    if ($script:SlimGroups -and $script:SlimGroups.Count -gt 0) {
+        foreach ($l in $script:SlimGroups) { $slim.Add($l) }
+    } else {
+        $slim.Add('_none captured_')
+    }
+    $slimPath = Join-Path $OutDir 'report-slim.md'
+    Set-Content -Path $slimPath -Value $slim -Encoding UTF8
+
     Write-Info "DONE. report: $reportPath"
+    Write-Info "      slim (small models): $slimPath\"
 }
 
 # ----------------------------------------------------------- check command
@@ -762,12 +895,15 @@ function Invoke-Check {
     $cdb = Find-Cdb -Override $CdbPath
     if ($cdb) { Write-Info "cdb.exe        : $cdb" }
     else {
-        Write-Warn 'cdb.exe        : NOT FOUND'
+        $script:RunStatus = 1
+        Write-Warn 'cdb.exe        : NOT FOUND (exit 1 - native/managed tracks unavailable)'
         Write-Info '  fix: copy a "Windows Kits\10\Debuggers\x64" folder to bin\debuggers\,'
         Write-Info '       or run tools\get-debuggers.ps1 (internet needed), or winget install Microsoft.WinDbg'
     }
     $sos = 'C:\Windows\Microsoft.NET\Framework64\v4.0.30319\sos.dll'
-    Write-Info (".NET Fx SOS    : {0}" -f $(if (Test-Path $sos) { 'present (managed analysis available)' } else { 'not found' }))
+    Write-Info (".NET Fx SOS    : {0}" -f $(if (Test-Path $sos) { 'present' } else { 'not found' }))
+    Write-Info '                 (managed analysis is decided per dump: the debugger loads the SOS/DAC'
+    Write-Info '                  matching that dump. .NET Core needs a matching mscordaccore.dll.)'
     Write-Info ("PowerShell     : {0}" -f $PSVersionTable.PSVersion)
 
     if ($Dump) {

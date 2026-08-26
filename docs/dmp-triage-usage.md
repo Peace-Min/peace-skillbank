@@ -33,7 +33,12 @@ namespaced) 또는 `commands/dmp-triage.md`를 `.claude/commands/`로 복사한 
    스레드 수와 레지스터 컨텍스트 저장 여부, 메인 모듈, 캡처 메모리 총량.
 2. **네이티브 트랙** (cdb) — `!analyze -v -hang`(크래시면 자동으로 `-v` + `.ecxr`),
    `!runaway`, `!uniqstack`(동일 스택 압축), `!locks`, `lm`.
-3. **관리코드 트랙** (cdb + SOS) — `!threads`, `!syncblk`, `~*e !clrstack` 후 동일 스택
+3. **자동 결론(섹션 7.0)** — `!syncblk`의 락 소유자 tid를 관리 스택 그룹과 **CLI가 직접 조인**해
+   `CONTENDED SyncBlock ... | owner OS tid ... | BLOCKED in Monitor.Enter, inside <앱 메서드>` 형태로
+   내보낸다. 소유자 다수가 스스로 블록돼 있으면 `DEADLOCK PATTERN ... -> cycle`까지 판정한다.
+   MonitorHeld는 `1(소유) + 2×대기자` 인코딩이라 **3 이상만** 실제 블로킹이다(1은 정상).
+   이 조인을 모델에게 시키지 않는 것이 소형 모델 정확도의 핵심이다.
+4. **관리코드 트랙** (cdb + SOS) — `!threads`, `!syncblk`, `~*e !clrstack` 후 동일 스택
    자동 그룹핑. **.NET 관리 스택은 PDB 없이도** 덤프 안의 어셈블리 메타데이터로 메서드
    이름까지 전부 나온다 (WPF/WinForms 앱 행 분석의 핵심 경로).
 
@@ -41,9 +46,43 @@ namespaced) 또는 `commands/dmp-triage.md`를 `.claude/commands/`로 복사한 
 
 | 파일 | 용도 |
 |---|---|
-| `report.md` | LLM 입력. 이 파일 하나만 전달한다 |
+| `report-slim.md` | **LLM에게 먼저 주는 파일**(약 8KB). 덤프 정체 + 자동 해결된 락 경합 + 소수 스레드 그룹 |
+| `report.md` | 전체 리포트. 슬림으로 부족할 때만 본다 |
 | `modules.csv` | 모듈 인벤토리 (베이스/크기/타임스탬프/경로) |
 | `raw\native.log`, `raw\managed.log` | cdb 원시 출력. `===SECTION:x===` 마커로 구분 — LLM이 특정 섹션을 요구할 때만 발췌 제공 |
+
+## 폐쇄망 원콜 인스톨러 (권장 배포 방식)
+
+인터넷 PC에서 패키지를 1회 빌드하고, 폐쇄망 PC에서는 `setup.cmd` 더블클릭 한 번이면 끝난다.
+관리자 권한·인터넷·레지스트리·서비스 등록·PATH 변경이 **전부 불필요**하다.
+
+```powershell
+# 1) 인터넷 PC: 디버거 확보(최초 1회) → 인스톨러 패키지 빌드
+powershell -File skills\dmp-triage\tools\get-debuggers.ps1
+powershell -File skills\dmp-triage\tools\build-offline-installer.ps1 -Zip
+
+# GitHub 등 파일당 100MB 제한을 거쳐야 하면 분할 배포
+powershell -File skills\dmp-triage\tools\build-offline-installer.ps1 -SplitMB 90
+```
+
+생성물 `dmp-triage-offline-<날짜>\` 구성:
+
+| 파일 | 역할 |
+|---|---|
+| `setup.cmd` / `setup.ps1` | **원콜 설치**: parts 재조립 → SHA256 검증 → 디버거 압축해제 → 스킬 설치 → 자기 점검 |
+| `check.cmd` / `check.ps1` | 설치 상태 점검 (cdb·ext.dll·SOS·슬래시 커맨드까지) |
+| `uninstall.cmd` / `uninstall.ps1` | 제거 (덤프·리포트는 보존) |
+| `SHA256SUMS.txt` | 페이로드 무결성. 불일치면 설치를 **중단**(exit 2) |
+| `payload\debuggers.zip` 또는 `parts\*.001..NNN` | cdb + dbgeng + SOS |
+| `skill\` | SKILL.md, scripts, references, tools, 슬래시 커맨드 |
+
+폐쇄망 PC에서:
+
+```text
+setup.cmd                     더블클릭 (기본 설치 위치: %USERPROFILE%\.claude\skills\dmp-triage)
+setup.cmd -PortableOnly       설치하지 않고 그 폴더에서만 사용
+setup.cmd -InstallDir D:\x    다른 위치에 설치
+```
 
 ## cdb 확보와 폐쇄망 반입
 
@@ -81,7 +120,7 @@ PATH → WinDbg 스토어 앱.
 ```powershell
 $tokens=$null; $errors=$null
 [System.Management.Automation.Language.Parser]::ParseFile(
-  "skills\dmp-triage\scripts\dmp-triage.ps1", [ref]$tokens, [ref]$errors)
+  (Resolve-Path .\skills\dmp-triage\scripts\dmp-triage.ps1).Path, [ref]$tokens, [ref]$errors)
 $errors
 ```
 

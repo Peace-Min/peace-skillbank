@@ -69,3 +69,7 @@ issues_OSTES_*.xls
 skills/dmp-triage/bin/
 dmp-triage-out/
 dmp-triage-package-*.zip
+
+# dmp-triage offline installer build outputs (payload is the 135MB debugger staging)
+dmp-triage-offline-*/
+dmp-triage-offline-*.zip

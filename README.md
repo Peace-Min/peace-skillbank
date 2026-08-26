@@ -59,6 +59,7 @@ Copy-Item -Recurse -Force -LiteralPath $source -Destination $target
 /diagsession-memory-analysis
 /lightningchart-72
 /frontier-handoff
+/dmp-triage
 ```
 
 이미 실행 중인 세션에서 새로 클론했거나 `.claude/skills/`가 세션 시작 뒤 생겼다면 Claude Code를

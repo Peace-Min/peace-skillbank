@@ -61,3 +61,11 @@ fixture.xls
 tests/**/bin/
 tests/**/obj/
 issues_OSTES_*.xls
+
+# dmp-triage: commit the CLI machinery only - never the staged debugger binaries
+# (bin\debuggers, ~135MB, restaged via tools/get-debuggers.ps1), the USB package
+# zips, or analysis outputs (report.md lives under dmp-triage-out/; *.dmp is
+# already ignored globally above).
+skills/dmp-triage/bin/
+dmp-triage-out/
+dmp-triage-package-*.zip

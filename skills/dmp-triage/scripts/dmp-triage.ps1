@@ -45,7 +45,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$script:ToolVersion = '0.3.0'
+$script:ToolVersion = '0.3.1'
 $script:Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 if (-not $Dump -and $DumpPositional) { $Dump = $DumpPositional }
 
@@ -59,13 +59,24 @@ function Find-Cdb {
         if (Test-Path -LiteralPath $Override -PathType Leaf) { return (Resolve-Path -LiteralPath $Override).Path }
         Write-Warn "-CdbPath '$Override' not found (or not a file) - falling back to auto-detection"
     }
+    # explicit env override: pins one staging across every copy of the CLI
+    if ($env:DMP_TRIAGE_CDB -and (Test-Path -LiteralPath $env:DMP_TRIAGE_CDB -PathType Leaf)) {
+        return (Resolve-Path -LiteralPath $env:DMP_TRIAGE_CDB).Path
+    }
     $candidates = @()
     $parentDir = Split-Path -Parent $script:Root
+    # The debuggers are staged into ONE skill folder, but this CLI legitimately
+    # exists in more than one place (personal skill + plugin cache). Look next to
+    # this script first, then at the canonical install location, so a plugin-cache
+    # copy still finds a staging done by the offline installer.
+    $canonical = Join-Path $env:USERPROFILE '.claude\skills\dmp-triage\bin\debuggers'
     $candidates += @(
         (Join-Path $script:Root 'bin\debuggers\cdb.exe'),
         (Join-Path $script:Root 'bin\debuggers\x64\cdb.exe'),
         (Join-Path $parentDir 'bin\debuggers\cdb.exe'),
         (Join-Path $parentDir 'bin\debuggers\x64\cdb.exe'),
+        (Join-Path $canonical 'cdb.exe'),
+        (Join-Path $canonical 'x64\cdb.exe'),
         'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\cdb.exe',
         'C:\Program Files\Windows Kits\10\Debuggers\x64\cdb.exe',
         'C:\Program Files (x86)\Windows Kits\8.1\Debuggers\x64\cdb.exe'
@@ -523,8 +534,11 @@ function Invoke-Analyze {
         $report.Add('## 2. Debugger passes: SKIPPED (cdb.exe not found)')
         $report.Add('')
         $report.Add('Install/copy Debugging Tools for Windows and re-run. Options:')
-        $report.Add('- Copy a `Windows Kits\10\Debuggers\x64` folder into `bin\debuggers\` next to this script (xcopy-portable, no install needed).')
-        $report.Add('- Or run `tools\get-debuggers.ps1` on an internet-connected machine.')
+        $report.Add(('- Stage the debuggers into: {0}' -f (Join-Path $env:USERPROFILE '.claude\skills\dmp-triage\bin\debuggers')))
+        $report.Add('  The offline installer''s setup.cmd does exactly this. Any copy of this CLI')
+        $report.Add('  (personal skill or plugin cache) looks there, so one staging serves all.')
+        $report.Add('- Or set the DMP_TRIAGE_CDB environment variable to a cdb.exe, or pass -CdbPath.')
+        $report.Add('- On an internet-connected machine: `tools\get-debuggers.ps1`.')
         $reportPath = Join-Path $OutDir 'report.md'
         Set-Content -Path $reportPath -Value $report -Encoding UTF8
         Write-Info "report (pre-triage only): $reportPath"

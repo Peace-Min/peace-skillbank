@@ -1,6 +1,6 @@
 {
   "name": "peace-skillbank",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Reusable Claude Code skills: Sparrow static-analysis triage/autofix support, .NET diagsession/gcdump memory-leak analysis, grounded LightningChart 7.2 API assistance, frontier-model handoff prompt packaging for offline/air-gapped work, and offline Windows process dump (.dmp) triage via a portable cdb/SOS pipeline.",
   "author": {
     "name": "Peace-Min",

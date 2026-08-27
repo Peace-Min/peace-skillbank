@@ -160,6 +160,20 @@ ANALYSIS.md (분석 완료 후)
 - README quick start: 설치, 호출, 출력물, 프라이버시 주의사항을 문서화한다.
 - validation script: publish 전에 구조와 manifest를 검증한다.
 
+## 완전 제거
+
+플러그인 관리 UI가 남기는 캐시·설정 항목까지 한 번에 지우려면:
+
+```text
+tools\uninstall-peace-skillbank.cmd      더블클릭 - 계획을 보여주고 y/N 확인 후 삭제
+```
+
+제거 대상은 플러그인 캐시/마켓플레이스 등록, 개인 스킬 5종과 각 슬래시 커맨드,
+`DMP_TRIAGE_*` 환경변수, `~\.claude.json`의 사용 기록이다. **다른 번들의 스킬(심볼릭 포함)과
+무관한 플러그인은 건드리지 않으며**, 편집하는 JSON은 타임스탬프 백업을 남긴다.
+`-WhatIfOnly`는 계획만 출력하고, `-KeepConfig`는 설정 파일을 건드리지 않는다.
+덤프·분석 리포트·repo 클론은 삭제 대상이 아니다.
+
 ## 검증
 
 스킬을 수정한 뒤 최소 검증을 수행한다.

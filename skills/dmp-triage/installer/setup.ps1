@@ -15,7 +15,8 @@ param(
     [string]$InstallDir,                 # default: %USERPROFILE%\.claude\skills\dmp-triage
     [switch]$PortableOnly,               # only unpack here; do not install into ~\.claude
     [switch]$SkipVerify,                 # skip SHA256 (use only if SHA256SUMS.txt is absent)
-    [switch]$Force                       # overwrite an existing install without asking
+    [switch]$Force,                      # overwrite an existing install without asking
+    [switch]$NoRegisterEnv               # skip the DMP_TRIAGE_HOME / DMP_TRIAGE_CDB user variables
 )
 
 $ErrorActionPreference = 'Stop'
@@ -42,7 +43,7 @@ $sumsFile   = Join-Path $Here 'SHA256SUMS.txt'
 $payloadZip = Join-Path $payloadDir 'debuggers.zip'
 
 # ------------------------------------------------------- 1. reassemble parts
-Step "1/5  Payload"
+Step "1/6  Payload"
 if (-not (Test-Path -LiteralPath $payloadZip)) {
     if (Test-Path -LiteralPath $partsDir) {
         $parts = Get-ChildItem -LiteralPath $partsDir -Filter 'debuggers.zip.*' | Sort-Object Name
@@ -66,7 +67,7 @@ $zipSizeMB = [math]::Round((Get-Item -LiteralPath $payloadZip).Length / 1MB, 1)
 Say "payload size: $zipSizeMB MB"
 
 # ------------------------------------------------------------- 2. verify hash
-Step "2/5  Integrity"
+Step "2/6  Integrity"
 if ($SkipVerify) {
     Warn "SHA256 verification skipped by -SkipVerify"
 } elseif (-not (Test-Path -LiteralPath $sumsFile)) {
@@ -93,7 +94,7 @@ if ($SkipVerify) {
 }
 
 # ----------------------------------------------------------- 3. choose target
-Step "3/5  Install location"
+Step "3/6  Install location"
 if ($PortableOnly) {
     $target = $Here
     Say "portable mode: staying in $target"
@@ -109,7 +110,7 @@ if ($PortableOnly) {
 }
 
 # --------------------------------------------- 4. unpack + install skill files
-Step "4/5  Installing"
+Step "4/6  Installing"
 $binDir = Join-Path $target 'bin\debuggers'
 if (Test-Path -LiteralPath $binDir) { Remove-Item -LiteralPath $binDir -Recurse -Force -ErrorAction SilentlyContinue }
 New-Item -ItemType Directory -Force -Path $binDir | Out-Null
@@ -145,8 +146,29 @@ if (-not $PortableOnly) {
     }
 }
 
-# ------------------------------------------------------------- 5. self-test
-Step "5/5  Self-test"
+# ------------------------------------------------- 5. environment contract
+Step "5/6  Environment"
+if ($NoRegisterEnv) {
+    Say "-NoRegisterEnv: skipping DMP_TRIAGE_HOME / DMP_TRIAGE_CDB"
+} else {
+    try {
+        # User scope: no admin needed, survives reboots. .NET API instead of setx
+        # (setx truncates at 1024 chars and would be a hazard on long paths).
+        [Environment]::SetEnvironmentVariable('DMP_TRIAGE_HOME', $target, 'User')
+        [Environment]::SetEnvironmentVariable('DMP_TRIAGE_CDB', $cdb, 'User')
+        # make them usable inside THIS session too (setx would not do this)
+        $env:DMP_TRIAGE_HOME = $target
+        $env:DMP_TRIAGE_CDB = $cdb
+        Say "DMP_TRIAGE_HOME = $target"
+        Say "DMP_TRIAGE_CDB  = $cdb"
+        Say "(user-scope variables; already-open terminals need a restart to see them)"
+    } catch {
+        Warn "could not register environment variables: $($_.Exception.Message)"
+    }
+}
+
+# ------------------------------------------------------------- 6. self-test
+Step "6/6  Self-test"
 $cli = Join-Path $target 'scripts\dmp-triage.ps1'
 if (-not (Test-Path -LiteralPath $cli)) { $cli = Join-Path $target 'dmp-triage.ps1' }
 if (-not (Test-Path -LiteralPath $cli)) {

@@ -45,7 +45,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$script:ToolVersion = '0.3.1'
+$script:ToolVersion = '0.4.0'
 $script:Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 if (-not $Dump -and $DumpPositional) { $Dump = $DumpPositional }
 
@@ -59,9 +59,18 @@ function Find-Cdb {
         if (Test-Path -LiteralPath $Override -PathType Leaf) { return (Resolve-Path -LiteralPath $Override).Path }
         Write-Warn "-CdbPath '$Override' not found (or not a file) - falling back to auto-detection"
     }
-    # explicit env override: pins one staging across every copy of the CLI
+    # Environment contract (like JAVA_HOME/DOTNET_ROOT, and cdb's own _NT_* vars):
+    # DMP_TRIAGE_CDB pins one exe; DMP_TRIAGE_HOME points at an install root.
+    # Both are validated, so a stale value falls through to the path search below
+    # instead of failing the run.
     if ($env:DMP_TRIAGE_CDB -and (Test-Path -LiteralPath $env:DMP_TRIAGE_CDB -PathType Leaf)) {
         return (Resolve-Path -LiteralPath $env:DMP_TRIAGE_CDB).Path
+    }
+    if ($env:DMP_TRIAGE_HOME) {
+        foreach ($rel in @('bin\debuggers\cdb.exe', 'bin\debuggers\x64\cdb.exe')) {
+            $c = Join-Path $env:DMP_TRIAGE_HOME $rel
+            if (Test-Path -LiteralPath $c -PathType Leaf) { return (Resolve-Path -LiteralPath $c).Path }
+        }
     }
     $candidates = @()
     $parentDir = Split-Path -Parent $script:Root

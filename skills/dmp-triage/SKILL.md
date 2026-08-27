@@ -81,9 +81,15 @@ Exit codes: `0` full success, `1` completed but degraded (the report says which)
 ## Getting cdb (required once per machine)
 
 The repo does **not** ship the debugger binaries (~135 MB). Without them `analyze` still runs and
-produces a pre-triage-only report with exit code 1. cdb is resolved in this order: `bin\debuggers\`
-next to the script or at the skill root → installed Windows SDK Debuggers → `cdb` on PATH → the
-WinDbg store app.
+produces a pre-triage-only report with exit code 1. cdb is resolved in this order:
+
+1. `-CdbPath <cdb.exe>` argument
+2. `DMP_TRIAGE_CDB` (an exe) / `DMP_TRIAGE_HOME` (an install root) — user-scope variables the
+   offline installer registers, so every copy of this CLI resolves the same staging. A stale value
+   is validated and skipped, never fatal.
+3. `bin\debuggers\` next to the script or at the skill root (portable/USB use)
+4. `%USERPROFILE%\.claude\skills\dmp-triage\bin\debuggers\` (canonical install location)
+5. installed Windows SDK Debuggers → `cdb` on PATH → the WinDbg store app
 
 - Machine with internet: run `tools\get-debuggers.ps1` once (installs WinDbg via winget, then stages
   cdb into `<SKILL>\bin\debuggers\`). Then `tools\build-offline-installer.ps1 -Zip` builds a one-call

@@ -14,5 +14,11 @@ if (-not $Force) {
 }
 if (Test-Path -LiteralPath $InstallDir) { Remove-Item -LiteralPath $InstallDir -Recurse -Force; Write-Host "removed: $InstallDir" }
 if (Test-Path -LiteralPath $cmd) { Remove-Item -LiteralPath $cmd -Force; Write-Host "removed: $cmd" }
+foreach ($v in @('DMP_TRIAGE_HOME','DMP_TRIAGE_CDB')) {
+    if ([Environment]::GetEnvironmentVariable($v, 'User')) {
+        [Environment]::SetEnvironmentVariable($v, $null, 'User')
+        Write-Host "removed user variable: $v"
+    }
+}
 Write-Host "Uninstalled. Your dump reports and dumps were not touched."
 exit 0

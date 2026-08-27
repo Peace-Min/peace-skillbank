@@ -23,6 +23,13 @@ foreach ($n in @('winext\ext.dll','dbgeng.dll')) {
 }
 $sos = Join-Path $InstallDir 'bin\debuggers\winext\sos'
 if (Test-Path -LiteralPath $sos) { Ok "SOS extension present (.NET managed stacks available)" } else { Bad "SOS extension missing" }
+foreach ($v in @('DMP_TRIAGE_HOME','DMP_TRIAGE_CDB')) {
+    $val = [Environment]::GetEnvironmentVariable($v, 'User')
+    if (-not $val) { Write-Host "  [note] $v not set (path search will be used)" }
+    elseif ($v -eq 'DMP_TRIAGE_CDB' -and -not (Test-Path -LiteralPath $val -PathType Leaf)) { Bad "$v points at a missing file: $val" }
+    elseif ($v -eq 'DMP_TRIAGE_HOME' -and -not (Test-Path -LiteralPath $val)) { Bad "$v points at a missing folder: $val" }
+    else { Ok "$v = $val" }
+}
 $cmd = Join-Path $env:USERPROFILE '.claude\commands\dmp-triage.md'
 if (Test-Path -LiteralPath $cmd) { Ok "/dmp-triage slash command installed" } else { Write-Host "  [note] slash command not installed (optional)" }
 if (Test-Path -LiteralPath $cli) {

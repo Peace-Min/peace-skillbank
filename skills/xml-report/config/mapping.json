@@ -1,0 +1,10 @@
+{
+  "_comment": "범용 XML 매핑 파일. labels: 요소명(대소문자 무관) -> 한글 라벨/설명. docTypes: 루트 요소명에 키워드가 포함되면 해당 문서유형으로 판별. connectionNames: 연결(커넥션)로 취급할 요소명. endpointAttrNames: 연결의 출발/도착 속성명(커넥션 표에서 강조). brand/skillName: 보고서 상단/하단 표기. 특정 도메인 XML을 반복 분석한다면 이 파일을 복사해 도메인별 매핑을 만들고 -MappingPath로 지정하세요.",
+  "version": 1,
+  "brand": "XML 구조 분석",
+  "skillName": "xml-report",
+  "docTypes": {},
+  "labels": {},
+  "connectionNames": [ "Connection", "Connections", "Link", "Links" ],
+  "endpointAttrNames": [ "from", "to", "source", "target", "src", "dst", "start", "end", "ref", "idref" ]
+}

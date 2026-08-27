@@ -7,7 +7,7 @@
  Safe by design:
    * DRY RUN by default - it prints the plan and deletes nothing until you
      confirm (or pass -Confirm).
-   * Only the five known peace-skillbank skill names are touched. Skills that
+   * Only the known peace-skillbank skill names are touched. Skills that
      belong to other bundles - including symlinked ones - are never removed.
    * Takes a timestamped backup of any JSON it edits.
 
@@ -35,7 +35,9 @@ $BankSkills = @(
     'diagsession-memory-analysis',
     'frontier-handoff',
     'lightningchart-72',
-    'sparrow-static-analysis'
+    'sparrow-static-analysis',
+    'addsim-xml-report',
+    'xml-report'
 )
 $BankEnvVars = @('DMP_TRIAGE_HOME', 'DMP_TRIAGE_CDB')
 

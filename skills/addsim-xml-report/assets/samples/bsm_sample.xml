@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 합성 샘플: 구조 시연용이며 실제 AddSIM 데이터가 아님 -->
+<BSM name="FighterBSM" version="1.3" domain="Air">
+  <BSMInfo>
+    <Description>전투기 기본체계모델 (합성 샘플)</Description>
+    <Reference doc="BSM-STD-21" />
+  </BSMInfo>
+  <SharedData>
+    <Information name="TrackList" type="TargetInfo[]" />
+    <Parameters>
+      <Parameter name="EmptyWeight" type="double" unit="kg" value="9500" />
+      <Parameter name="MaxThrust" type="double" unit="kN" value="129" />
+    </Parameters>
+    <Attributes>
+      <Attribute name="FuelRemaining" type="double" unit="kg" />
+      <Attribute name="DamageState" type="enum" values="OK,Degraded,Killed" />
+    </Attributes>
+  </SharedData>
+  <PhysicalComponents>
+    <ComponentSlot name="Propulsion" required="true" />
+    <ComponentSlot name="Sensor" required="true" />
+    <ComponentSlot name="Weapon" required="false" />
+  </PhysicalComponents>
+  <LogicalComponents>
+    <ComponentSlot name="PilotDecision" required="true" modelType="DEVS" />
+    <ComponentSlot name="ROESelector" required="false" />
+  </LogicalComponents>
+  <Interfaces>
+    <Interface name="TargetInfoIn" dataType="TargetInfo" direction="in" />
+    <Interface name="FireCmdOut" dataType="FireCommand" direction="out" />
+  </Interfaces>
+</BSM>

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 합성 샘플: 구조 시연용이며 실제 AddSIM 데이터가 아님 -->
+<Player name="BlueFighter" side="Blue" category="Aircraft">
+  <PlayerInfo>
+    <Description>전투기 플레이어 (합성 샘플)</Description>
+    <BSMRef name="FighterBSM" version="1.3" />
+  </PlayerInfo>
+  <Components>
+    <ComponentRef name="Propulsion" instance="engine1" />
+    <ComponentRef name="RadarSeeker" instance="radar1" />
+    <ComponentRef name="FireControl" instance="fc1" />
+    <ComponentRef name="WeaponStation" instance="ws1">
+      <ComponentRef name="AAMissile" instance="aam1" />
+      <ComponentRef name="AAMissile" instance="aam2" />
+    </ComponentRef>
+  </Components>
+  <Connections>
+    <Connection from="radar1.TargetInfoOut" to="fc1.TargetInfoIn" />
+    <Connection from="fc1.FireCmdOut" to="ws1.FireCmdIn" />
+  </Connections>
+  <InitialState>
+    <Position lat="36.35" lon="127.38" alt="8000" />
+    <Velocity speed="250" heading="90" />
+  </InitialState>
+</Player>

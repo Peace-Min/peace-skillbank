@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 합성 샘플: 구조 시연용이며 실제 AddSIM 데이터가 아님 -->
+<Component name="RadarSeeker" version="2.1" author="tester">
+  <Category domain="Sensor" type="ActiveRadar" />
+  <ComponentInfo>
+    <Description>탐색기 컴포넌트 (합성 샘플)</Description>
+    <CreatedDate>2026-01-15</CreatedDate>
+    <Language>C++</Language>
+  </ComponentInfo>
+  <Attributes>
+    <Attribute name="MaxDetectRange" type="double" unit="km" default="45.0" />
+    <Attribute name="ScanRate" type="double" unit="deg/s" default="60.0" />
+    <Attribute name="FrequencyBand" type="string" default="X" />
+  </Attributes>
+  <Ports>
+    <Port name="TargetInfoOut" direction="out" dataType="TargetInfo" />
+    <Port name="CommandIn" direction="in" dataType="SeekerCommand" />
+  </Ports>
+  <Connections>
+    <Connection from="RadarSeeker.TargetInfoOut" to="GuidanceUnit.TargetInfoIn" type="event" />
+    <Connection from="FireControl.CommandOut" to="RadarSeeker.CommandIn" type="event" />
+  </Connections>
+  <SubComponents>
+    <SubComponent ref="AntennaModel" />
+    <SubComponent ref="SignalProcessor">
+      <Override attribute="GainDb" value="32.5" />
+    </SubComponent>
+  </SubComponents>
+</Component>

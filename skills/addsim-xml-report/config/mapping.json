@@ -1,0 +1,29 @@
+{
+  "_comment": "AddSIM XML 요소 매핑 파일. 폐쇄망 현장에서 실제 스키마에 맞게 보강하는 파일입니다. labels: 요소명(대소문자 무관) -> 한글 라벨/설명. docTypes: 루트 요소명에 키워드가 포함되면 해당 문서유형으로 판별. connectionNames: 커넥션(연결)으로 취급할 요소명. endpointAttrNames: 연결의 출발/도착을 나타내는 속성명(커넥션 표에서 강조됨).",
+  "version": 1,
+  "brand": "AddSIM XML 분석",
+  "skillName": "addsim-xml-report",
+  "docTypes": {
+    "bsm": "BSM(기본체계모델) 정의",
+    "basesystemmodel": "BSM(기본체계모델) 정의",
+    "player": "플레이어 정의",
+    "component": "컴포넌트 정의"
+  },
+  "labels": {
+    "Component": { "ko": "컴포넌트", "desc": "무기체계를 구성하는 기능 단위 빌딩블록" },
+    "Player": { "ko": "플레이어", "desc": "무기체계 1개를 표현하는 최상위 컴포넌트" },
+    "BSM": { "ko": "기본체계모델", "desc": "무기체계 모델 표준 아키텍처" },
+    "Category": { "ko": "카테고리", "desc": "" },
+    "ComponentInfo": { "ko": "컴포넌트 정보", "desc": "" },
+    "Attribute": { "ko": "속성", "desc": "" },
+    "Attributes": { "ko": "속성 목록", "desc": "" },
+    "Connection": { "ko": "커넥션", "desc": "요소 간 연결 정의" },
+    "Connections": { "ko": "커넥션 목록", "desc": "" },
+    "Interface": { "ko": "인터페이스", "desc": "컴포넌트/플레이어 간 이벤트 통로" },
+    "Port": { "ko": "포트", "desc": "" },
+    "Parameter": { "ko": "파라미터", "desc": "무기체계의 고정 특성값" },
+    "SharedData": { "ko": "공유데이터", "desc": "정보/파라미터/속성으로 구성되는 BSM 공유 데이터" }
+  },
+  "connectionNames": [ "Connection", "Connections", "Link", "PortConnection" ],
+  "endpointAttrNames": [ "from", "to", "source", "target", "src", "dst", "start", "end", "provider", "requester" ]
+}

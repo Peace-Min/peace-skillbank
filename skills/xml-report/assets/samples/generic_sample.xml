@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 합성 샘플: 구조 시연용 (임의 도메인 - 서버 배포 설정) -->
+<DeployConfig name="web-cluster" env="staging" revision="42">
+  <Hosts>
+    <Host id="web-01" ip="10.0.0.11" role="frontend" />
+    <Host id="web-02" ip="10.0.0.12" role="frontend" />
+    <Host id="app-01" ip="10.0.1.21" role="backend">
+      <Tag key="gpu" value="true" />
+    </Host>
+  </Hosts>
+  <Services>
+    <Service name="nginx" port="443" protocol="https">
+      <HealthCheck path="/health" intervalSec="30" timeoutSec="5" />
+    </Service>
+    <Service name="app-server" port="8080" protocol="http">
+      <HealthCheck path="/ping" intervalSec="15" timeoutSec="3" />
+      <EnvVar name="LOG_LEVEL" value="info" />
+      <EnvVar name="MAX_WORKERS" value="8" />
+    </Service>
+  </Services>
+  <Links>
+    <Link from="nginx" to="app-server" type="proxy" />
+    <Link from="app-server" to="db-primary" type="jdbc" />
+  </Links>
+  <Notes>스테이징 환경 배포 구성 (합성 샘플)</Notes>
+</DeployConfig>

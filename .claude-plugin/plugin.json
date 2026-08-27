@@ -1,7 +1,7 @@
 {
   "name": "peace-skillbank",
-  "version": "0.4.0",
-  "description": "Reusable Claude Code skills: Sparrow static-analysis triage/autofix support, .NET diagsession/gcdump memory-leak analysis, grounded LightningChart 7.2 API assistance, frontier-model handoff prompt packaging for offline/air-gapped work, and offline Windows process dump (.dmp) triage via a portable cdb/SOS pipeline.",
+  "version": "0.5.0",
+  "description": "Reusable Claude Code skills: Sparrow static-analysis triage/autofix support, .NET diagsession/gcdump memory-leak analysis, grounded LightningChart 7.2 API assistance, frontier-model handoff prompt packaging for offline/air-gapped work, offline Windows process dump (.dmp) triage via a portable cdb/SOS pipeline, and deterministic depth-based XML-to-HTML structure reporting (generic xml-report plus AddSIM-specialized addsim-xml-report).",
   "author": {
     "name": "Peace-Min",
     "url": "https://github.com/Peace-Min"
@@ -26,6 +26,10 @@
     "minidump",
     "dump-analysis",
     "windbg",
-    "hang-analysis"
+    "hang-analysis",
+    "xml",
+    "xml-analysis",
+    "html-report",
+    "addsim"
   ]
 }

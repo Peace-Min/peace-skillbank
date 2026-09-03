@@ -5,6 +5,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <cwctype>
 #include <cstdlib>
 #include <fcntl.h>
 #include <filesystem>
@@ -139,6 +140,44 @@ inline bool ReadLine(std::ifstream& file, std::wstring& line)
     if (!bytes.empty() && bytes.back() == '\r') bytes.pop_back();
     line = FromUtf8(bytes);
     return true;
+}
+
+// App.config appSettings, converted once to <exe path>.ini by scripts/convert-appconfig.ps1.
+// Win32 INI reader: no XML parser, no configuration framework, no allocation surprises.
+inline std::wstring IniPath()
+{
+    wchar_t module[MAX_PATH] = {};
+    ::GetModuleFileNameW(nullptr, module, MAX_PATH);
+    std::wstring path(module);
+    const size_t dot = path.find_last_of(L'.');
+    if (dot != std::wstring::npos) path = path.substr(0, dot);
+    return path + L".ini";
+}
+inline std::wstring AppSetting(const std::wstring& key, const std::wstring& fallback = L"")
+{
+    wchar_t buffer[2048] = {};
+    ::GetPrivateProfileStringW(L"appSettings", key.c_str(), fallback.c_str(), buffer, 2048, IniPath().c_str());
+    return std::wstring(buffer);
+}
+inline int AppSettingInt(const std::wstring& key, int fallback = 0)
+{
+    const std::wstring value = AppSetting(key);
+    if (value.empty()) return fallback;
+    try { return std::stoi(value); } catch (...) { return fallback; }
+}
+inline double AppSettingDouble(const std::wstring& key, double fallback = 0.0)
+{
+    const std::wstring value = AppSetting(key);
+    if (value.empty()) return fallback;
+    try { return std::stod(value); } catch (...) { return fallback; }
+}
+inline bool AppSettingBool(const std::wstring& key, bool fallback = false)
+{
+    std::wstring value = AppSetting(key);
+    for (wchar_t& ch : value) { ch = static_cast<wchar_t>(::towlower(ch)); }
+    if (value == L"true" || value == L"1") return true;
+    if (value == L"false" || value == L"0") return false;
+    return fallback;
 }
 
 // Call once at the top of wmain: std::wcout / std::wcerr then emit UTF-8 like Console.WriteLine.

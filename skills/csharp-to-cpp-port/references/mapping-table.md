@@ -87,5 +87,13 @@
 | `Environment.NewLine` | `L"\r\n"` |
 | `Stopwatch` | `std::chrono::steady_clock` |
 | `Random` | `std::mt19937` seeded once; sequences will differ from .NET (`// TODO(port): rng sequence`) |
+| `[Flags] enum` | `enum class X : unsigned int` + free `operator\|`, `operator&`, `operator\|=` and `HasFlag(x, f)` in the same header |
+| `System.Windows.Media.Color` / `System.Drawing.Color` | a value struct in the unit that needs it: `struct Color { unsigned char A = 255, R = 0, G = 0, B = 0; };`. Named colours (`Colors.Red`) become `constexpr Color` constants. It is data, not UI: port it even when the UI framework is undecided |
+| `Point` / `Size` / `Rect` / `Thickness` / `Vector` | small value structs with the same field names (`struct Point { double X = 0, Y = 0; };`) |
+| `Brush` / `Pen` / `ImageSource` / any `DependencyObject` | not data: do not port; `// TODO(port): UI object <name>` and leave it to the UI-framework decision |
+| `ConfigurationManager.AppSettings["k"]` | `PortSupport::AppSetting(L"k")` (+ `AppSettingInt` / `AppSettingBool` / `AppSettingDouble`). Run `scripts/convert-appconfig.ps1` once to turn App.config into the `.ini` it reads |
+| `ConnectionStrings` / custom config sections | `// TODO(port): config section <name>`; convert-appconfig.ps1 does not touch them |
+| `Properties.Settings.Default.X` | same as appSettings via `PortSupport::AppSetting(L"X")` + `// TODO(port): user-scoped setting` if it was writable |
+| `Properties.Resources.X` (strings) | a `constexpr wchar_t*` or `inline const std::wstring` constant next to its use; images `// TODO(port): resource <name>` |
 | `#region` / `#endregion` | drop |
 | `#if DEBUG ... #else ... #endif` | keep only the non-DEBUG branch |

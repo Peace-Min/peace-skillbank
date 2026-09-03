@@ -38,7 +38,7 @@ $out = Join-Path $RepositoryRoot "out\csharp-to-cpp-fixtures"
 Remove-Dir $out
 New-Item -ItemType Directory -Force -Path $out | Out-Null
 $S = @{}
-foreach ($n in @("inventory-csharp", "make-unit-prompt", "apply-unit-response", "scan-forbidden", "build-check", "parity-check", "port-status")) {
+foreach ($n in @("inventory-csharp", "make-unit-prompt", "apply-unit-response", "scan-forbidden", "build-check", "parity-check", "port-status", "record-decision", "review-report", "convert-appconfig")) {
     $S[$n] = Join-Path $scripts "$n.ps1"
     Assert-Condition (Test-Path -LiteralPath $S[$n]) "missing script $n.ps1"
 }
@@ -122,6 +122,28 @@ Assert-Condition ((Get-Index $rorder "Core\Node.cs") -lt (Get-Index $rorder "For
 $rst = Get-Content -Raw -LiteralPath (Join-Path $rwd "PORT_STATUS.md")
 Assert-Condition ($rst -match 'skipped=2' -and $rst -match 'Properties\\AssemblyInfo\.cs` \| skipped') "PORT_STATUS must list skipped files as skipped"
 
+# ---- decision log: seeded from the project's own flags, updatable, re-renderable -------------------------
+$dec = Get-Content -Raw -LiteralPath (Join-Path $wd "decisions.json") | ConvertFrom-Json
+$ids = @($dec.decisions | ForEach-Object { $_.id })
+foreach ($must in @("std", "string", "ownership", "async", "pinvoke")) { Assert-Condition ($ids -contains $must) "decisions must be seeded with '$must' (got: $($ids -join ','))" }
+Assert-Condition ($ids -notcontains "ui" -and $ids -notcontains "config" -and $ids -notcontains "targets") "a console single-project app must not seed ui/config/targets decisions (got: $($ids -join ','))"
+Assert-Condition (@($dec.decisions | Where-Object { $_.source -ne "default" }).Count -eq 0) "seeded decisions are defaults, not human answers"
+Assert-Condition (@($dec.decisions | Where-Object { -not $_.review }).Count -eq 0) "every decision must say why it may need review"
+$decMd = Get-Content -Raw -LiteralPath (Join-Path $wd "DECISIONS.md")
+Assert-Condition ($decMd -match 'Pending review: \d+ of \d+') "DECISIONS.md must show the pending count"
+Assert-Condition (-not $decMd.Contains([string][char]9)) "DECISIONS.md must not contain tabs from mis-escaped backticks"
+$r = Invoke-Skill $S["record-decision"] @("-CppRoot", $cppRoot, "-Id", "ui", "-Topic", "UI framework", "-Decision", "Win32", "-Source", "human", "-Rationale", "no MFC licence", "-Review", "check dialogs by hand")
+Assert-Condition ($r.code -eq 0 -and $r.text -match 'added \[ui\] Win32') "record-decision must add a human answer: $($r.text)"
+$r = Invoke-Skill $S["record-decision"] @("-CppRoot", $cppRoot, "-Id", "std", "-Status", "accepted")
+Assert-Condition ($r.code -eq 0 -and $r.text -match 'updated \[std\]') "record-decision must update an existing id"
+$dec2 = Get-Content -Raw -LiteralPath (Join-Path $wd "decisions.json") | ConvertFrom-Json
+Assert-Condition ((@($dec2.decisions | Where-Object { $_.id -eq "std" })[0].status -eq "accepted") -and (@($dec2.decisions | Where-Object { $_.id -eq "ui" })[0].source -eq "human")) "decision updates must persist"
+Invoke-Skill $S["inventory-csharp"] @("-SourceRoot", $sampleApp, "-CppRoot", $cppRoot) | Out-Null
+$dec3 = Get-Content -Raw -LiteralPath (Join-Path $wd "decisions.json") | ConvertFrom-Json
+Assert-Condition ((@($dec3.decisions | Where-Object { $_.id -eq "std" })[0].status -eq "accepted") -and (@($dec3.decisions | Where-Object { $_.id -eq "ui" }).Count -eq 1)) "re-running the inventory must not wipe recorded decisions"
+$r = Invoke-Skill $S["record-decision"] @("-CppRoot", $cppRoot, "-List")
+Assert-Condition ($r.code -eq 0 -and $r.text -match '\[ui\]') "-List must print the decisions"
+
 # ---- make-unit-prompt: ported deps, not-ported deps, partial units, entry point, determinism ------------
 $p1 = Join-Path $out "prompt-ported.md"
 $r = Invoke-Skill $S["make-unit-prompt"] @("-Unit", "Services\DeviceRepository.cs", "-CppRoot", $golden, "-WorkDir", $wd, "-OutputPath", $p1)
@@ -190,6 +212,56 @@ Assert-Condition ((Get-Content -Raw -LiteralPath $pCons) -match 'Extensions\.h` 
 Assert-Condition ((Get-Content -Raw -LiteralPath $pCons) -match 'finish-unit\.ps1" -CppRoot') "agent-mode prompt must end with the finish-unit command"
 $r = Invoke-Skill $S["make-unit-prompt"] @("-Unit", "Nope\Missing.cs", "-CppRoot", $golden, "-WorkDir", $wd)
 Assert-Condition ($r.code -eq 2 -and $r.text -match 'unit not in inventory' -and $r.text -match 'known units: .*Models\\Device\.cs') "unknown unit must exit 2 and list known units"
+
+# ---- multi-project: owning project, project order, cross-project edges, project-scoped decisions ----------
+$mpSrc = Join-Path $out "mp-src"
+foreach ($d in @("Shared\Core", "DeviceLib", "AppUi\Views")) { New-Item -ItemType Directory -Force -Path (Join-Path $mpSrc $d) | Out-Null }
+[System.IO.File]::WriteAllText((Join-Path $mpSrc "Shared\Shared.csproj"), '<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><OutputType>Library</OutputType></PropertyGroup></Project>')
+[System.IO.File]::WriteAllText((Join-Path $mpSrc "Shared\Core\Money.cs"), "namespace Shared.Core`n{`n    public class Money`n    {`n        public string Currency { get; set; }`n    }`n}`n")
+[System.IO.File]::WriteAllText((Join-Path $mpSrc "DeviceLib\DeviceLib.csproj"), '<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><OutputType>Library</OutputType></PropertyGroup><ItemGroup><ProjectReference Include="..\Shared\Shared.csproj" /><PackageReference Include="Newtonsoft.Json" Version="13.0.1" /></ItemGroup></Project>')
+[System.IO.File]::WriteAllText((Join-Path $mpSrc "DeviceLib\Meter.cs"), "using Shared.Core;`n`nnamespace DeviceLib`n{`n    public class Meter`n    {`n        public string Describe(Money m) { return m.Currency; }`n    }`n}`n")
+[System.IO.File]::WriteAllText((Join-Path $mpSrc "AppUi\AppUi.csproj"), '<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><OutputType>WinExe</OutputType></PropertyGroup><ItemGroup><ProjectReference Include="..\DeviceLib\DeviceLib.csproj" /></ItemGroup></Project>')
+[System.IO.File]::WriteAllText((Join-Path $mpSrc "AppUi\App.config"), '<?xml version="1.0"?><configuration><appSettings><add key="Server" value="10.0.0.5"/></appSettings><connectionStrings><add name="Db" connectionString="x"/></connectionStrings></configuration>')
+[System.IO.File]::WriteAllText((Join-Path $mpSrc "AppUi\Views\MainWindow.xaml.cs"), "using System.Windows.Controls;`nusing DeviceLib;`n`nnamespace AppUi.Views`n{`n    public partial class MainWindow : UserControl`n    {`n        private readonly Meter _meter = new Meter();`n    }`n}`n")
+[System.IO.File]::WriteAllText((Join-Path $mpSrc "AppUi\Views\MainWindow.xaml"), "<UserControl />")
+$mpRoot = Join-Path $out "mp-cpp"
+$r = Invoke-Skill $S["inventory-csharp"] @("-SourceRoot", $mpSrc, "-CppRoot", $mpRoot)
+Assert-Condition ($r.code -eq 0 -and $r.text -match 'Projects: 3 \(Shared -> DeviceLib -> AppUi\)' -and $r.text -match 'cross-project dependencies: 2') "multi-project inventory must report project order and cross-project edges: $($r.text)"
+$mpInv = Get-Content -Raw -LiteralPath (Join-Path $mpRoot "port-work\inventory.json") | ConvertFrom-Json
+Assert-Condition ((@($mpInv.units | Where-Object { $_.path -eq "DeviceLib\Meter.cs" })[0].project) -eq "DeviceLib") "each unit must carry its owning project"
+$mpDev = @($mpInv.projects | Where-Object { $_.name -eq "DeviceLib" })[0]
+Assert-Condition ((@($mpDev.projectReferences) -contains "Shared") -and (@($mpDev.externalReferences) -contains "Newtonsoft.Json")) "csproj ProjectReference and external references must be captured"
+Assert-Condition ((@($mpInv.projects | Where-Object { $_.name -eq "AppUi" })[0].outputType) -eq "WinExe") "OutputType per project must be captured"
+$mpOrderLine = @(Get-Content -LiteralPath (Join-Path $mpRoot "port-work\PORT_ORDER.txt") | Where-Object { $_ -match 'Meter\.cs' })[0]
+Assert-Condition ((($mpOrderLine -split "`t")[6]) -eq "DeviceLib") "PORT_ORDER must carry the owning project in the last column"
+$mpMd = Get-Content -Raw -LiteralPath (Join-Path $mpRoot "port-work\PORT_INVENTORY.md")
+Assert-Condition ($mpMd -match '## Projects' -and $mpMd -match '### Cross-project dependencies' -and $mpMd -match 'Money') "PORT_INVENTORY must show the project table and cross-project rows"
+Assert-Condition (-not $mpMd.Contains([string][char]9)) "PORT_INVENTORY must not contain tabs from mis-escaped backticks"
+$mpDec = (Get-Content -Raw -LiteralPath (Join-Path $mpRoot "port-work\decisions.json") | ConvertFrom-Json).decisions
+$mpIds = @($mpDec | ForEach-Object { $_.id })
+foreach ($must in @("ui", "config", "targets")) { Assert-Condition ($mpIds -contains $must) "a multi-project WPF solution with App.config must seed '$must' (got: $($mpIds -join ','))" }
+Assert-Condition ((@($mpDec | Where-Object { $_.id -eq "ui" })[0].affects) -match 'MainWindow') "the ui decision must name the units it blocks"
+Assert-Condition ((@($mpInv.units | Where-Object { $_.path -eq "AppUi\Views\MainWindow.xaml.cs" })[0].marks) -contains "ui") "a WPF code-behind must carry the ui mark"
+
+# convert-appconfig: appSettings converted, other sections reported never guessed
+$r = Invoke-Skill $S["convert-appconfig"] @("-ConfigPath", (Join-Path $mpSrc "AppUi\App.config"), "-CppRoot", $mpRoot)
+Assert-Condition ($r.code -eq 1 -and $r.text -match 'NOT converted \(handle by hand\): connectionStrings') "convert-appconfig must report sections it does not convert: $($r.text)"
+$ini = Get-Content -Raw -LiteralPath (Join-Path $mpRoot "App.ini")
+Assert-Condition ($ini -match '\[appSettings\]' -and $ini -match 'Server=10\.0\.0\.5') "App.ini must carry the appSettings"
+
+# ---- review-report: decisions + TODO(port) + blocked units in one hand-over file --------------------------
+$revRoot = Join-Path $out "review-cpp"
+Copy-Item -Recurse -LiteralPath $golden -Destination $revRoot
+Invoke-Skill $S["inventory-csharp"] @("-SourceRoot", $sampleApp, "-CppRoot", $revRoot) | Out-Null
+Invoke-Skill $S["port-status"] @("-CppRoot", $revRoot, "-Unit", "Util/NativeMethods.cs", "-State", "blocked", "-Note", "P/Invoke needs a human") | Out-Null
+$r = Invoke-Skill $S["review-report"] @("-CppRoot", $revRoot)
+Assert-Condition ($r.code -eq 1) "review-report must exit 1 while items are pending: $($r.text)"
+$rev = Get-Content -Raw -LiteralPath (Join-Path $revRoot "port-work\REVIEW.md")
+Assert-Condition ($rev -match '## 1\. Decisions to confirm' -and $rev -match 'std') "REVIEW must list the pending decisions"
+Assert-Condition ($rev -match '## 2\. TODO\(port\) markers' -and $rev -match 'was async' -and $rev -match 'DeviceRepository\.h:\d+') "REVIEW must collect TODO(port) markers with file:line"
+Assert-Condition ($rev -notmatch 'PortSupport\.h:') "the fixed support header must not be scanned for TODOs"
+Assert-Condition ($rev -match 'Blocked \(a human must' -and $rev -match 'P/Invoke needs a human') "REVIEW must list blocked units with their note"
+Assert-Condition ($rev -match '## 4\. Last build and parity' -and $rev -match 'parity-check has not run yet') "REVIEW must state that behaviour is unverified"
 
 # ---- apply-unit-response: reply shapes, unsafe paths, truncation, -Expect -----------------------------------
 $applied = Join-Path $out "applied"

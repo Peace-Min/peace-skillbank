@@ -182,7 +182,7 @@ foreach ($g in $groups.Keys) {
     $marks = @()
     if ($members.Count -gt 1) { $marks += "partial" }
     if (@($members | Where-Object { $fileByPath[$_].designer }).Count -gt 0) { $marks += "designer" }
-    if ($flags.Contains("winforms")) { $marks += "ui" }
+    if ($flags.Contains("winforms") -or $flags.Contains("wpf")) { $marks += "ui" }
     [void]$units.Add(@{
         path = $primary; files = $members; loc = $loc; types = @($typeList); flags = $flags
         namespaces = @($nsList | Select-Object -Unique); usings = @($usList | Select-Object -Unique); bases = @($baseList | Select-Object -Unique)
@@ -345,11 +345,35 @@ else { foreach ($u in $units) { $inWork[$u.path] = "scope" } }
 # ---- project kind guess ----------------------------------------------------------------------
 $csprojs = @(Get-ChildItem -LiteralPath $SourceRoot -Recurse -File -Filter *.csproj | Where-Object { -not (Test-Excluded $_.FullName.Substring($SourceRoot.Length).TrimStart('\')) })
 $outputTypes = @(); $targetFrameworks = @()
+$projects = New-Object System.Collections.ArrayList
 foreach ($p in $csprojs) {
     $x = [System.IO.File]::ReadAllText($p.FullName)
-    foreach ($m in [regex]::Matches($x, '<OutputType>\s*([^<]+?)\s*</OutputType>')) { $outputTypes += $m.Groups[1].Value }
-    foreach ($m in [regex]::Matches($x, '<TargetFramework(?:s|Version)?>\s*([^<]+?)\s*</TargetFramework(?:s|Version)?>')) { $targetFrameworks += $m.Groups[1].Value }
+    $rel = $p.FullName.Substring($SourceRoot.Length).TrimStart('\')
+    $out = "Library"; $tfm = ""
+    foreach ($m in [regex]::Matches($x, '<OutputType>\s*([^<]+?)\s*</OutputType>')) { $outputTypes += $m.Groups[1].Value; $out = $m.Groups[1].Value }
+    foreach ($m in [regex]::Matches($x, '<TargetFramework(?:s|Version)?>\s*([^<]+?)\s*</TargetFramework(?:s|Version)?>')) { $targetFrameworks += $m.Groups[1].Value; $tfm = $m.Groups[1].Value }
+    $refs = @([regex]::Matches($x, '<ProjectReference\s+Include\s*=\s*"([^"]+)"') | ForEach-Object { [System.IO.Path]::GetFileNameWithoutExtension($_.Groups[1].Value) })
+    $pkgs = @([regex]::Matches($x, '<(?:PackageReference|Reference)\s+Include\s*=\s*"([^",]+)') | ForEach-Object { $_.Groups[1].Value } | Where-Object { $_ -notmatch '^(System|Microsoft\.CSharp|mscorlib|PresentationCore|PresentationFramework|WindowsBase)($|\.)' } | Select-Object -Unique)
+    [void]$projects.Add([ordered]@{
+        name = [System.IO.Path]::GetFileNameWithoutExtension($p.Name); file = $rel
+        dir = $(if ($rel.Contains('\')) { Split-Path -Parent $rel } else { "" })
+        outputType = $out; targetFramework = $tfm; projectReferences = @($refs); externalReferences = @($pkgs); unitCount = 0
+    })
 }
+# A unit belongs to the project whose directory is the longest prefix of its path.
+function Get-OwningProject {
+    param([string]$UnitPath)
+    $best = $null; $bestLen = -1
+    foreach ($pr in $projects) {
+        $d = $pr.dir
+        $match = ($d -eq "") -or $UnitPath.StartsWith($d + '\', [System.StringComparison]::OrdinalIgnoreCase)
+        if ($match -and $d.Length -gt $bestLen) { $best = $pr; $bestLen = $d.Length }
+    }
+    if ($null -eq $best) { return "(no csproj)" }
+    return $best.name
+}
+foreach ($u in $units) { $u.project = Get-OwningProject $u.path }
+foreach ($pr in $projects) { $pr.unitCount = @($units | Where-Object { $_.project -eq $pr.name }).Count }
 $xamlCount = @(Get-ChildItem -LiteralPath $SourceRoot -Recurse -File -Filter *.xaml | Where-Object { -not (Test-Excluded $_.FullName.Substring($SourceRoot.Length).TrimStart('\')) }).Count
 $totalFlag = [ordered]@{}
 foreach ($k in $flagPatterns.Keys) { $sum = 0; foreach ($u in $units) { if ($u.flags.Contains($k)) { $sum += $u.flags[$k] } }; if ($sum -gt 0) { $totalFlag[$k] = $sum } }
@@ -361,6 +385,20 @@ if ($outputTypes -contains "WinExe" -and $kindGuess -eq "console-or-library") { 
 
 # ---- outputs ---------------------------------------------------------------------------------
 $totalLoc = 0; foreach ($u in $units) { $totalLoc += [int]$u.loc }
+# Project-level port order = first appearance of each project in the dependency-ordered unit list.
+$projectOrder = @(); $seenProj = @{}
+foreach ($pp in $order) { $pn = $unitByPath[$pp].project; if (-not $seenProj.ContainsKey($pn)) { $seenProj[$pn] = $true; $projectOrder += $pn } }
+# Edges that cross a project boundary: these are the shared components every plan must respect.
+$crossEdges = New-Object System.Collections.ArrayList
+foreach ($u in $units) {
+    foreach ($d in $u.deps) {
+        $du = $unitByPath[$d]
+        if ($du.project -ne $u.project) {
+            $usedTypes = @($u.depTypes | Where-Object { $tn = $_; @($du.types | Where-Object { $_.name -eq $tn }).Count -gt 0 })
+            [void]$crossEdges.Add([ordered]@{ fromProject = $u.project; fromUnit = $u.path; toProject = $du.project; toUnit = $du.path; types = @($usedTypes) })
+        }
+    }
+}
 $jsonUnits = @()
 foreach ($p in $order) {
     $u = $unitByPath[$p]
@@ -372,7 +410,7 @@ foreach ($p in $order) {
         types = @($u.types | ForEach-Object { [ordered]@{ name = $_.name; kind = $_.kind } }); bases = @($u.bases)
         flags = $u.flags; deps = @($u.deps); depTypes = @($u.depTypes); marks = @($marks); extensionMethods = @($u.extensionMethods)
         inScope = [bool]$u.inScope; inWorkList = $inWork.ContainsKey($p); prereq = ($inWork.ContainsKey($p) -and $inWork[$p] -eq "prereq")
-        inCycle = $inCycle; cycleGroup = $(if ($inCycle) { $sccId } else { $null })
+        inCycle = $inCycle; cycleGroup = $(if ($inCycle) { $sccId } else { $null }); project = $u.project
     }
 }
 $inventory = [ordered]@{
@@ -385,6 +423,7 @@ $inventory = [ordered]@{
     flagTotals = $totalFlag
     cycles = @($cycleGroups | ForEach-Object { , @($_) })
     duplicateTypes = @($duplicateTypes); ambiguousReferences = @($ambiguous)
+    projects = @($projects); projectOrder = @($projectOrder); crossProjectEdges = @($crossEdges)
     ownership = $ownership
     skipped = @($skipped)
     units = $jsonUnits
@@ -397,7 +436,7 @@ foreach ($ju in $jsonUnits) {
     if (-not $ju.inWorkList) { continue }
     $i++
     $fl = (@($ju.flags.Keys | ForEach-Object { "$_=$($ju.flags[$_])" }) -join ',')
-    [void]$orderLines.Add(("{0}`t{1}`t{2}`t{3}`t{4}`t{5}" -f $i, $ju.path, $ju.loc, $fl, ($ju.marks -join ','), ($ju.files -join '+')))
+    [void]$orderLines.Add(("{0}`t{1}`t{2}`t{3}`t{4}`t{5}`t{6}" -f $i, $ju.path, $ju.loc, $fl, ($ju.marks -join ','), ($ju.files -join '+'), $ju.project))
 }
 [System.IO.File]::WriteAllText((Join-Path $OutputDirectory "PORT_ORDER.txt"), (($orderLines -join "`n") + "`n"), $utf8)
 
@@ -431,6 +470,35 @@ if ($duplicateTypes.Count -gt 0) {
     [void]$md.AppendLine("- Same type name in more than one unit (resolved by namespace where possible): $dupText")
 }
 if ($ambiguous.Count -gt 0) { [void]$md.AppendLine("- Ambiguous references (check by hand): $($ambiguous.Count), see inventory.json ambiguousReferences") }
+if ($projects.Count -gt 1) {
+    [void]$md.AppendLine(""); [void]$md.AppendLine("## Projects (port in this order; shared components come first)")
+    [void]$md.AppendLine("")
+    [void]$md.AppendLine("| # | Project | Output | Units | Depends on (csproj) | External references |")
+    [void]$md.AppendLine("|---|---------|--------|-------|---------------------|---------------------|")
+    $pi = 0
+    foreach ($pn in $projectOrder) {
+        $pi++
+        $pr = @($projects | Where-Object { $_.name -eq $pn })
+        if ($pr.Count -eq 0) { [void]$md.AppendLine("| $pi | $pn | (no csproj) | $(@($units | Where-Object { $_.project -eq $pn }).Count) | | |"); continue }
+        $pr = $pr[0]
+        [void]$md.AppendLine("| $pi | $($pr.name) | $($pr.outputType) | $($pr.unitCount) | $(@($pr.projectReferences) -join ', ') | $(@($pr.externalReferences) -join ', ') |")
+    }
+    [void]$md.AppendLine("")
+    [void]$md.AppendLine("All projects are ported into ONE C++ root and one dependency-ordered work list: a shared type is")
+    [void]$md.AppendLine("ported once, and both consumers include the same header. Splitting the result into per-project")
+    [void]$md.AppendLine("libraries/executables is a build-system step at the end (see the targets decision in DECISIONS.md).")
+    if ($crossEdges.Count -gt 0) {
+        [void]$md.AppendLine("")
+        [void]$md.AppendLine("### Cross-project dependencies ($($crossEdges.Count))")
+        [void]$md.AppendLine("")
+        [void]$md.AppendLine("| From project | Unit | Uses | From project (shared) | Unit |")
+        [void]$md.AppendLine("|---|---|---|---|---|")
+        foreach ($e in ($crossEdges | Select-Object -First 40)) {
+            [void]$md.AppendLine("| $($e.fromProject) | ``$($e.fromUnit)`` | $(@($e.types) -join ', ') | $($e.toProject) | ``$($e.toUnit)`` |")
+        }
+        if ($crossEdges.Count -gt 40) { [void]$md.AppendLine("") ; [void]$md.AppendLine("(+$($crossEdges.Count - 40) more in inventory.json crossProjectEdges)") }
+    }
+}
 [void]$md.AppendLine(""); [void]$md.AppendLine("## Feature totals (regex counts, best-effort)"); [void]$md.AppendLine("")
 if ($totalFlag.Count -eq 0) { [void]$md.AppendLine("(none detected)") }
 foreach ($k in $totalFlag.Keys) { [void]$md.AppendLine("- $k`: $($totalFlag[$k])") }
@@ -468,10 +536,46 @@ if (-not (Test-Path -LiteralPath $statusJson)) {
     & (Join-Path $PSScriptRoot "port-status.ps1") -WorkDir $OutputDirectory -Show | Out-Null
 }
 
+# ---- decision log: every standing default that a human must eventually confirm ------------------
+# -Include is silently ignored next to -LiteralPath, so match on the file name instead.
+$appConfigCount = @(Get-ChildItem -LiteralPath $SourceRoot -Recurse -File -ErrorAction SilentlyContinue | Where-Object { ($_.Name -ieq "App.config" -or $_.Name -ieq "Web.config") -and -not (Test-Excluded $_.FullName.Substring($SourceRoot.Length).TrimStart('\')) }).Count
+$seed = New-Object System.Collections.ArrayList
+function Add-Seed {
+    param([string]$Id, [string]$Topic, [string]$Decision, [string]$Rationale, [string]$Review, [string]$Affects = "all units")
+    [void]$seed.Add([pscustomobject]@{ id = $Id; topic = $Topic; decision = $Decision; source = "default"; rationale = $Rationale; review = $Review; affects = $Affects; status = "pending"; updatedAt = [DateTimeOffset]::Now.ToString("s") })
+}
+Add-Seed "std" "C++ standard" "C++17" "PortSupport.h uses std::filesystem, std::optional, [[nodiscard]] and nested namespaces." "Needs VS2017 15.7+ / GCC 8+. On an older toolchain the support header must be rewritten."
+Add-Seed "string" "String type" "std::wstring (UTF-16)" "Same encoding as .NET string and the Win32 W API, so no conversion at API boundaries." "A UTF-8 std::string codebase would be smaller but converts on every Win32 call."
+Add-Seed "ownership" "Object ownership" "computed per type: SHARED -> std::shared_ptr, SINGLE -> value, SINGLE+polymorphic -> std::unique_ptr" "Computed by the inventory from how each type is used, so the model never guesses." "Reference counting where C# had a GC can keep objects alive longer than expected; check cycles and hot paths."
+if ($totalFlag.Contains("async")) { Add-Seed "async" "async/await" "ported synchronously, marked TODO(port): was async" "A weak model cannot design a threading model; a synchronous port is always correct in behaviour, not in latency." "Anything that relied on not blocking the caller (UI responsiveness, parallel IO) must be redesigned by hand." }
+if ($totalFlag.Contains("threading")) { Add-Seed "threading" "Thread / Timer / ThreadPool" "no threads introduced; synchronous call + TODO(port): threading" "Same reason as async: concurrency is a human design decision." "Every TODO(port): threading site needs a real decision (std::thread, timer queue, or restructure)." }
+if ($totalFlag.Contains("collections")) { Add-Seed "dict-order" "Dictionary enumeration order" "std::unordered_map (order not reproduced)" ".NET Dictionary happens to enumerate in insertion order; C++ does not guarantee any order." "Any output or logic that depended on that order needs an explicit insertion-order vector." }
+if ($totalFlag.Contains("datetime")) { Add-Seed "datetime" "DateTime / TimeSpan" "std::chrono + std::put_time for the format patterns actually used" "Direct chrono mapping keeps arithmetic exact." "Culture-specific and unusual format strings are marked TODO(port): date format." }
+if ($totalFlag.Contains("pinvoke")) { Add-Seed "pinvoke" "P/Invoke" "the Win32 function is called directly behind the same name" "The native side no longer needs marshalling." "Structure layouts, string marshalling and error handling must be re-checked per call." }
+if ($totalFlag.Contains("reflection")) { Add-Seed "reflection" "Reflection" "not ported; marked TODO(port)" "C++ has no runtime type discovery equivalent." "Every reflection site needs a hand-written alternative (factory table, visitor, code generation)." }
+if ($totalFlag.Contains("serialization")) { Add-Seed "serialization" "Serialization" "not ported; marked TODO(port)" "XmlSerializer / DataContract have no drop-in C++ equivalent." "Pick a library or hand-write the reader/writer; the on-disk format must stay compatible." }
+if ($appConfigCount -gt 0) { Add-Seed "config" "App.config / ConfigurationManager" "appSettings read from <exe>.ini via PortSupport::AppSetting (convert-appconfig.ps1 generates it)" "No XML dependency, no runtime configuration framework." "connectionStrings, custom sections and configSections are NOT converted; handle them by hand." }
+if ($kindGuess -eq "winforms" -or $kindGuess -eq "wpf") { Add-Seed "ui" "UI framework" "UNDECIDED - ui units stay todo until port-work\mapping-extra.md exists" "WinForms/WPF have no mechanical C++ equivalent; the human picks Win32, MFC or Qt." "WPF XAML, data binding and MVVM cannot be ported mechanically at all: plan a rewrite of the UI layer." (@($units | Where-Object { @($_.marks) -contains 'ui' } | ForEach-Object { $_.path }) -join ', ') }
+if ($projects.Count -gt 1) { Add-Seed "targets" "Build targets" "one flat C++ tree; per-project libraries/executables are NOT generated" "The port is ordered by type dependencies, not by assembly boundaries." "If the six components must stay separate binaries, write the CMake targets by hand at the end (project list is in PORT_INVENTORY.md)." (($projectOrder) -join ', ') }
+$decisionsJson = Join-Path $OutputDirectory "decisions.json"
+$existing = @()
+if (Test-Path -LiteralPath $decisionsJson) { $existing = @((Get-Content -Raw -LiteralPath $decisionsJson | ConvertFrom-Json).decisions) }
+$known = @{}
+foreach ($e in $existing) { $known[$e.id] = $true }
+$addedDecisions = 0
+foreach ($sd in $seed) { if (-not $known.ContainsKey($sd.id)) { $existing += $sd; $addedDecisions++ } }
+if ($addedDecisions -gt 0 -or -not (Test-Path -LiteralPath $decisionsJson)) {
+    [System.IO.File]::WriteAllText($decisionsJson, ([pscustomobject]@{ generatedAt = [DateTimeOffset]::Now.ToString("o"); decisions = $existing } | ConvertTo-Json -Depth 5), $utf8)
+    & (Join-Path $PSScriptRoot "record-decision.ps1") -WorkDir $OutputDirectory -Render | Out-Null
+}
+$pendingDecisions = @($existing | Where-Object { $_.status -ne "accepted" }).Count
+
 Write-Host "inventory-csharp: $($csFiles.Count) files -> $($units.Count) units ($($skipped.Count) skipped), work list $i, kind=$kindGuess"
 Write-Host "  $OutputDirectory\PORT_INVENTORY.md"
 Write-Host "  $OutputDirectory\PORT_ORDER.txt"
 if ($scopeRel) { Write-Host "  $OutputDirectory\EXTERNAL_DEPS.txt ($($extLines.Count) external dependencies)" }
 if ($cycleGroups.Count -gt 0) { Write-Host "  WARNING: $($cycleGroups.Count) dependency cycle group(s); see PORT_INVENTORY.md" }
 if ($ambiguous.Count -gt 0) { Write-Host "  WARNING: $($ambiguous.Count) ambiguous type reference(s); see inventory.json" }
+if ($projects.Count -gt 1) { Write-Host "  Projects: $($projects.Count) ($($projectOrder -join ' -> ')); cross-project dependencies: $($crossEdges.Count)" }
+Write-Host "  $OutputDirectory\DECISIONS.md ($pendingDecisions decision(s) pending review)"
 exit 0

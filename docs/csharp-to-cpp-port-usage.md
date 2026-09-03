@@ -55,6 +55,23 @@ WinForms/WPF가 잡히면 **UI 프레임워크를 먼저 정한다**. Win32면 `
 소유권은 인벤토리가 계산해 프롬프트에 넣음(SHARED -> `shared_ptr`, SINGLE -> 값/`unique_ptr`; 모델이 판단하지 않음), 모던 C++ 관용구(`[[nodiscard]]`, `noexcept`, `override`, `auto`, range-for) 필수, RAII, `async`는 동기로(`TODO(port)` 표시),
 숫자·bool 문자열화와 UTF-8 파일 출력은 `PortSupport.h` 헬퍼.
 
+### 1-2. 결정 로그 (자동 생성)
+
+인벤토리는 `port-work\DECISIONS.md`도 만든다. 이 프로젝트에 실제로 해당하는 **표준 기본값**만 골라
+"나중에 검토할 항목"으로 미리 적어 둔다. C++ 표준, 문자열 타입, 소유권, async/스레드, Dictionary 순서,
+DateTime, P/Invoke, reflection, 직렬화, App.config, UI 프레임워크, 빌드 타깃 등이다. 각 행에는 무엇을
+정했는지(`decision`), 왜 그렇게 했는지(`rationale`), **왜 나중에 다시 볼 필요가 있는지**(`review`)가 붙는다.
+
+모델이 사람에게 물어본 것도 전부 여기에 기록된다.
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File "$skill\scripts\record-decision.ps1" -CppRoot C:\src\MyApp.Cpp -Id ui -Decision "Win32" -Source human -Rationale "MFC 라이선스 없음"
+powershell -NoProfile -ExecutionPolicy Bypass -File "$skill\scripts\record-decision.ps1" -CppRoot C:\src\MyApp.Cpp -Id std -Status accepted
+```
+
+타입 매핑(Color, enum, App.config 처리 방식 등)은 **묻지 않는다**. 매핑 표가 정하고, 표에 없으면 가장
+가까운 행을 쓰고 `// TODO(port): 가정한 내용`을 코드에 남긴다. 그 표시는 마지막에 자동 수집된다.
+
 ### 2. 단위 루프 (모델이 반복)
 
 Claude Code(VS Code 확장 + 로컬 LLM)에서는 이렇게만 말하면 된다:
@@ -83,6 +100,26 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "$skill\scripts\parity-check
 정규화해 비교하고 `PARITY_RESULT.txt`에 첫 차이 줄을 적는다. 한글 출력도 비교된다(양쪽 콘솔 인코딩을
 UTF-8로 맞춘다). PASS면 `verified`.
 
+### 4. 마지막 검토 (`REVIEW.md`)
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File "$skill\scripts\review-report.ps1" -CppRoot C:\src\MyApp.Cpp
+```
+
+한 파일에 (1) 아직 확정 안 한 결정, (2) 코드에 남은 `TODO(port)` 전부(동일 내용끼리 묶어서 `파일:줄`),
+(3) `blocked`/건너뛴 단위, (4) 마지막 빌드·동작비교 상태를 모아 준다. 이게 인수인계 문서다.
+
+## 여러 프로젝트를 한 번에
+
+컴포넌트별로 `.csproj`가 6개쯤 나뉘어 있어도 **한 번에 맡기면 된다**. `-SourceRoot`를 그 6개를 모두
+포함하는 상위 폴더로, `-CppRoot`는 하나로 지정한다.
+
+- 프로젝트 간 타입 사용은 디렉터리 간 의존과 똑같이 처리된다. 공용 컴포넌트가 **먼저 한 번만** 이식되고, 쓰는 쪽은 같은 헤더를 include 한다.
+- `PORT_INVENTORY.md`에 프로젝트 표(출력 종류, 단위 수, csproj 참조, 외부 참조)와 **프로젝트 간 의존 목록**이 나온다. `PORT_ORDER.txt` 마지막 칸이 그 단위가 속한 프로젝트다.
+- 한 프로젝트씩 나눠 시키고 싶으면 `-Scope <프로젝트 폴더>`를 쓰면 된다. 필요한 선행 의존은 자동으로 앞에 붙는다.
+- **어셈블리 경계는 빌드 타깃이 되지 않는다.** 결과는 하나의 C++ 트리이고, DLL/EXE를 원래대로 나누려면 마지막에 CMake 타깃을 손으로 작성해야 한다(`targets` 결정 항목으로 기록됨).
+- NuGet·외부 어셈블리 참조는 인벤토리에 이름만 표시되고 이식 대상이 아니다. 해당 타입은 `TODO(port)`로 남는다.
+
 ## 산출물 (`<C++ root>\port-work\`)
 
 | 파일 | 내용 |
@@ -93,6 +130,8 @@ UTF-8로 맞춘다). PASS면 `verified`.
 | `UNIT_PROMPT.md` | 현재 단위의 self-contained 프롬프트 (`-Mode paste`면 다른 LLM에 붙여넣기 가능) |
 | `BUILD_RESULT.txt` | PASS/FAIL/NO_COMPILER, 단위별 결과, 에러 목록 |
 | `PARITY_RESULT.txt` | 케이스별 PASS/FAIL, 첫 차이 |
+| `DECISIONS.md` / `decisions.json` | 프로젝트 단위 결정과 검토 상태 (`pending`/`accepted`/`revisit`) |
+| `REVIEW.md` | 마지막 검토용 인수인계 (결정 + TODO(port) + blocked + 빌드/parity) |
 
 `<C++ root>\PortSupport.h`는 첫 실행 때 복사된다(고정 헬퍼, 단위별로 수정 금지). 위 파일들은
 `.gitignore`에 있다(생성물). 외부에 공유할 때는 경로를 지운다.

@@ -79,6 +79,9 @@ UNIT_PROMPT*.md
 BUILD_RESULT.txt
 PARITY_RESULT.txt
 FORBIDDEN_SCAN.txt
+DECISIONS.md
+decisions.json
+REVIEW.md
 tests/fixtures/csharp-to-cpp-port/sample-app/bin/
 tests/fixtures/csharp-to-cpp-port/sample-app/obj/
 *.obj

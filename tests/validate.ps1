@@ -532,7 +532,7 @@ if ($python) {
 # --- csharp-to-cpp-port skill (one-unit-at-a-time C# -> C++17 loop; scripts + references + fixtures) ---
 $ccRoot = Join-Path $RepositoryRoot "skills\csharp-to-cpp-port"
 $ccSkillPath = Join-Path $ccRoot "SKILL.md"
-$ccScripts = @("inventory-csharp.ps1", "make-unit-prompt.ps1", "apply-unit-response.ps1", "scan-forbidden.ps1", "build-check.ps1", "parity-check.ps1", "port-status.ps1", "finish-unit.ps1")
+$ccScripts = @("inventory-csharp.ps1", "make-unit-prompt.ps1", "apply-unit-response.ps1", "scan-forbidden.ps1", "build-check.ps1", "parity-check.ps1", "port-status.ps1", "finish-unit.ps1", "record-decision.ps1", "review-report.ps1", "convert-appconfig.ps1")
 $ccRefs = @("mapping-table.md", "porting-rules.md", "unit-prompt-template.md", "example-port.md", "forbidden-patterns.txt", "model-agnostic-prompt.md", "cli-usage.md", "PortSupport.h", "ui-win32.md", "ui-mfc.md")
 $ccUsageDoc = Join-Path $RepositoryRoot "docs\csharp-to-cpp-port-usage.md"
 $ccProjectEntry = Join-Path $RepositoryRoot ".claude\skills\csharp-to-cpp-port\SKILL.md"
@@ -555,7 +555,7 @@ Assert-Condition ($ccFrontMatter -match "(?m)^description:\s+.+") "Missing cshar
 $ccSkillContent = Get-Content -Raw -Encoding UTF8 -LiteralPath $ccSkillPath
 Assert-Condition (-not ($lcTypographicDashes | Where-Object { $ccSkillContent.Contains($_) })) "csharp-to-cpp-port SKILL.md must avoid typographic dashes that break default Windows validation"
 # Contract markers: the loop, the one-unit rule, honest compile-vs-correct wording, and the NO_COMPILER relay.
-foreach ($ccMarker in @("## Per-unit loop", "Never put the whole project", "TODO(port)", "NO_COMPILER", "means it compiles, not that it is correct", "## Limitations", "UnportedDeps", "BlockedDeps", "PortSupport.h", "finish-unit.ps1", "port-status.ps1 -CppRoot", "forward slashes", "mapping-extra.md")) {
+foreach ($ccMarker in @("## Per-unit loop", "Never put the whole project", "TODO(port)", "NO_COMPILER", "means it compiles, not that it is correct", "## Limitations", "UnportedDeps", "BlockedDeps", "PortSupport.h", "finish-unit.ps1", "port-status.ps1 -CppRoot", "forward slashes", "mapping-extra.md", "record-decision.ps1", "review-report.ps1", "DECISIONS.md", "Never ask the user how to map")) {
     Assert-Condition ($ccSkillContent -match [regex]::Escape($ccMarker)) "csharp-to-cpp-port SKILL.md must keep contract marker: $ccMarker"
 }
 Assert-Condition ($ccSkillContent -notmatch "## Validation") "Runtime SKILL.md should not include maintainer validation details"

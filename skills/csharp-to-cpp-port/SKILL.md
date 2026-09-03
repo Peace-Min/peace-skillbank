@@ -16,9 +16,15 @@ When the user names a C# project or directory:
 1. Run `inventory-csharp.ps1 -SourceRoot <C# root> -CppRoot <C++ root>` (add `-Scope <relative dir>`
    when the user assigned a sub-directory; the whole tree is still scanned and the work list gains the
    out-of-scope prerequisites, marked `prereq`). All outputs go to `<C++ root>\port-work\`.
-2. Read `PORT_INVENTORY.md`. Tell the user: project kind, unit count, skipped files, feature totals that
-   need a human decision (`winforms`, `wpf`, `pinvoke`, `reflection`, `unsafe`, `dynamic`, `threading`),
-   cycle groups, ambiguous references, and `EXTERNAL_DEPS.txt` entries.
+   For a solution of several projects, point `-SourceRoot` at the folder that contains ALL of them and
+   use ONE `-CppRoot`: cross-project uses become ordinary dependencies, so a shared component is ported
+   once and every consumer includes the same header. Per-project libraries/executables are not generated.
+2. Read `PORT_INVENTORY.md` and `DECISIONS.md`. Tell the user: project kind, unit count, skipped files,
+   the project table and cross-project dependencies when there is more than one `.csproj`, feature totals
+   that need a human decision (`winforms`, `wpf`, `pinvoke`, `reflection`, `unsafe`, `dynamic`,
+   `threading`), cycle groups, ambiguous references, `EXTERNAL_DEPS.txt` entries, and how many decisions
+   are pending review. `DECISIONS.md` is seeded automatically with every standing default that applies to
+   this project; it is the list the user reviews at the end, so nothing is decided silently.
 3. If the project is WinForms/WPF, stop and ask which UI framework the C++ side uses. For Win32 or MFC,
    copy `references/ui-win32.md` or `references/ui-mfc.md` to `<C++ root>\port-work\mapping-extra.md`
    (its rows are appended to the mapping table automatically); anything else needs rows written by the
@@ -56,7 +62,9 @@ with `+`):
 After the last unit: `build-check.ps1 -CppRoot <C++ root> -All -Link -OutputExe <exe>`; if the user
 has the original program built and a `cases\` directory, run `parity-check.ps1 -CppRoot <C++ root>
 ...` and mark units `verified` with `port-status.ps1 -CppRoot <C++ root> -Unit U -State verified`
-when `PARITY_RESULT.txt` says `PASS`.
+when `PARITY_RESULT.txt` says `PASS`. Finally run `review-report.ps1 -CppRoot <C++ root>` and give the
+user `REVIEW.md`: the decisions still to confirm, every `TODO(port)` marker grouped by note, the blocked
+and skipped units, and the last build/parity status. That file is the hand-over.
 
 ## Hard rules
 
@@ -64,6 +72,11 @@ when `PARITY_RESULT.txt` says `PASS`.
   ported headers, or as C# declarations marked NOT PORTED.
 - Never invent a declaration, header, or API. Missing pieces get `// TODO(port): needs ...` at the use
   site and are reported.
+- Never ask the user how to map a type or construct (Color, enum, App.config, threading...). The mapping
+  table decides; with no row, take the closest one and write `// TODO(port): <assumption>`. The only
+  genuine questions are the UI framework and unblocking a `blocked` unit. Ask those ONCE, then record the
+  answer immediately: `record-decision.ps1 -CppRoot <C++ root> -Id <id> -Decision "..." -Source human
+  -Rationale "..." -Review "why it may need revisiting"`. An answer that is not recorded is lost.
 - Every function body in full. No `// ...`, no "rest unchanged", no partial files.
 - Modern C++17 only: `std::wstring` strings, ownership exactly as the prompt's computed list says
   (SHARED -> `std::shared_ptr`, SINGLE -> value or `std::unique_ptr`), `[[nodiscard]]`/`noexcept`/`override`,
@@ -102,7 +115,8 @@ scripts never guess the working folder from the harness's current directory.
 
 ## Outputs (`<C++ root>\port-work\`)
 
-`PORT_INVENTORY.md`, `PORT_ORDER.txt`, `EXTERNAL_DEPS.txt`, `inventory.json`; `PORT_STATUS.md` /
+`DECISIONS.md` / `decisions.json` (every project-level choice and its review status), `REVIEW.md` (the
+end-of-port hand-over); `PORT_INVENTORY.md`, `PORT_ORDER.txt`, `EXTERNAL_DEPS.txt`, `inventory.json`; `PORT_STATUS.md` /
 `status.json` (`todo -> translated -> builds -> verified`, `blocked`, `skipped`; `NEXT:` = first todo in
 work-list order); `UNIT_PROMPT.md`;
 `BUILD_RESULT.txt` (`Status`, `Unit:` lines, `file|line|code|message`); `PARITY_RESULT.txt`.

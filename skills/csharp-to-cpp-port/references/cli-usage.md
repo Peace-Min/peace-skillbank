@@ -17,6 +17,11 @@ rejected reply), `2` environment or input problem (message on stderr says exactl
 -ExcludeDirectory <names>  default bin, obj, .vs, packages, TestResults, node_modules, .git
 ```
 
+Several projects at once: point `-SourceRoot` at the folder containing every `.csproj`. Each unit records
+its owning project (last column of `PORT_ORDER.txt`), `PORT_INVENTORY.md` gets a project table in port
+order plus the cross-project dependency list, and `inventory.json` carries `projects`, `projectOrder` and
+`crossProjectEdges`. Assembly boundaries do NOT become build targets: the result is one C++ tree.
+
 Units: one `.cs` file, or all files of one `partial` type (e.g. `Form.cs` + `Form.Designer.cs`),
 listed under the non-Designer file. Skipped (never ported): `AssemblyInfo.cs`, `GlobalSuppressions.cs`,
 `*.g.cs`, `*.g.i.cs`, `*.AssemblyAttributes.cs`, `TemporaryGeneratedFile_*`, `Resources.Designer.cs`,
@@ -132,6 +137,43 @@ trailing newlines ignored) and compared together with the exit code. `.NET Frame
 is "G15" and the port's `PortSupport::ToWString(double)` matches that; a .NET Core original prints
 shortest round-trip digits instead, so prefer fixed-format numbers in cases when comparing against
 .NET Core builds.
+
+## record-decision.ps1
+
+```text
+-CppRoot <dir> | -WorkDir <dir>
+-Id <short id>                 required unless -List / -Render; existing ids are updated
+-Topic / -Decision / -Rationale / -Review / -Affects <text>
+-Source human|default|skill    human = the user answered; default = a standing default was applied
+-Status pending|accepted|revisit
+-List                          print the decisions
+-Render                        re-render DECISIONS.md from decisions.json, change nothing
+```
+
+`inventory-csharp.ps1` seeds `decisions.json` with the standing defaults that apply to the scanned
+project (C++ standard, string type, ownership, async, threading, dictionary order, DateTime, P/Invoke,
+reflection, serialization, App.config, UI framework, build targets). Every question put to the user must
+end here too, so the whole set can be reviewed at the end.
+
+## review-report.ps1
+
+```text
+-CppRoot <dir> [-WorkDir <dir>]
+```
+
+Writes `REVIEW.md`: decisions not yet accepted, every `TODO(port)` marker in the produced C++ grouped by
+note with `file:line`, blocked and skipped units, and the last build/parity status. Exit 0 when nothing
+is pending, 1 when items need review, 2 on input problems. Reads artifacts only; never calls a model.
+
+## convert-appconfig.ps1
+
+```text
+-ConfigPath <App.config> [-CppRoot <dir>] [-OutputPath <file>]
+```
+
+Converts `<appSettings>` into an INI file for `PortSupport::AppSetting`. Reports (never guesses)
+`connectionStrings`, `configSections` and other sections; exit 1 when such sections were present.
+The ported program reads `<exe path without extension>.ini`, so copy the result next to the executable.
 
 ## finish-unit.ps1
 

@@ -8,4 +8,5 @@
 8. Include what you use, relative to the C++ root (`#include "Models/Device.h"`); never `..` paths; include `"PortSupport.h"` when you use it.
 9. Where C# behaviour cannot be reproduced exactly (decimal precision, dictionary order, finalizers, reflection, threading) keep the closest mapped equivalent and mark it `// TODO(port): <difference>`.
 10. Every function body in full. No `// ...`, no "rest unchanged", no "omitted", no partial files.
-11. When a build error list is included in the prompt, fix those errors and change nothing else. If an error is inside a file you were told not to edit, do not edit it: add `// TODO(port): blocked by <file>:<line>` and report it.
+11. Never ask the user how to map a type or construct. The mapping table decides; if it has no row, use the closest row, write `// TODO(port): <what you assumed>` at the use site, and keep going. The only questions a human answers are the ones the inventory raises (UI framework, blocked units).
+12. When a build error list is included in the prompt, fix those errors and change nothing else. If an error is inside a file you were told not to edit, do not edit it: add `// TODO(port): blocked by <file>:<line>` and report it.

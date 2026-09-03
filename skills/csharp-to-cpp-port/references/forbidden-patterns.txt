@@ -1,0 +1,23 @@
+# name|severity|regex   (severity: error = must fix; warn = review)
+# Scanned by scan-forbidden.ps1 over produced .h/.cpp files. Code rules see the line without its trailing // comment.
+cli-system-namespace|error|\bSystem::
+cli-gcnew|error|\bgcnew\b
+cli-handle|error|\b(String|Object|array)\^|[A-Za-z_]\w*\^\s+\w+\s*=
+cli-using-system|error|using\s+namespace\s+System\b
+cli-include-system|error|#include\s*<System
+cli-using-directive|error|^\s*#using\b
+cli-console|error|\bConsole::Write
+cli-ref-class|error|\b(ref|value)\s+(class|struct)\b
+raw-new|error|(?<![\w:])new\s+(?!std::)[A-Za-z_][\w:<>, ]*\s*(?:[\(\[{;]|$)
+raw-delete|error|\bdelete\s*(\[\])?\s*[A-Za-z_(]
+c-cast|warn|\(\s*(int|long|double|float|unsigned|char|wchar_t|bool|short)\s*\)\s*[A-Za-z_(0-9]
+malloc|error|\b(malloc|calloc|realloc|free)\s*\(
+printf|error|\b_?\w*printf\w*\s*\(
+narrow-stdout|error|\b(puts|fputs|fwrite|putchar|putc|fputc|perror)\s*\(|\bstd::clog\b
+std-cout|error|\bstd::cout\b|\bstd::cerr\b
+wofstream|error|\bstd::wofstream\b|\bstd::wifstream\b
+to-wstring-double|warn|\bstd::to_wstring\s*\(
+narrow-string|warn|\bstd::string\b|\bconst\s+char\s*\*
+elision|error|^\s*//\s*\.\.\.\s*$|/\*\s*\.\.\.\s*\*/|//\s*\.\.\.\s*(rest|remaining|other|more)\b|\brest of (the )?(code|file|implementation|class)\b|\bremaining (code|methods|members|functions) (unchanged|omitted|as before)\b|\b(methods|members|functions|code) omitted\b
+todo-port|warn|//\s*TODO\(port\)
+dotnet-type|error|\b(IEnumerable|IDisposable|ArgumentNullException|InvalidOperationException|StringBuilder|List<|Dictionary<)\b

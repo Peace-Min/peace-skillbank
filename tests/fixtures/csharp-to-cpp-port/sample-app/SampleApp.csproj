@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Fixture for the csharp-to-cpp-port skill.
+    The code is written against the .NET Framework 4.7 language surface (C# 7.3), but the project
+    targets whatever modern SDK is installed so it builds OFFLINE (no NuGet reference-assembly
+    download). The test runner passes -p:FixtureTfm=netN.0 to match the local SDK.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework Condition="'$(FixtureTfm)' == ''">net8.0</TargetFramework>
+    <TargetFramework Condition="'$(FixtureTfm)' != ''">$(FixtureTfm)</TargetFramework>
+    <LangVersion>7.3</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
+    <RootNamespace>SampleApp</RootNamespace>
+    <AssemblyName>SampleApp</AssemblyName>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+</Project>

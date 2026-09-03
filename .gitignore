@@ -73,3 +73,16 @@ dmp-triage-package-*.zip
 # dmp-triage offline installer build outputs (payload is the 135MB debugger staging)
 dmp-triage-offline-*/
 dmp-triage-offline-*.zip
+# csharp-to-cpp-port: per-project working outputs and fixture build products are generated, never committed
+port-work/
+UNIT_PROMPT*.md
+BUILD_RESULT.txt
+PARITY_RESULT.txt
+FORBIDDEN_SCAN.txt
+tests/fixtures/csharp-to-cpp-port/sample-app/bin/
+tests/fixtures/csharp-to-cpp-port/sample-app/obj/
+*.obj
+*.o
+*.exe
+*.pdb
+*.ilk

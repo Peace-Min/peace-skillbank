@@ -529,4 +529,72 @@ if ($python) {
     }
 }
 
+# --- csharp-to-cpp-port skill (one-unit-at-a-time C# -> C++17 loop; scripts + references + fixtures) ---
+$ccRoot = Join-Path $RepositoryRoot "skills\csharp-to-cpp-port"
+$ccSkillPath = Join-Path $ccRoot "SKILL.md"
+$ccScripts = @("inventory-csharp.ps1", "make-unit-prompt.ps1", "apply-unit-response.ps1", "scan-forbidden.ps1", "build-check.ps1", "parity-check.ps1", "port-status.ps1", "finish-unit.ps1")
+$ccRefs = @("mapping-table.md", "porting-rules.md", "unit-prompt-template.md", "example-port.md", "forbidden-patterns.txt", "model-agnostic-prompt.md", "cli-usage.md", "PortSupport.h", "ui-win32.md", "ui-mfc.md")
+$ccUsageDoc = Join-Path $RepositoryRoot "docs\csharp-to-cpp-port-usage.md"
+$ccProjectEntry = Join-Path $RepositoryRoot ".claude\skills\csharp-to-cpp-port\SKILL.md"
+$ccCommand = Join-Path $RepositoryRoot "commands\csharp-to-cpp-port.md"
+$ccOpenAi = Join-Path $ccRoot "agents\openai.yaml"
+$ccFixtures = Join-Path $RepositoryRoot "tests\csharp-to-cpp-fixtures.ps1"
+$ccEvalLoop = Join-Path $RepositoryRoot "tests\run-csharp-to-cpp-eval-loop.ps1"
+foreach ($ccFile in @($ccSkillPath, (Join-Path $ccRoot "README.md"), $ccUsageDoc, $ccProjectEntry, $ccCommand, $ccOpenAi, $ccFixtures, $ccEvalLoop)) {
+    Assert-Condition (Test-Path -LiteralPath $ccFile) "Missing csharp-to-cpp-port file: $ccFile"
+}
+foreach ($ccScript in $ccScripts) { Assert-Condition (Test-Path -LiteralPath (Join-Path $ccRoot "scripts\$ccScript")) "Missing csharp-to-cpp-port script: $ccScript" }
+foreach ($ccRef in $ccRefs) { Assert-Condition (Test-Path -LiteralPath (Join-Path $ccRoot "references\$ccRef")) "Missing csharp-to-cpp-port reference: $ccRef" }
+foreach ($ccFx in @("sample-app\SampleApp.csproj", "sample-app\Program.cs", "expected-cpp\Program.cpp", "expected-cpp\PortSupport.h", "cases\default.args", "cases\numeric.args", "realish\Forms\MainForm.Designer.cs", "realish\Core\Tree.cs", "fake-msvc\cl.c", "fake-msvc\link.c", "fake-endpoint.py", "portsupport-probe\Probe.cpp")) {
+    Assert-Condition (Test-Path -LiteralPath (Join-Path $RepositoryRoot "tests\fixtures\csharp-to-cpp-port\$ccFx")) "Missing csharp-to-cpp-port fixture: $ccFx"
+}
+
+$ccFrontMatter = Get-FrontMatter -Path $ccSkillPath
+Assert-Condition ($ccFrontMatter -match "(?m)^name:\s*csharp-to-cpp-port\s*$") "Invalid csharp-to-cpp-port skill name / unclosed frontmatter"
+Assert-Condition ($ccFrontMatter -match "(?m)^description:\s+.+") "Missing csharp-to-cpp-port skill description"
+$ccSkillContent = Get-Content -Raw -Encoding UTF8 -LiteralPath $ccSkillPath
+Assert-Condition (-not ($lcTypographicDashes | Where-Object { $ccSkillContent.Contains($_) })) "csharp-to-cpp-port SKILL.md must avoid typographic dashes that break default Windows validation"
+# Contract markers: the loop, the one-unit rule, honest compile-vs-correct wording, and the NO_COMPILER relay.
+foreach ($ccMarker in @("## Per-unit loop", "Never put the whole project", "TODO(port)", "NO_COMPILER", "means it compiles, not that it is correct", "## Limitations", "UnportedDeps", "BlockedDeps", "PortSupport.h", "finish-unit.ps1", "port-status.ps1 -CppRoot", "forward slashes", "mapping-extra.md")) {
+    Assert-Condition ($ccSkillContent -match [regex]::Escape($ccMarker)) "csharp-to-cpp-port SKILL.md must keep contract marker: $ccMarker"
+}
+Assert-Condition ($ccSkillContent -notmatch "## Validation") "Runtime SKILL.md should not include maintainer validation details"
+
+$ccProjectFront = Get-FrontMatter -Path $ccProjectEntry
+Assert-Condition ($ccProjectFront -match "(?m)^name:\s*csharp-to-cpp-port\s*$") "csharp-to-cpp-port project entrypoint must expose /csharp-to-cpp-port"
+$ccProjectContent = Get-Content -Raw -LiteralPath $ccProjectEntry
+Assert-Condition ($ccProjectContent -match "skills/csharp-to-cpp-port/SKILL.md") "csharp-to-cpp-port project entrypoint must delegate to the canonical skill"
+Assert-Condition ($ccProjectContent -match "inventory-csharp.ps1") "csharp-to-cpp-port project entrypoint must reference the inventory script"
+$ccCommandContent = Get-Content -Raw -LiteralPath $ccCommand
+Assert-Condition ($ccCommandContent -match '\$ARGUMENTS') "csharp-to-cpp-port command alias must pass through arguments"
+Assert-Condition ($ccCommandContent -match "csharp-to-cpp-port") "csharp-to-cpp-port command alias must delegate to the skill"
+Assert-Condition ($ccCommandContent -match "one at a time") "csharp-to-cpp-port command alias must keep the one-unit rule"
+Assert-Condition ($readmeContent -match [regex]::Escape("/csharp-to-cpp-port")) "README clone-time list must include /csharp-to-cpp-port"
+Assert-Condition ($readmeContent.Contains('[`csharp-to-cpp-port`](docs/csharp-to-cpp-port-usage.md)')) "README current-skill list must link the csharp-to-cpp-port usage guide"
+$ccUsageContent = Get-Content -Raw -Encoding UTF8 -LiteralPath $ccUsageDoc
+Assert-Condition ($ccUsageContent -match [regex]::Escape("/csharp-to-cpp-port") -or $ccUsageContent -match "csharp-to-cpp-port") "Usage guide must name the skill"
+Assert-Condition ($ccUsageContent -match "-Scope") "Usage guide must document directory-scoped passes (-Scope)"
+Assert-Condition ($ccUsageContent -match "PARITY_RESULT") "Usage guide must document parity output"
+
+$ccOpenAiContent = Get-Content -Raw -LiteralPath $ccOpenAi
+Assert-Condition ($ccOpenAiContent -match 'display_name:\s*"[^"]+"') "csharp-to-cpp-port openai.yaml needs a display_name"
+Assert-Condition ($ccOpenAiContent -match 'default_prompt:\s*"Use \$csharp-to-cpp-port') "csharp-to-cpp-port openai.yaml default_prompt must mention the skill name"
+$ccShort = [regex]::Match($ccOpenAiContent, 'short_description:\s*"([^"]+)"')
+Assert-Condition $ccShort.Success "csharp-to-cpp-port openai.yaml needs a short_description"
+Assert-Condition ($ccShort.Groups[1].Value.Length -ge 25 -and $ccShort.Groups[1].Value.Length -le 64) "csharp-to-cpp-port short_description must be 25-64 characters"
+
+foreach ($ccScript in $ccScripts) { Test-PowerShellSyntax -Path (Join-Path $ccRoot "scripts\$ccScript") }
+Test-PowerShellSyntax -Path $ccFixtures
+Test-PowerShellSyntax -Path $ccEvalLoop
+# Scripts must stay ASCII: Windows PowerShell 5.1 reads BOM-less non-ASCII .ps1 files as ANSI and mangles them.
+foreach ($ccScript in $ccScripts) {
+    $ccBytes = [System.IO.File]::ReadAllBytes((Join-Path $ccRoot "scripts\$ccScript"))
+    Assert-Condition (-not ($ccBytes | Where-Object { $_ -gt 127 } | Select-Object -First 1)) "csharp-to-cpp-port script must be ASCII-only: $ccScript"
+}
+foreach ($ccPattern in @("port-work/", "BUILD_RESULT.txt", "PARITY_RESULT.txt", "UNIT_PROMPT*.md", "tests/fixtures/csharp-to-cpp-port/sample-app/bin/")) {
+    Assert-Condition ($gitIgnore -match [regex]::Escape($ccPattern)) "Missing .gitignore pattern: $ccPattern"
+}
+# Behavioural fixtures: positive + negative paths; compile/link/parity when the tools exist, opt-in E2E.
+& $ccFixtures -RepositoryRoot $RepositoryRoot -IncludeParityE2E
+
 Write-Host "Validation passed."

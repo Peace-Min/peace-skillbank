@@ -1,0 +1,8 @@
+interface:
+  display_name: "C# to C++ Port"
+  short_description: "Port C# to Windows C++17 one unit at a time, verified."
+  brand_color: "#7C3AED"
+  default_prompt: "Use $csharp-to-cpp-port to inventory my C# project, then port it to C++17 one file at a time with build checks and parity."
+
+policy:
+  allow_implicit_invocation: true

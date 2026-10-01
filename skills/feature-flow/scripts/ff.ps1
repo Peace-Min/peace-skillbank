@@ -96,10 +96,10 @@ function Get-FailCount([object[]]$Events, [string]$ForStage) {
     # 0. Count FAILs for the stage since its last START/PASS or user RESUME; send-backs are counted separately.
     $count = 0
     foreach ($e in $Events) {
+        if (Test-UserResume $e) { $count = 0; continue }
         if ($e.Stage -ne $ForStage) { continue }
         if ($e.Status -eq "FAIL" -and $e.Note -notmatch '^sendback=') { $count++ }
         elseif ($e.Status -in @("START", "PASS")) { $count = 0 }
-        elseif (Test-UserResume $e) { $count = 0 }
     }
     return $count
 }
@@ -164,7 +164,18 @@ function Get-NextAction([object[]]$Events) {
     $nextRound = (Get-MaxRound -Events $Events -ForStage $last.Stage) + 1
     $wait = "; wait for the user, then resume"
     if ($last.Status -in $haltStatus) {
-        if ($resumedByUser) { return "$($last.Stage) round $nextRound" }
+        if ($resumedByUser) {
+            # 2. A halt logged after a PASS (or during intake) must not re-run finished work:
+            #    continue from the last real event before the halt instead.
+            $j = $idx - 1
+            while ($j -ge 0 -and ($Events[$j].Status -eq "RESUME" -or $Events[$j].Status -in $haltStatus)) { $j-- }
+            if ($j -lt 0) { return "intake: interview and spec approval" }
+            $before = $Events[$j]
+            $haltAfterPass = ($before.Status -eq "PASS" -and $before.Stage -eq $last.Stage)
+            $haltInIntake = ($before.Stage -eq "intake" -and $before.Status -ne "PASS")
+            if ($haltAfterPass -or $haltInIntake) { return (Get-NextAction @($Events[0..$j])) }
+            return "$($last.Stage) round $nextRound"
+        }
         if ($last.Status -eq "PAUSE") { return "paused$wait" }
         return "escalated ($($last.Status))$wait"
     }

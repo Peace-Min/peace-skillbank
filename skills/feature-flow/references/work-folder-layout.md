@@ -88,4 +88,4 @@ A note may end with `[model=<alias>]` (from `event -Model`), recording which mod
 (written by `auto-check`; resets nothing). Any other note is treated like `auto`. A reviewer model
 is recorded as `[reviewer=<alias>]` (from `event -ReviewerModel`).
 A QA send-back is a qa FAIL whose note starts with `sendback=IMPL` or `sendback=SPEC`; `ff.ps1`
-counts these against MAX_QA_CYCLES; the count survives a session restart and resets only on RESUME (the user's go-ahead).
+counts these against MAX_QA_CYCLES; the count survives a session restart and resets only on a `RESUME` noted `user ...` (the user's go-ahead).

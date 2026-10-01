@@ -376,6 +376,17 @@ try {
     $r = Invoke-Ff $project @("status", "-WorkDir", $ac)
     Check "wiki PASS -> NEXT done PASS" ($r.Out -match 'NEXT\s+done PASS') $r.Out
 
+    # 16b. A halt after a PASS does not re-run the passed stage; a user RESUME on another stage still resets counters.
+    & $setLog @("$old | intake | PASS | r0 | ", "$old | plan | PASS | r1 | ", "$old | plan | PAUSE | r0 | user stopped", "$old | plan | RESUME | r0 | user") 90
+    $r = Invoke-Ff $project @("status", "-WorkDir", $ac)
+    Check "PASS -> PAUSE -> user RESUME -> NEXT dev START" ($r.Out -match 'NEXT\s+dev START') $r.Out
+    & $setLog @("$old | intake | START | r0 | ", "$old | intake | PAUSE | r0 | user stopped", "$old | intake | RESUME | r0 | user") 90
+    $r = Invoke-Ff $project @("status", "-WorkDir", $ac)
+    Check "intake PAUSE -> user RESUME -> NEXT intake" ($r.Out -match 'NEXT\s+intake: interview') $r.Out
+    & $setLog @("$old | intake | PASS | r0 | ", "$old | dev | START | r0 | ", "$old | dev | FAIL | r1 | ", "$old | dev | FAIL | r2 | ", "$old | dev | FAIL | r3 | ", "$old | dev | LOOP_LIMIT | r3 | ", "$old | qa | RESUME | r0 | user") 90
+    $r = Invoke-Ff $project @("status", "-WorkDir", $ac)
+    Check "user RESUME logged on another stage still lifts the loop limit" (($r.Out -match 'NEXT\s+dev round 4') -and ($r.Out -match 'FAILS\s+0')) $r.Out
+
     # 17. PAUSE stops automatic resumes; heartbeat makes a long-running round look active; LIMIT is checked before WAIT.
     & $setLog @("$old | intake | PASS | r0 | ", "$old | dev | START | r0 | ", "$old | dev | PAUSE | r0 | user stopped") 90
     Check "PAUSE -> STOP" ((& $decide) -eq "STOP") ""

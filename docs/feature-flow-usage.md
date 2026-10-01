@@ -12,8 +12,9 @@
    | qa | 테스트 재실행 + `check-todo -Prefix Q -AllowOpen`(실패 항목은 증거 파일이 있어야 검수자에게 넘어감) |
    | wiki | `wiki-check` (index 존재, 모든 상대 링크 연결) |
 2. **맥락 분리**: 검수자는 새 서브에이전트로 뜨고, 작업자의 설명이 아니라 명세·diff·근거 파일만 받는다.
-3. **모델 분리**: 작업자는 세션 모델(`inherit`), 검수자는 `sonnet`. 세션이 Opus면 다른 모델이 되고,
-   세션 자체가 Sonnet이면 같은 모델이다(이때는 1·2·4번이 견제를 맡는다).
+3. **모델 분리**: 마스터가 호출마다 `pick-model`로 모델을 고른다(아래 "서브에이전트 모델 자동 선택").
+   검수자는 해당 단계 작업자보다 약하지 않게 맞추므로, 작은 작업에서는 둘 다 sonnet일 수 있다
+   (이때는 1·2·4번이 견제를 맡는다).
 4. **읽기 전용 검수자**: `ff-reviewer`는 `Read, Grep, Glob`만 가진다. 지적만 하고 수정은 작업자가 한다.
 
 ## 호출
@@ -125,7 +126,8 @@
 
 - 반복 상한: `skills/feature-flow/SKILL.md` 상단 `MAX_ROUNDS`, `MAX_QA_CYCLES`. 바꾸면 같은 파일의
   표준 호출 줄(`-MaxRounds`, `-MaxQaCycles`)도 함께 바꾼다.
-- 단계별 모델: `agents/ff-*.md`의 `model:` (`inherit` / `opus` / `sonnet` / `haiku`).
+- 단계별 모델: `ff.ps1 pick-model`이 호출마다 결정(규칙은 `references/model-selection.md`, 상한은 `MAX_MODEL`).
+  `agents/ff-*.md`의 `model:`은 pick-model 없이 부를 때의 기본값, `effort:`는 에이전트별 고정 노력 수준.
 - 폐쇄망 qwen 등 약한 로컬 모델: 게이트웨이가 모든 별칭을 같은 모델로 매핑하므로 모델 다양성은 사라진다.
   `MAX_ROUNDS = 2`로 낮추고, 기계적 게이트(빌드·테스트·check-todo)를 핵심 견제로 삼는다.
 

@@ -3,10 +3,17 @@
 요청 하나를 **인터뷰 → 명세 → 기획 → 개발 → QA → 위키**까지 에이전트 워크플로로 끝까지 진행하는 스킬이다.
 다른 회사 모델(Codex 등) 없이 **Claude 세션만으로** 돌아간다. 교차 모델 검수 대신 아래 네 겹의 견제를 쓴다.
 
-1. **기계적 게이트**: 매 라운드 빌드·테스트를 실제로 돌리고, `ff.ps1 check-todo`가 체크된 TODO마다
-   실재하는 `파일:줄` 근거가 있는지 검사한다. 실패하면 검수자 AI까지 가지 않고 반려한다.
+1. **기계적 게이트**: 검수자 AI를 부르기 전에 스크립트로 먼저 거른다. 실패하면 검수자까지 가지 않고 반려한다.
+
+   | 단계 | 게이트 |
+   |---|---|
+   | plan | `check-todo -FormatOnly` (D·Q 항목 존재, ID 중복 없음, evidence 줄) |
+   | dev | 빌드·테스트 실제 실행 + `check-todo -Prefix D`(체크마다 실재하는 `파일:줄`) + `diff`(기준 커밋 대비, 새 파일 포함) |
+   | qa | 테스트 재실행 + `check-todo -Prefix Q -AllowOpen`(실패 항목은 증거 파일이 있어야 검수자에게 넘어감) |
+   | wiki | `wiki-check` (index 존재, 모든 상대 링크 연결) |
 2. **맥락 분리**: 검수자는 새 서브에이전트로 뜨고, 작업자의 설명이 아니라 명세·diff·근거 파일만 받는다.
-3. **다른 모델**: 작업자는 세션 모델(`inherit`), 검수자는 `sonnet`.
+3. **모델 분리**: 작업자는 세션 모델(`inherit`), 검수자는 `sonnet`. 세션이 Opus면 다른 모델이 되고,
+   세션 자체가 Sonnet이면 같은 모델이다(이때는 1·2·4번이 견제를 맡는다).
 4. **읽기 전용 검수자**: `ff-reviewer`는 `Read, Grep, Glob`만 가진다. 지적만 하고 수정은 작업자가 한다.
 
 ## 호출
@@ -24,6 +31,14 @@
 ```
 
 이 레포를 클론해 루트에서 쓰면 `/feature-flow`로도 노출된다(테스트용).
+
+비용이 큰 워크플로라서 `disable-model-invocation: true`로 **자동 발동을 막았다**. 반드시 슬래시 커맨드로 호출한다.
+
+시작 전 조건: 대상 프로젝트가 git 저장소이고, 미커밋 변경이 없고, `work/`가 `.gitignore`에 있어야 한다.
+`init`이 셋 중 하나라도 어긋나면 경고하고, 마스터가 먼저 정리하도록 안내한다(라운드 diff가 여기에 의존).
+
+비대화형으로 돌릴 때는 요청에 범위·범위 밖·완료 기준·검증 명령을 모두 적고 "spec pre-approved"라고 명시하면
+인터뷰를 건너뛴다.
 
 ## 흐름
 
@@ -50,7 +65,8 @@
 | `reviews/<단계>-r<N>.md` | 라운드별 검수 결과 원문 (게이트 실패 포함) |
 | `evidence/dev/` | 라운드별 빌드·테스트 로그, diff |
 | `evidence/qa/` | QA 항목별 증거(로그·스크린샷), 자동화 불가 시 `manual-checklist.md` |
-| `events.log` | 단계·상태 타임라인 (`ff.ps1`만 기록) |
+| `base.txt` | 라운드 diff의 기준 커밋 |
+| `events.log` | 단계·상태 타임라인 (`ff.ps1`만 기록). QA 반려는 `sendback=IMPL/SPEC`로 남아 재개 후에도 횟수가 유지됨 |
 
 진행 중에는 마스터에게 그냥 물어보면 된다("개발 단계 왜 반려됐어?"). 마스터는 기억이 아니라 위 파일을 읽고 답한다.
 
@@ -58,7 +74,8 @@
 
 ## 설정 바꾸기
 
-- 반복 상한: `skills/feature-flow/SKILL.md` 상단 `MAX_ROUNDS`, `MAX_QA_CYCLES`.
+- 반복 상한: `skills/feature-flow/SKILL.md` 상단 `MAX_ROUNDS`, `MAX_QA_CYCLES`. 바꾸면 같은 파일의
+  표준 호출 줄(`-MaxRounds`, `-MaxQaCycles`)도 함께 바꾼다.
 - 단계별 모델: `agents/ff-*.md`의 `model:` (`inherit` / `opus` / `sonnet` / `haiku`).
 - 폐쇄망 qwen 등 약한 로컬 모델: 게이트웨이가 모든 별칭을 같은 모델로 매핑하므로 모델 다양성은 사라진다.
   `MAX_ROUNDS = 2`로 낮추고, 기계적 게이트(빌드·테스트·check-todo)를 핵심 견제로 삼는다.
@@ -71,6 +88,8 @@
   수동 체크리스트를 낸다.
 - 토큰 사용량이 크다(단계마다 작업자·검수자 호출). 작은 수정에는 쓰지 않는다.
 - `check-todo`는 근거 파일·줄이 **존재하는지**만 본다. 그 코드가 맞는지는 검수자가 본다.
+  (기능시험에서 실제로 확인: 근거 위치가 엉뚱한 D 항목을 게이트는 통과시켰고 검수자가 FAIL로 잡았다.)
+- 개발은 순차 실행이다(병렬 worktree 개발은 이번 버전에 없음).
 
 ## 다른 LLM에서
 
@@ -84,4 +103,5 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\feature-flow-fixture
 ```
 
 `ff.ps1`의 init/event/check-todo/status를 임시 프로젝트에서 양성·음성 경로로 검사한다
-(근거 없는 체크, 없는 파일, 범위 밖 줄 번호, 산문만 있는 근거, 루프 상한, RESUME 리셋 등).
+(빈 줄 포함 줄 수, 근거 없는 체크, 없는 파일, 범위 밖 줄 번호, 산문만 있는 근거, plan 형식 게이트,
+QA 실패 항목 증거, 루프 상한·QA 반려 상한, RESUME 리셋, NEXT 안내, git diff(새 파일 포함·work 제외), 위키 링크 검사).

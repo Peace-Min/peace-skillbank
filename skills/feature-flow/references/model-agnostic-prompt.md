@@ -12,8 +12,8 @@ parts are in `scripts/ff.ps1`. Any LLM (Codex, a local model, a chat UI) can pla
 
 ```powershell
 # build/test output for the round
-<build/test command> *> work\<id>\evidence\dev\verify-r1.log
-git diff > work\<id>\evidence\dev\diff-r1.patch
+<build/test command> 2>&1 | Out-File -Encoding utf8 work\<id>\evidence\dev\verify-r1.log
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\ff.ps1 diff -WorkDir work\<id> -Round 1
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\ff.ps1 check-todo -WorkDir work\<id> -Prefix D
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\ff.ps1 event -WorkDir work\<id> -Stage dev -Status FAIL -Round 1 -Note "gate: D3 no evidence"
 ```
@@ -21,5 +21,5 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\ff.ps1 event -WorkDi
 4. Save each reviewer reply verbatim as `reviews/<stage>-r<N>.md`. Stop when `ff.ps1 event`
    exits 3 (loop limit) or a role returns `BLOCKED_*` / `NEEDS_DECISION`.
 
-Weak/local models: use `-MaxRounds 2`, keep one stage per conversation, and never paste a
+Weak/local models: use `-MaxRounds 2` on every `event` call, keep one stage per conversation, and never paste a
 worker's transcript into the reviewer conversation (files only).

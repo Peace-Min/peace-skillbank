@@ -11,8 +11,8 @@ $ARGUMENTS
 
 Treat this command as a terse entry point:
 
-1. If the arguments start with `resume`, run `scripts/ff.ps1 status` on the given work folder and continue from the reported stage.
-2. Otherwise run `scripts/ff.ps1 init`, write `00-context.md`, interview the user, and get explicit approval of `01-spec.md` before any code is written.
+1. If the arguments start with `resume`, run `<skill-dir>/scripts/ff.ps1 status` (`<skill-dir>` = the feature-flow skill folder) on the given work folder and continue from the reported stage.
+2. Otherwise run `<skill-dir>/scripts/ff.ps1 init`, write `00-context.md`, interview the user, and get explicit approval of `01-spec.md` before any code is written.
 3. Drive the stages plan -> dev -> qa -> wiki with the `ff-*` subagents, the build/test + `check-todo` gate, and the read-only `ff-reviewer`, exactly as the skill describes.
 4. Escalate on `BLOCKED_*`, `NEEDS_DECISION` or `LOOP_LIMIT` and wait for the user.
 5. If no request is given, ask what to build.

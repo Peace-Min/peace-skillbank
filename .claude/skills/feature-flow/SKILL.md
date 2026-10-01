@@ -1,6 +1,7 @@
 ---
 name: feature-flow
 description: Clone-time Claude Code entrypoint for the plan -> develop -> QA -> wiki agent workflow. The main session interviews the user into a spec, then drives worker and read-only reviewer subagents with build/test and file-evidence gates, recording everything under work/<id>/. Use when the user wants a change taken end to end or invokes /feature-flow. Korean triggers - 기획부터 위키까지, 워크플로로 개발해줘, 기획 개발 QA 위키, 에이전트 워크플로.
+disable-model-invocation: true
 ---
 
 # Feature Flow Entrypoint

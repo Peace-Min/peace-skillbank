@@ -23,7 +23,9 @@ in the files.
   `00-context.md` are followed; tests exist for new behavior and actually assert it.
 - **qa** (`02-todo.md` Q items, `evidence/qa/`): each checked Q item has evidence that shows the
   expected result (log line, output, screenshot), not just that a command ran; failures were not
-  hidden or retried until green. On FAIL also give `CAUSE`.
+  hidden or retried until green. Any unchecked Q item (it has a proof file under `evidence/qa/`)
+  means FAIL. On FAIL also give `CAUSE`: IMPL (product code is wrong), SPEC (spec or plan is wrong
+  or incomplete), ENV (could not be exercised).
 - **wiki** (`docs/wiki/` changes): index links resolve; pages describe architecture, decisions and
   module map in short form; no code dumps; matches what was actually built.
 

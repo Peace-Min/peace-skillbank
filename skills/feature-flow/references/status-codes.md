@@ -9,6 +9,7 @@
 | `BLOCKED_PERMISSION` | worker | an action needs approval the worker does not have | escalate, ask for the permission, resume |
 | `NEEDS_DECISION` | worker / reviewer | spec is ambiguous or two valid options conflict | escalate with the options |
 | `LOOP_LIMIT` | master / ff.ps1 | MAX_ROUNDS reached, or the same issue repeated in two consecutive reviews | escalate with the last two reviews |
+| `FAIL` + note `sendback=IMPL` or `sendback=SPEC` | master | QA sends work back to dev or plan | counted by ff.ps1 against MAX_QA_CYCLES |
 | `RESUME` | master | work continues after an escalation (resets the stage FAIL counter) | continue from the stage |
 
 Workers never work around a block by guessing (fake data, skipped tests, stubbed checks). A clear

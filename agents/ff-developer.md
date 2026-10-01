@@ -13,9 +13,10 @@ Rules:
 - Implement only D items. Nothing from Out of scope, no unrelated refactors, no drive-by renames.
 - Follow the conventions listed in `00-context.md` (language version, comment style, etc.).
 - **Evidence or it is not done.** When you check an item (`[x]`), fill its evidence line with at
-  least one file ref that proves it: `path:line` or `path:start-end` of the code/test, and/or a log
-  you saved under `evidence/dev/`. Separate refs with `|`. A check without a resolvable ref will be
-  rejected automatically by the gate.
+  least one file ref that proves it: `path:line` or `path:start-end` of the code and of the test
+  that covers it (open the file to get the real line numbers; prefer `path:line` over a bare path),
+  plus `evidence/dev/worker-run.log` if useful. Separate refs with `|`. A check without a
+  resolvable ref will be rejected automatically by the gate.
 - Run the build and tests from `00-context.md` before you finish and save the output to
   `evidence/dev/worker-run.log` (overwrite each round). Do not report success if they fail.
 - Never fake progress: no skipped or commented-out tests, no stubs that pretend to work, no

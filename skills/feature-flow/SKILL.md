@@ -1,7 +1,6 @@
 ---
 name: feature-flow
 description: Runs a plan -> develop -> QA -> wiki agent workflow inside the current project with Claude only (no second vendor model). The main session acts as the master - it interviews the user into a spec, then drives worker and read-only reviewer subagents stage by stage, gates every stage mechanically (build/test output, file:line evidence, diff, wiki links) before review, records everything under work/<id>/, and escalates to the user only on block, decision or loop limit. Use when the user explicitly asks for a feature or change to be taken end to end with planning, implementation, QA and documentation, or invokes /feature-flow. Not for small one-file fixes. Korean triggers - 기획부터 위키까지, 워크플로로 개발해줘, 기획 개발 QA 위키, 에이전트 워크플로, feature-flow.
-disable-model-invocation: true
 ---
 
 # Feature Flow (master procedure)
@@ -53,7 +52,7 @@ must judge from the spec, the diff and the evidence, not from the worker's expla
 
 1. If the argument is `resume <dir>`: run `status`, log `RESUME` for the stage it reports, and
    continue with its `NEXT` line. Skip the rest of Step 0.
-2. Run `init`. If it warns that the tree is dirty, that `work/` is not ignored, or that this is not
+2. Run `init`; its `WORKDIR` line is `<dir>`. If it warns that the tree is dirty, that `work/` is not ignored, or that this is not
    a git repository, tell the user and get it fixed (commit/stash, add `work/` to `.gitignore`,
    `git init`) before continuing; round diffs depend on it.
 3. Fill `00-context.md` yourself (the shared seed every agent reads instead of re-exploring): build
@@ -70,10 +69,13 @@ must judge from the spec, the diff and the evidence, not from the worker's expla
 
 ## Stage loop (plan -> dev -> qa -> wiki)
 
-For each stage, log `<stage> START`, then for round N = 1..MAX_ROUNDS:
+For each stage, log `<stage> START`, then repeat rounds until PASS or a limit. Take the round
+number N from `status` (`NEXT ... round N`): round numbers continue within a stage for the whole
+work folder (also after a QA send-back), so no round file is ever overwritten.
 
 1. **Worker.** Dispatch the stage agent with: `00-context.md`, `01-spec.md`, `02-todo.md` (from dev
-   on), and from round 2 the previous `reviews/<stage>-r<N-1>.md` as the fix list.
+   on), and, when there is one, the latest review for this stage (or, after a QA send-back, the
+   latest `reviews/qa-r*.md`) as the fix list.
    If its last line is not `RESULT: DONE...`, log the reported status (`BLOCKED_ENV`,
    `BLOCKED_PERMISSION`, `NEEDS_DECISION`) and escalate now. Do not run the gate or the reviewer.
 2. **Gate (no model involved).**
@@ -94,7 +96,7 @@ For each stage, log `<stage> START`, then for round N = 1..MAX_ROUNDS:
    - `NEEDS_DECISION` -> log it and escalate.
 
 QA send-back: on a qa FAIL whose review says `CAUSE: IMPL` or `CAUSE: SPEC`, log the FAIL with note
-`sendback=IMPL` or `sendback=SPEC` (this is how the send-back count survives a resume), then go to
+`sendback=IMPL` or `sendback=SPEC` (ff.ps1 counts these across stages until the user's next RESUME), then go to
 dev (IMPL, with the QA review as the fix list) or plan (SPEC). If `event` exits 3, escalate.
 `CAUSE: ENV` -> log `BLOCKED_ENV` and escalate. When the product cannot be exercised automatically
 (GUI without automation, hardware), the QA tester returns `BLOCKED_ENV` with

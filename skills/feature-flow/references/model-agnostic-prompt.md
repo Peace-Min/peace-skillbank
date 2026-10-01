@@ -1,7 +1,7 @@
 # Using feature-flow without Claude Code subagents
 
 The workflow is tool-agnostic: every hand-off is a file under `work/<id>/` and the deterministic
-parts are in `scripts/ff.ps1`. Any LLM (Codex, a local model, a chat UI) can play the roles.
+parts are in `<skill-dir>/scripts/ff.ps1` (`<skill-dir>` = `skills/feature-flow`). Any LLM (Codex, a local model, a chat UI) can play the roles.
 
 1. The human (or the orchestrating model) runs `ff.ps1 init -Title "<title>"` and fills
    `00-context.md` and `01-spec.md` after the interview.

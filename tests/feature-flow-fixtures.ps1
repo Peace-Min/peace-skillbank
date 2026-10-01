@@ -24,9 +24,14 @@ function Check {
     else { Write-Host "  FAIL  $Name  $Detail"; $script:failures++ }
 }
 
-function Last-Line([string]$Text) {
-    return (($Text -split "`r?`n") | Where-Object { $_.Trim() } | Select-Object -Last 1).Trim()
+function Get-WorkDirLine([string]$Text) {
+    $m = [regex]::Match($Text, '(?m)^WORKDIR\s+(.+?)\s*$')
+    if ($m.Success) { return $m.Groups[1].Value }
+    return ""
 }
+
+# Korean sample text built from code points so this file stays ASCII.
+$ko = -join ([char[]]@(0xD55C, 0xAE00, 0x20, 0xB0B4, 0xC6A9))
 
 $project = Join-Path ([System.IO.Path]::GetTempPath()) ("ff-fixture-" + [guid]::NewGuid().ToString("N").Substring(0, 8))
 New-Item -ItemType Directory -Path (Join-Path $project "src") -Force | Out-Null
@@ -39,7 +44,7 @@ try {
 
     # 1. init on a non-git folder: creates the layout, warns, prints the folder last.
     $r = Invoke-Ff $project @("init", "-Title", "Account lockout after 5 failures")
-    $work = Last-Line $r.Out
+    $work = Get-WorkDirLine $r.Out
     Check "init exit 0" ($r.Code -eq 0) $r.Out
     Check "init layout" ((Test-Path (Join-Path $work "01-spec.md")) -and (Test-Path (Join-Path $work "evidence\qa")) -and (Test-Path (Join-Path $work "reviews"))) $work
     Check "init slug" ($work -match 'account-lockout-after-5-failures$') $work
@@ -67,6 +72,10 @@ try {
     Check "check-todo D all valid -> exit 0" ($r.Code -eq 0) $r.Out
     Check "check-todo reports OK lines" (([regex]::Matches($r.Out, '(?m)^OK\s')).Count -eq 2) $r.Out
     Check "blank lines counted (line 10 of 10 accepted)" ($r.Out -notmatch 'beyond end') $r.Out
+    Set-Content -LiteralPath (Join-Path $work "02-todo.md") -Value @("## Dev", "- [x] D1: punctuation around refs", "  - evidence: see (src/Lockout.cs:7). also [src/Lockout.cs:1-3],") -Encoding UTF8
+    $r = Invoke-Ff $project @("check-todo", "-WorkDir", $work, "-Prefix", "D")
+    Check "refs wrapped in ( ) [ ] or followed by . , are accepted" (($r.Code -eq 0) -and ($r.Out -match '(?m)^OK\s+D1')) $r.Out
+    Set-Content -LiteralPath (Join-Path $work "02-todo.md") -Value $todoOk -Encoding UTF8
 
     # 4. -FormatOnly (plan gate).
     $r = Invoke-Ff $project @("check-todo", "-WorkDir", $work, "-FormatOnly")
@@ -135,14 +144,31 @@ try {
     $r = Invoke-Ff $project @("event", "-WorkDir", $work, "-Stage", "dev", "-Status", "FAIL", "-Round", "5", "-MaxRounds", "2")
     Check "-MaxRounds 2 trips on second FAIL" ($r.Code -eq 3) $r.Out
 
-    # 8. QA send-backs: counted across stages and START resets; third trips with -MaxQaCycles 2.
-    $r = Invoke-Ff $project @("event", "-WorkDir", $work, "-Stage", "qa", "-Status", "FAIL", "-Note", "sendback=IMPL median wrong")
-    Check "sendback 1 exit 0" ($r.Code -eq 0) $r.Out
+    $r = Invoke-Ff $project @("status", "-WorkDir", $work, "-MaxRounds", "2")
+    Check "status NEXT after loop limit is escalated" ($r.Out -match 'NEXT\s+escalated \(loop limit\)') $r.Out
+
+    # 8. QA send-backs: counted across stages and START resets; third trips with -MaxQaCycles 2;
+    #    they do not inflate the qa round-fail counter; RESUME (user go-ahead) resets them.
     $r = Invoke-Ff $project @("event", "-WorkDir", $work, "-Stage", "qa", "-Status", "START")
-    $r = Invoke-Ff $project @("event", "-WorkDir", $work, "-Stage", "qa", "-Status", "FAIL", "-Note", "sendback=SPEC")
+    $r = Invoke-Ff $project @("event", "-WorkDir", $work, "-Stage", "qa", "-Status", "FAIL", "-Round", "1", "-Note", "sendback=IMPL median wrong")
+    Check "sendback 1 exit 0" ($r.Code -eq 0) $r.Out
+    $r = Invoke-Ff $project @("status", "-WorkDir", $work)
+    Check "status NEXT after IMPL send-back is dev START" ($r.Out -match 'NEXT\s+dev START \(QA send-back') $r.Out
+    $r = Invoke-Ff $project @("event", "-WorkDir", $work, "-Stage", "qa", "-Status", "START")
+    $r = Invoke-Ff $project @("event", "-WorkDir", $work, "-Stage", "qa", "-Status", "FAIL", "-Round", "2", "-Note", "sendback=SPEC")
     Check "sendback 2 exit 0" ($r.Code -eq 0) $r.Out
-    $r = Invoke-Ff $project @("event", "-WorkDir", $work, "-Stage", "qa", "-Status", "FAIL", "-Note", "sendback=IMPL")
+    $r = Invoke-Ff $project @("status", "-WorkDir", $work)
+    Check "status NEXT after SPEC send-back is plan START" ($r.Out -match 'NEXT\s+plan START') $r.Out
+    $r = Invoke-Ff $project @("event", "-WorkDir", $work, "-Stage", "qa", "-Status", "START")
+    $r = Invoke-Ff $project @("event", "-WorkDir", $work, "-Stage", "qa", "-Status", "FAIL", "-Round", "3", "-Note", "gate: Q2 no proof", "-MaxRounds", "2")
+    Check "send-backs do not count as qa round FAILs" ($r.Code -eq 0) $r.Out
+    $r = Invoke-Ff $project @("event", "-WorkDir", $work, "-Stage", "qa", "-Status", "FAIL", "-Round", "4", "-Note", "sendback=IMPL")
     Check "sendback 3 -> LOOP_LIMIT exit 3" (($r.Code -eq 3) -and ($r.Out -match 'sent work back 3')) $r.Out
+    $r = Invoke-Ff $project @("status", "-WorkDir", $work)
+    Check "status NEXT after send-back limit is escalated" ($r.Out -match 'NEXT\s+escalated \(QA send-back limit\)') $r.Out
+    $r = Invoke-Ff $project @("event", "-WorkDir", $work, "-Stage", "qa", "-Status", "RESUME")
+    $r = Invoke-Ff $project @("event", "-WorkDir", $work, "-Stage", "qa", "-Status", "FAIL", "-Round", "5", "-Note", "sendback=IMPL")
+    Check "RESUME resets send-back count" ($r.Code -eq 0) $r.Out
 
     # 9. event negative: unknown stage/status.
     $r = Invoke-Ff $project @("event", "-WorkDir", $work, "-Stage", "deploy", "-Status", "PASS")
@@ -157,8 +183,8 @@ try {
     Check "status exit 0" ($r.Code -eq 0) $r.Out
     Check "status stage line" ($r.Out -match 'STAGE\s+dev\s+last=FAIL r1') $r.Out
     Check "status todo progress" ($r.Out -match 'TODO-D\s+6/7 checked') $r.Out
-    Check "status sendbacks" ($r.Out -match 'SENDBACKS 3') $r.Out
-    Check "status next action" ($r.Out -match 'NEXT\s+dev round 2') $r.Out
+    Check "status sendbacks since RESUME" ($r.Out -match 'SENDBACKS 1') $r.Out
+    Check "round numbers continue (dev had r1..r5, then r1 again -> next r6)" ($r.Out -match 'NEXT\s+dev round 6') $r.Out
     $r = Invoke-Ff $project @("event", "-WorkDir", $work, "-Stage", "dev", "-Status", "PASS", "-Round", "2")
     $r = Invoke-Ff $project @("status", "-WorkDir", $work)
     Check "status next after PASS" ($r.Out -match 'NEXT\s+qa START') $r.Out
@@ -178,7 +204,7 @@ try {
     & git -C $gp -c user.name=t -c user.email=t@t commit -q -m init 2>&1 | Out-Null
     $ErrorActionPreference = $prevEap
     $r = Invoke-Ff $gp @("init", "-Title", "diff test")
-    $gw = Last-Line $r.Out
+    $gw = Get-WorkDirLine $r.Out
     Check "init on clean ignored git repo: no warnings" (($r.Code -eq 0) -and ($r.Out -notmatch 'WARN')) $r.Out
     Check "init records commit base" (([System.IO.File]::ReadAllText((Join-Path $gw "base.txt"))) -match '^[0-9a-f]{40}$') ""
     Add-Content -LiteralPath (Join-Path $gp "src\a.txt") -Value "two" -Encoding ASCII
@@ -190,6 +216,16 @@ try {
     Check "diff has tracked change" ($patch -match '(?m)^\+two') $patch
     Check "diff has untracked file" (($patch -match 'b\.txt') -and ($patch -match '(?m)^\+new file')) $patch
     Check "diff excludes work/" ($patch -notmatch 'events\.log|01-spec') $patch
+
+    # 11b. Non-ASCII: Korean content in a tracked file and an untracked file with a Korean name.
+    $koFile = Join-Path $gp ("src\" + $ko.Replace(" ", "") + ".txt")
+    [System.IO.File]::WriteAllText($koFile, "new $ko`n", (New-Object System.Text.UTF8Encoding($false)))
+    [System.IO.File]::AppendAllText((Join-Path $gp "src\a.txt"), "$ko`n", (New-Object System.Text.UTF8Encoding($false)))
+    $r = Invoke-Ff $gp @("diff", "-WorkDir", $gw, "-Round", "2")
+    $patch2 = [System.IO.File]::ReadAllText((Join-Path $gw "evidence\dev\diff-r2.patch"), [System.Text.Encoding]::UTF8)
+    Check "diff reports 2 untracked files" ($r.Out -match '2 untracked') $r.Out
+    Check "diff keeps Korean content (tracked)" ($patch2.Contains("+$ko")) ""
+    Check "diff includes Korean-named untracked file" ($patch2.Contains($ko.Replace(" ", "") + ".txt") -and $patch2.Contains("+new $ko")) ""
     $r = Invoke-Ff $gp @("diff", "-WorkDir", $gw)
     Check "diff without -Round -> exit 2" ($r.Code -eq 2) $r.Out
 
@@ -205,6 +241,20 @@ try {
     Set-Content -LiteralPath (Join-Path $gp "docs\wiki\index.md") -Value @("- [Arch](architecture.md)", "- [Calc](modules/calc.md#median)") -Encoding UTF8
     $r = Invoke-Ff $gp @("wiki-check")
     Check "wiki-check all links resolve -> exit 0" ($r.Code -eq 0) $r.Out
+
+    # 12b. Link forms: ./x, <x>, "title", %20, leading /, reference definitions; code fences ignored.
+    Set-Content -LiteralPath (Join-Path $gp "docs\wiki\my page.md") -Value "# p" -Encoding UTF8
+    $forms = @(
+        "- [a](./architecture.md)", "- [b](<modules/calc.md>)", "- [c](architecture.md `"Arch title`")",
+        "- [d](my%20page.md)", "- [e](/docs/wiki/architecture.md)", "[ref]: modules/calc.md",
+        '```', "[fenced](not-real.md)", '```'
+    )
+    Set-Content -LiteralPath (Join-Path $gp "docs\wiki\index.md") -Value $forms -Encoding UTF8
+    $r = Invoke-Ff $gp @("wiki-check")
+    Check "wiki-check accepts all valid link forms, ignores fenced code" ($r.Code -eq 0) $r.Out
+    Set-Content -LiteralPath (Join-Path $gp "docs\wiki\index.md") -Value @("- [t](gone.md `"title`")", "[r]: also-gone.md") -Encoding UTF8
+    $r = Invoke-Ff $gp @("wiki-check")
+    Check "wiki-check catches broken titled and reference links" (($r.Code -eq 1) -and ($r.Out -match '2 broken')) $r.Out
 }
 finally {
     Remove-Item -LiteralPath $project -Recurse -Force -ErrorAction SilentlyContinue

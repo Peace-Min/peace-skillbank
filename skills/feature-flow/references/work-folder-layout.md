@@ -79,4 +79,4 @@ ISSUES:
 
 `<ISO time> | <stage> | <STATUS> | r<N> | <note>`; stages `intake plan dev qa wiki done`.
 A QA send-back is a qa FAIL whose note starts with `sendback=IMPL` or `sendback=SPEC`; `ff.ps1`
-counts these against MAX_QA_CYCLES, so the count survives a resume.
+counts these against MAX_QA_CYCLES; the count survives a session restart and resets only on RESUME (the user's go-ahead).

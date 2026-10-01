@@ -53,12 +53,13 @@ function Resolve-WorkDir {
 }
 
 function Invoke-Git([string[]]$GitArgs) {
-    # 0. Run git in the project root; return stdout lines and the exit code without throwing.
+    # 0. Run git in the project root as UTF-8 with unquoted paths, so non-ASCII names and content survive.
     $prev = $ErrorActionPreference
+    $prevEnc = [Console]::OutputEncoding
     $ErrorActionPreference = "Continue"
-    $out = & git -C $Root @GitArgs 2>$null
-    $code = $LASTEXITCODE
-    $ErrorActionPreference = $prev
+    [Console]::OutputEncoding = $utf8
+    try { $out = & git -C $Root -c core.quotePath=false @GitArgs 2>$null; $code = $LASTEXITCODE }
+    finally { [Console]::OutputEncoding = $prevEnc; $ErrorActionPreference = $prev }
     return [pscustomobject]@{ Out = @($out); Code = $code }
 }
 
@@ -75,19 +76,35 @@ function Read-Events([string]$Dir) {
 }
 
 function Get-FailCount([object[]]$Events, [string]$ForStage) {
-    # 0. Count FAILs for the stage since its last START/PASS/RESUME.
+    # 0. Count FAILs for the stage since its last START/PASS/RESUME; send-backs are counted separately.
     $count = 0
     foreach ($e in $Events) {
         if ($e.Stage -ne $ForStage) { continue }
-        if ($e.Status -eq "FAIL") { $count++ }
+        if ($e.Status -eq "FAIL" -and $e.Note -notmatch '^sendback=') { $count++ }
         elseif ($e.Status -in @("START", "PASS", "RESUME")) { $count = 0 }
     }
     return $count
 }
 
 function Get-SendBackCount([object[]]$Events) {
-    # 0. QA send-backs are FAIL events on stage qa whose note starts with "sendback=".
-    return @($Events | Where-Object { $_.Stage -eq "qa" -and $_.Status -eq "FAIL" -and $_.Note -match '^sendback=' }).Count
+    # 0. QA send-backs (qa FAIL with note "sendback=...") since the last RESUME, which is the user's go-ahead.
+    $count = 0
+    foreach ($e in $Events) {
+        if ($e.Status -eq "RESUME") { $count = 0 }
+        elseif ($e.Stage -eq "qa" -and $e.Status -eq "FAIL" -and $e.Note -match '^sendback=') { $count++ }
+    }
+    return $count
+}
+
+function Get-MaxRound([object[]]$Events, [string]$ForStage) {
+    # 0. Round numbers never restart inside a work folder, so files like diff-r<N>.patch are never overwritten.
+    $max = 0
+    foreach ($e in $Events) {
+        if ($e.Stage -ne $ForStage) { continue }
+        $m = [regex]::Match($e.Round, '^r(\d+)$')
+        if ($m.Success -and [int]$m.Groups[1].Value -gt $max) { $max = [int]$m.Groups[1].Value }
+    }
+    return $max
 }
 
 function Get-TodoItems([string]$Dir) {
@@ -174,7 +191,7 @@ switch ($Command) {
         [System.IO.File]::WriteAllText((Join-Path $dir "00-context.md"), $context, $utf8)
         [System.IO.File]::WriteAllText((Join-Path $dir "01-spec.md"), $spec, $utf8)
         [System.IO.File]::WriteAllText((Join-Path $dir "events.log"), "", $utf8)
-        Write-Output $dir
+        Write-Output "WORKDIR   $dir"
         exit 0
     }
 
@@ -242,7 +259,7 @@ switch ($Command) {
             # 2. At least one token must be a verifiable file ref; every explicit file ref must resolve.
             $refs = 0; $problems = @()
             foreach ($token in ($item.Evidence -split '[|;,\s]+')) {
-                $t = $token.Trim().Trim('`')
+                $t = $token.Trim().Trim('`').TrimStart('(', '[').TrimEnd('.', ',', ')', ']', ':')
                 if (-not $t) { continue }
                 $result = Test-EvidenceRef -Token $t -Dir $dir
                 if ($null -eq $result) { continue }
@@ -288,12 +305,17 @@ switch ($Command) {
         $bad = 0; $pages = 0
         foreach ($page in (Get-ChildItem -LiteralPath $wiki -Filter "*.md" -File -Recurse)) {
             $pages++
-            $text = [System.IO.File]::ReadAllText($page.FullName)
-            foreach ($m in [regex]::Matches($text, '\]\(([^)#\s]+\.md)(#[^)]*)?\)')) {
-                $target = $m.Groups[1].Value
-                if ($target -match '^[a-z]+://') { continue }
-                if (-not (Test-Path -LiteralPath (Join-Path $page.DirectoryName $target))) {
-                    Write-Output "BROKEN    $($page.FullName.Substring($Root.Length).TrimStart('\')) -> $target"; $bad++
+            # 0. Ignore fenced code; collect inline links (optional <...> and "title") and reference definitions.
+            $text = [regex]::Replace([System.IO.File]::ReadAllText($page.FullName), '(?ms)^\s*```.*?^\s*```', '')
+            $targets = @()
+            foreach ($m in [regex]::Matches($text, '\]\(\s*<?([^)>\s]+?\.md)(#[^)>\s]*)?>?(\s+"[^"]*")?\s*\)')) { $targets += $m.Groups[1].Value }
+            foreach ($m in [regex]::Matches($text, '(?m)^\s*\[[^\]]+\]:\s*<?([^>\s]+?\.md)(#\S*)?>?')) { $targets += $m.Groups[1].Value }
+            foreach ($raw in $targets) {
+                if ($raw -match '^[a-z]+://') { continue }
+                $target = [uri]::UnescapeDataString($raw)
+                $full = if ($target.StartsWith("/")) { Join-Path $Root $target.TrimStart("/") } else { Join-Path $page.DirectoryName $target }
+                if (-not (Test-Path -LiteralPath $full)) {
+                    Write-Output "BROKEN    $($page.FullName.Substring($Root.Length).TrimStart('\')) -> $raw"; $bad++
                 }
             }
         }
@@ -322,12 +344,23 @@ switch ($Command) {
 
         # 0. Next action, so a resumed (or weak) orchestrator does not have to infer it.
         $order = @("intake", "plan", "dev", "qa", "wiki", "done")
+        $nextRound = (Get-MaxRound -Events $events -ForStage $last.Stage) + 1
+        $wait = "; wait for the user, then log RESUME"
+        $sendBackOver = (Get-SendBackCount $events) -gt $MaxQaCycles
         $next = switch ($last.Status) {
             "PASS" { $i = [array]::IndexOf($order, $last.Stage); if ($i -lt $order.Count - 1) { "$($order[$i + 1]) START" } else { "finished" } }
-            "FAIL" { "$($last.Stage) round $($fails + 1)" }
-            "START" { "$($last.Stage) round 1" }
-            "RESUME" { "$($last.Stage) round $($fails + 1)" }
-            default { "escalated ($($last.Status)); wait for the user, then log RESUME" }
+            "FAIL" {
+                if ($last.Note -match '^sendback=(IMPL|SPEC)') {
+                    if ($sendBackOver) { "escalated (QA send-back limit)$wait" }
+                    elseif ($Matches[1] -eq "IMPL") { "dev START (QA send-back; fix list = latest reviews/qa-r*.md)" }
+                    else { "plan START (QA send-back; fix list = latest reviews/qa-r*.md)" }
+                }
+                elseif ($fails -ge $MaxRounds) { "escalated (loop limit)$wait" }
+                else { "$($last.Stage) round $nextRound" }
+            }
+            "START" { "$($last.Stage) round $nextRound" }
+            "RESUME" { "$($last.Stage) round $nextRound" }
+            default { "escalated ($($last.Status))$wait" }
         }
         Write-Output "NEXT      $next"
         Write-Output "RECENT"

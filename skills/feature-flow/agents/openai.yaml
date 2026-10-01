@@ -1,0 +1,8 @@
+interface:
+  display_name: "Feature Flow (plan-dev-QA-wiki)"
+  short_description: "Spec-to-wiki agent workflow with evidence-gated review."
+  brand_color: "#0F766E"
+  default_prompt: "Use $feature-flow to take this request through interview, spec, plan, development, QA and wiki, with a read-only reviewer and build/test evidence gating every stage."
+
+policy:
+  allow_implicit_invocation: false

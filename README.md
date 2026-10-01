@@ -63,6 +63,7 @@ Copy-Item -Recurse -Force -LiteralPath $source -Destination $target
 /addsim-xml-report
 /xml-report
 /csharp-to-cpp-port
+/feature-flow
 ```
 
 이미 실행 중인 세션에서 새로 클론했거나 `.claude/skills/`가 세션 시작 뒤 생겼다면 Claude Code를
@@ -171,7 +172,7 @@ ANALYSIS.md (분석 완료 후)
 tools\uninstall-peace-skillbank.cmd      더블클릭 - 계획을 보여주고 y/N 확인 후 삭제
 ```
 
-제거 대상은 플러그인 캐시/마켓플레이스 등록, 개인 스킬 7종과 각 슬래시 커맨드,
+제거 대상은 플러그인 캐시/마켓플레이스 등록, 개인 스킬 8종과 각 슬래시 커맨드,
 `DMP_TRIAGE_*` 환경변수, `~\.claude.json`의 사용 기록이다. **다른 번들의 스킬(심볼릭 포함)과
 무관한 플러그인은 건드리지 않으며**, 편집하는 JSON은 타임스탬프 백업을 남긴다.
 `-WhatIfOnly`는 계획만 출력하고, `-KeepConfig`는 설정 파일을 건드리지 않는다.
@@ -211,3 +212,4 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\validate.ps1
 - [`xml-report`](docs/xml-report-usage.md): 임의의 XML을 결정적 PowerShell 스크립트로 뎁쓰(계층)별 전수 분석해 항상 동일한 8섹션 자립형 HTML 보고서를 만드는 범용 스킬. 파싱/렌더링 요소 수 대조, SHA-256, 미분류 요소 명시로 신뢰성을 보장하고, LLM은 마지막 "문서 해석" 섹션(모델 생성 배지)만 작성한다. 도메인별 매핑 파일(`-MappingPath`)로 라벨/커넥션/브랜드를 교체할 수 있다.
 - [`addsim-xml-report`](docs/addsim-xml-report-usage.md): `xml-report`와 동일 엔진의 AddSIM(국방 M&S) 특화판. BSM/플레이어/컴포넌트 XML의 문서유형 자동 판별, AddSIM 요소 한글 라벨, 커넥션 출발/도착 강조, 공개 논문 기반 배경지식(`references/addsim-structure.md`)을 내장하고, 폐쇄망 현장에서 미분류 요소를 `config/mapping.json`에 보강하는 캘리브레이션 워크플로를 제공한다.
 - [`csharp-to-cpp-port`](docs/csharp-to-cpp-port-usage.md): 기존 C# 프로젝트(.NET Framework 4.7 등)를 Windows C++17로 **파일 하나씩** 이식하는 결정론적 루프. 스크립트가 전체 트리를 스캔해 의존 순서를 내고(디렉터리 단위 `-Scope` 배정 지원), 단위 프롬프트에 고정 매핑 표(`std::wstring`, RAII, `shared_ptr`, `PortSupport.h` 헬퍼)와 의존 선언(이미 이식된 헤더, 아니면 "먼저 이식하라" 선언 목록)을 넣고, MSVC/MinGW 빌드 검사 에러를 다음 프롬프트에 재투입하며, 금지 패턴 스캔과 C#-C++ 출력 비교(parity)로 검증한다. 약한 로컬 모델(Qwen 20B급)이 실행자여도 프로젝트 전체를 한 번에 넘기지 않게 설계됨.
+- [`feature-flow`](docs/feature-flow-usage.md): 요청 하나를 인터뷰→명세→기획→개발→QA→위키까지 Claude 세션만으로 진행하는 에이전트 워크플로. 메인 세션이 마스터로 명세를 승인받은 뒤 작업자 서브에이전트(`agents/ff-*.md`)와 읽기 전용 검수자(`ff-reviewer`, 다른 모델)를 단계별로 돌리고, 매 라운드 빌드·테스트와 `ff.ps1 check-todo`(체크된 TODO마다 실재하는 `파일:줄` 근거 필수)로 기계적으로 게이트한다. 기록은 `work/<id>/`에 남고, 막힘·결정 필요·루프 상한에서만 사람을 부른다.

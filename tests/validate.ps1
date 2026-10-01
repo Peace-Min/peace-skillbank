@@ -597,4 +597,59 @@ foreach ($ccPattern in @("port-work/", "BUILD_RESULT.txt", "PARITY_RESULT.txt", 
 # Behavioural fixtures: positive + negative paths; compile/link/parity when the tools exist, opt-in E2E.
 & $ccFixtures -RepositoryRoot $RepositoryRoot -IncludeParityE2E
 
+# --- feature-flow skill (Claude-only plan -> dev -> QA -> wiki workflow; master skill + plugin subagents + state helper) ---
+$ffRoot = Join-Path $RepositoryRoot "skills\feature-flow"
+$ffScript = Join-Path $ffRoot "scripts\ff.ps1"
+$ffFixtures = Join-Path $RepositoryRoot "tests\feature-flow-fixtures.ps1"
+$ffAgents = @("ff-planner", "ff-developer", "ff-qa-tester", "ff-wiki-writer", "ff-reviewer")
+foreach ($ffFile in @(
+    (Join-Path $ffRoot "SKILL.md"), $ffScript, $ffFixtures,
+    (Join-Path $ffRoot "references\work-folder-layout.md"),
+    (Join-Path $ffRoot "references\status-codes.md"),
+    (Join-Path $ffRoot "references\model-agnostic-prompt.md"),
+    (Join-Path $ffRoot "agents\openai.yaml"),
+    (Join-Path $RepositoryRoot ".claude\skills\feature-flow\SKILL.md"),
+    (Join-Path $RepositoryRoot "commands\feature-flow.md"),
+    (Join-Path $RepositoryRoot "docs\feature-flow-usage.md"))) {
+    Assert-Condition (Test-Path -LiteralPath $ffFile) "Missing feature-flow file: $ffFile"
+}
+$ffFrontMatter = Get-FrontMatter -Path (Join-Path $ffRoot "SKILL.md")
+Assert-Condition ($ffFrontMatter -match "(?m)^name:\s*feature-flow\s*$") "Invalid feature-flow skill name / unclosed frontmatter"
+Assert-Condition ($ffFrontMatter -match "(?m)^description:\s+.+") "Missing feature-flow skill description"
+$ffSkillContent = Get-Content -Raw -Encoding UTF8 -LiteralPath (Join-Path $ffRoot "SKILL.md")
+Assert-Condition (-not ($lcTypographicDashes | Where-Object { $ffSkillContent.Contains($_) })) "feature-flow SKILL.md must avoid typographic dashes that break default Windows validation"
+Assert-Condition ($ffSkillContent -match "MAX_ROUNDS = \d") "feature-flow SKILL.md must declare MAX_ROUNDS in one place"
+Assert-Condition ($ffSkillContent -match "Do not call the reviewer on a failed gate") "feature-flow SKILL.md must gate on build/test + evidence before the reviewer"
+foreach ($ffAgent in $ffAgents) {
+    $ffAgentPath = Join-Path $RepositoryRoot "agents\$ffAgent.md"
+    Assert-Condition (Test-Path -LiteralPath $ffAgentPath) "Missing feature-flow subagent: agents/$ffAgent.md"
+    $ffAgentFront = Get-FrontMatter -Path $ffAgentPath
+    Assert-Condition ($ffAgentFront -match "(?m)^name:\s*$ffAgent\s*$") "Subagent name must match file name: $ffAgent"
+    Assert-Condition ($ffAgentFront -match "(?m)^description:\s+.+") "Subagent needs a description: $ffAgent"
+    Assert-Condition ($ffAgentFront -match "(?m)^model:\s*(inherit|opus|sonnet|haiku)\s*$") "Subagent needs a model alias: $ffAgent"
+    Assert-Condition ($ffSkillContent -match [regex]::Escape($ffAgent)) "feature-flow SKILL.md must reference subagent $ffAgent"
+}
+# The reviewer must stay read-only: no Write/Edit/Bash in its tool list.
+$ffReviewerFront = Get-FrontMatter -Path (Join-Path $RepositoryRoot "agents\ff-reviewer.md")
+Assert-Condition ($ffReviewerFront -match "(?m)^tools:\s*Read, Grep, Glob\s*$") "ff-reviewer must be read-only (tools: Read, Grep, Glob)"
+$ffCommandContent = Get-Content -Raw -LiteralPath (Join-Path $RepositoryRoot "commands\feature-flow.md")
+Assert-Condition ($ffCommandContent -match [regex]::Escape('$ARGUMENTS')) "commands/feature-flow.md must pass `$ARGUMENTS to the skill"
+$ffProjectContent = Get-Content -Raw -LiteralPath (Join-Path $RepositoryRoot ".claude\skills\feature-flow\SKILL.md")
+Assert-Condition ((Get-FrontMatter -Path (Join-Path $RepositoryRoot ".claude\skills\feature-flow\SKILL.md")) -match "(?m)^name:\s*feature-flow\s*$") "feature-flow project entrypoint must expose /feature-flow"
+Assert-Condition ($ffProjectContent -match "skills/feature-flow/SKILL.md") "feature-flow project entrypoint must delegate to the canonical skill"
+Assert-Condition ($readmeContent -match [regex]::Escape("/feature-flow")) "README clone-time list must include /feature-flow"
+Assert-Condition ($readmeContent.Contains('[`feature-flow`](docs/feature-flow-usage.md)')) "README current-skill list must link the feature-flow usage guide"
+$ffOpenAiContent = Get-Content -Raw -LiteralPath (Join-Path $ffRoot "agents\openai.yaml")
+Assert-Condition ($ffOpenAiContent -match 'default_prompt:\s*"Use \$feature-flow') "feature-flow openai.yaml default_prompt must mention the skill name"
+$ffShort = [regex]::Match($ffOpenAiContent, 'short_description:\s*"([^"]+)"')
+Assert-Condition ($ffShort.Success -and $ffShort.Groups[1].Value.Length -ge 25 -and $ffShort.Groups[1].Value.Length -le 64) "feature-flow short_description must be 25-64 characters"
+Test-PowerShellSyntax -Path $ffScript
+Test-PowerShellSyntax -Path $ffFixtures
+foreach ($ffPs in @($ffScript, $ffFixtures)) {
+    $ffBytes = [System.IO.File]::ReadAllBytes($ffPs)
+    Assert-Condition (-not ($ffBytes | Where-Object { $_ -gt 127 } | Select-Object -First 1)) "feature-flow script must be ASCII-only: $ffPs"
+}
+# Behavioural fixtures: init/event/check-todo/status, positive + negative paths.
+& $ffFixtures -RepositoryRoot $RepositoryRoot
+
 Write-Host "Validation passed."

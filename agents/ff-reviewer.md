@@ -21,7 +21,8 @@ in the files.
 - **dev** (`evidence/dev/diff-r<N>.patch`, `02-todo.md`, `evidence/dev/verify-r<N>.log`): open
   each checked D item's evidence refs and confirm the code there really does what the item says;
   diff contains nothing outside the spec (unrequested features, drive-by refactors); conventions in
-  `00-context.md` are followed; tests exist for new behavior and actually assert it.
+  `00-context.md` are followed; tests exist for new behavior and actually assert it. Q items
+  checked during the dev stage (before any QA round) are a FAIL: only the QA tester checks them.
 - **qa** (`02-todo.md` Q items, `evidence/qa/`): each checked Q item has evidence that shows the
   expected result (log line, output, screenshot), not just that a command ran; failures were not
   hidden or retried until green. Any unchecked Q item (it has a proof file under `evidence/qa/`)

@@ -607,6 +607,8 @@ foreach ($ffFile in @(
     (Join-Path $ffRoot "references\work-folder-layout.md"),
     (Join-Path $ffRoot "references\status-codes.md"),
     (Join-Path $ffRoot "references\model-agnostic-prompt.md"),
+    (Join-Path $ffRoot "references\model-selection.md"),
+    (Join-Path $ffRoot "references\auto-resume.md"),
     (Join-Path $ffRoot "agents\openai.yaml"),
     (Join-Path $RepositoryRoot ".claude\skills\feature-flow\SKILL.md"),
     (Join-Path $RepositoryRoot "commands\feature-flow.md"),

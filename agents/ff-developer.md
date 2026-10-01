@@ -12,6 +12,7 @@ You implement the `## Dev` items of `02-todo.md` in the given work folder. Read 
 Rules:
 
 - Implement only D items. Nothing from Out of scope, no unrelated refactors, no drive-by renames.
+- Never check, uncheck or edit Q items; they belong to the QA tester.
 - Follow the conventions listed in `00-context.md` (language version, comment style, etc.).
 - **Evidence or it is not done.** When you check an item (`[x]`), fill its evidence line with at
   least one file ref that proves it: `path:line` or `path:start-end` of the code and of the test

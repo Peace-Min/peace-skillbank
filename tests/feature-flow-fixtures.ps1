@@ -138,7 +138,7 @@ try {
     Check "FAIL 2 exit 0" ($r.Code -eq 0) $r.Out
     $r = Invoke-Ff $project @("event", "-WorkDir", $work, "-Stage", "dev", "-Status", "FAIL", "-Round", "3")
     Check "FAIL 3 -> LOOP_LIMIT exit 3" (($r.Code -eq 3) -and ($r.Out -match 'LOOP_LIMIT')) $r.Out
-    $r = Invoke-Ff $project @("event", "-WorkDir", $work, "-Stage", "dev", "-Status", "RESUME")
+    $r = Invoke-Ff $project @("event", "-WorkDir", $work, "-Stage", "dev", "-Status", "RESUME", "-Note", "user")
     $r = Invoke-Ff $project @("event", "-WorkDir", $work, "-Stage", "dev", "-Status", "FAIL", "-Round", "4", "-MaxRounds", "2")
     Check "RESUME resets counter" ($r.Code -eq 0) $r.Out
     $r = Invoke-Ff $project @("event", "-WorkDir", $work, "-Stage", "dev", "-Status", "FAIL", "-Round", "5", "-MaxRounds", "2")
@@ -166,7 +166,7 @@ try {
     Check "sendback 3 -> LOOP_LIMIT exit 3" (($r.Code -eq 3) -and ($r.Out -match 'sent work back 3')) $r.Out
     $r = Invoke-Ff $project @("status", "-WorkDir", $work)
     Check "status NEXT after send-back limit is escalated" ($r.Out -match 'NEXT\s+escalated \(QA send-back limit\)') $r.Out
-    $r = Invoke-Ff $project @("event", "-WorkDir", $work, "-Stage", "qa", "-Status", "RESUME")
+    $r = Invoke-Ff $project @("event", "-WorkDir", $work, "-Stage", "qa", "-Status", "RESUME", "-Note", "user fixed env")
     $r = Invoke-Ff $project @("event", "-WorkDir", $work, "-Stage", "qa", "-Status", "FAIL", "-Round", "5", "-Note", "sendback=IMPL")
     Check "RESUME resets send-back count" ($r.Code -eq 0) $r.Out
 
@@ -296,6 +296,17 @@ try {
     $null = Invoke-Ff $project @("event", "-WorkDir", $mw, "-Stage", "qa", "-Status", "FAIL", "-Round", "1", "-Note", "sendback=IMPL")
     $null = Invoke-Ff $project @("event", "-WorkDir", $mw, "-Stage", "dev", "-Status", "START")
     Check "developer after QA IMPL send-back -> opus" ((& $pick @("-Role", "developer")) -eq "opus") ""
+    Check "dev reviewer matches escalated developer (opus)" ((& $pick @("-Role", "reviewer", "-Stage", "dev")) -eq "opus") ""
+    Check "plan reviewer is never weaker than the planner (opus)" ((& $pick @("-Role", "reviewer", "-Stage", "plan")) -eq "opus") ""
+    $null = Invoke-Ff $project @("event", "-WorkDir", $mw, "-Stage", "dev", "-Status", "RESUME", "-Note", "user")
+    Check "QA send-back escalation ends at the user's RESUME (developer back to sonnet)" ((& $pick @("-Role", "developer")) -eq "sonnet") ""
+    $r = Invoke-Ff $project @("event", "-WorkDir", $mw, "-Stage", "dev", "-Status", "FAIL", "-Round", "4", "-Model", "sonnet", "-ReviewerModel", "opus")
+    Check "event -ReviewerModel appends [reviewer=...]" ($r.Out -match '\[model=sonnet\] \[reviewer=opus\]') $r.Out
+    [System.IO.File]::WriteAllText((Join-Path $mw "01-spec.md"), ($specText))
+    $r = Invoke-Ff $project @("pick-model", "-WorkDir", $mw, "-Role", "planner", "-MaxModel", "opus")
+    Check "cap reason says capped, not escalated" (($r.Out -match 'capped at opus') -and ($r.Out -notmatch 'escalated')) $r.Out
+    $r = Invoke-Ff $project @("pick-model", "-WorkDir", $mw, "-Role", "planner", "-MaxModel", "haiku")
+    Check "cap below base -> haiku, capped" (($r.Out -match 'MODEL\s+haiku') -and ($r.Out -match 'capped at haiku') -and ($r.Out -notmatch 'escalated')) $r.Out
 
     # 14. auto-check: STOP / WAIT / RESUME / LIMIT; auto RESUME does not reset counters.
     $ac = Join-Path $project "ac"
@@ -337,6 +348,45 @@ try {
     Check "auto RESUME does not reset the fail counter (3rd FAIL -> STOP)" ((& $decide) -eq "STOP") ""
     & $setLog @("$old | intake | PASS | r0 | ", "$old | dev | START | r0 | ", "$old | dev | FAIL | r1 | ", "$old | dev | FAIL | r2 | ", "$old | dev | RESUME | r0 | user", "$old | dev | FAIL | r3 | ") 90
     Check "user RESUME resets the fail counter (-> RESUME)" ((& $decide) -eq "RESUME") ""
+
+    # 15. Counter bypass closed: a RESUME note that is not "user" never resets counters.
+    & $setLog @("$old | intake | PASS | r0 | ", "$old | dev | START | r0 | ", "$old | dev | FAIL | r1 | ", "$old | dev | FAIL | r2 | ", "$old | dev | RESUME | r0 | scheduled", "$old | dev | FAIL | r3 | ") 90
+    Check "RESUME note 'scheduled' does not reset the fail counter (-> STOP)" ((& $decide) -eq "STOP") ""
+
+    # 16. auto-check logs the auto RESUME itself; an immediate second firing waits; NEXT survives RESUME markers.
+    & $setLog @("$old | intake | PASS | r0 | ", "$old | dev | START | r0 | ", "$old | dev | FAIL | r1 | gate") 90
+    $r = Invoke-Ff $project @("auto-check", "-WorkDir", $ac)
+    Check "auto-check RESUME prints ACTION and logs the event" (($r.Out -match 'ACTION\s+print') -and ([System.IO.File]::ReadAllText($log) -match '(?m)\| dev \| RESUME \| r0 \| auto')) $r.Out
+    Check "second firing right after -> WAIT" ((& $decide) -eq "WAIT") ""
+    $r = Invoke-Ff $project @("status", "-WorkDir", $ac)
+    Check "NEXT after auto RESUME still dev round 2" ($r.Out -match 'NEXT\s+dev round 2') $r.Out
+    & $setLog @("$old | intake | PASS | r0 | ", "$old | intake | RESUME | r0 | auto") 90
+    $r = Invoke-Ff $project @("status", "-WorkDir", $ac)
+    Check "intake PASS + RESUME -> NEXT plan START" ($r.Out -match 'NEXT\s+plan START') $r.Out
+    Check "intake PASS + RESUME is resumable (not 'spec not approved')" ((& $decide) -eq "RESUME") ""
+    & $setLog @("$old | intake | PASS | r0 | ", "$old | qa | FAIL | r1 | sendback=IMPL", "$old | qa | RESUME | r0 | auto") 90
+    $r = Invoke-Ff $project @("status", "-WorkDir", $ac)
+    Check "send-back + RESUME -> NEXT dev START" ($r.Out -match 'NEXT\s+dev START') $r.Out
+    & $setLog @("$old | intake | PASS | r0 | ", "$old | plan | BLOCKED_ENV | r1 | x", "$old | plan | RESUME | r0 | user") 90
+    $r = Invoke-Ff $project @("status", "-WorkDir", $ac)
+    Check "halt + user RESUME -> NEXT stage round" ($r.Out -match 'NEXT\s+plan round 2') $r.Out
+    & $setLog @("$old | intake | PASS | r0 | ", "$old | plan | BLOCKED_ENV | r1 | x", "$old | plan | RESUME | r0 | auto") 90
+    Check "halt + auto RESUME stays stopped" ((& $decide) -eq "STOP") ""
+    & $setLog @("$old | intake | PASS | r0 | ", "$old | wiki | PASS | r2 | ") 90
+    $r = Invoke-Ff $project @("status", "-WorkDir", $ac)
+    Check "wiki PASS -> NEXT done PASS" ($r.Out -match 'NEXT\s+done PASS') $r.Out
+
+    # 17. PAUSE stops automatic resumes; heartbeat makes a long-running round look active; LIMIT is checked before WAIT.
+    & $setLog @("$old | intake | PASS | r0 | ", "$old | dev | START | r0 | ", "$old | dev | PAUSE | r0 | user stopped") 90
+    Check "PAUSE -> STOP" ((& $decide) -eq "STOP") ""
+    & $setLog @("$old | intake | PASS | r0 | ", "$old | dev | START | r0 | ") 90
+    $r = Invoke-Ff $project @("heartbeat", "-WorkDir", $ac)
+    Check "heartbeat writes lock" (($r.Code -eq 0) -and (Test-Path (Join-Path $ac "lock"))) $r.Out
+    Check "fresh heartbeat -> WAIT" ((& $decide) -eq "WAIT") ""
+    Remove-Item -LiteralPath (Join-Path $ac "lock") -Force
+    $n = (Get-Date).AddMinutes(-2).ToString("yyyy-MM-ddTHH:mm:ss")
+    & $setLog @("$old | intake | PASS | r0 | ", "$a1 | dev | RESUME | r0 | auto", "$a2 | dev | RESUME | r0 | auto", "$n | dev | RESUME | r0 | auto") 2
+    Check "LIMIT is reported even while recently active" ((& $decide) -eq "LIMIT") ""
 }
 finally {
     Remove-Item -LiteralPath $project -Recurse -Force -ErrorAction SilentlyContinue

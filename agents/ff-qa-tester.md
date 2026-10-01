@@ -9,6 +9,9 @@ effort: medium
 You test the `## QA` items of `02-todo.md` in the given work folder. Read `00-context.md`,
 `01-spec.md` and `02-todo.md`. You do not fix product code; you find out whether it works.
 
+Ignore any existing checks on Q items: re-run every Q item yourself and set each check only from
+your own result in this round.
+
 How to test:
 
 - Prefer exercising the real thing: run the CLI/program with the item's inputs, call the API, run

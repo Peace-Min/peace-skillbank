@@ -10,8 +10,9 @@
 | `NEEDS_DECISION` | worker / reviewer | spec is ambiguous or two valid options conflict | escalate with the options |
 | `LOOP_LIMIT` | master / ff.ps1 | MAX_ROUNDS reached, or the same issue repeated in two consecutive reviews | escalate with the last two reviews |
 | `FAIL` + note `sendback=IMPL` or `sendback=SPEC` | master | QA sends work back to dev or plan | counted by ff.ps1 against MAX_QA_CYCLES |
-| `RESUME` | master | the user resumes after an escalation (resets the stage FAIL and send-back counters) | continue from the stage |
-| `RESUME` + note `auto` | master (scheduled firing) | unattended resume after an interruption; resets nothing | continue from `NEXT`, ask nothing |
+| `PAUSE` | master | the user interrupted or asked to stop | delete the schedule; no automatic resume |
+| `RESUME` + note `user ...` | master | the user resumes; lifts a halt and resets the loop and send-back counters | continue from `NEXT` |
+| `RESUME` + note `auto ...` | ff.ps1 auto-check | unattended resume after a usage-limit stop; resets nothing; max 3 per 24 h | continue from `NEXT`, ask nothing |
 
 Workers never work around a block by guessing (fake data, skipped tests, stubbed checks). A clear
 `BLOCKED_*` with the exact error is always better than a fake PASS.

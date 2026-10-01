@@ -20,7 +20,8 @@ work/<yyyyMMdd-HHmm>-<slug>/
     qa/manual-checklist.md  only when QA could not run automatically (qa tester)
   raw/                 optional: raw transcripts/exports if the user wants full traceability
   base.txt             git commit the round diffs are taken against (ff.ps1 init)
-  schedule.txt         CronCreate job id of the auto-resume schedule (master), if armed
+  schedule.txt         "<CronCreate job id> <ISO time>" of the auto-resume schedule (master), if armed
+  lock                 last master heartbeat time (ff.ps1 heartbeat), read by auto-check
   events.log           one line per event, written only by ff.ps1
 ```
 
@@ -55,6 +56,8 @@ Rules enforced by `ff.ps1 check-todo`:
 - A token is a file ref when it has a folder (`src/x.cs`) or a line (`x.cs:12`); every such ref must
   exist and its line numbers must be inside the file. A bare name like `x.cs` counts only if it
   exists in the project root; otherwise it is treated as prose.
+- Limit: the gate proves a ref exists and its lines are inside the file, not that the lines are
+  the right ones. Whether the code there does what the item says is the reviewer's job.
 - Separate several refs with `|`. Free text is allowed next to refs but does not count; paths with
   spaces are not supported.
 - Dev gate: every D item checked. QA gate (`-AllowOpen`): a Q item may stay unchecked only if a
@@ -81,7 +84,8 @@ ISSUES:
 
 `<ISO time> | <stage> | <STATUS> | r<N> | <note>`; stages `intake plan dev qa wiki done`.
 A note may end with `[model=<alias>]` (from `event -Model`), recording which model ran that round.
-`RESUME` with a note starting `auto` is an unattended resume: it does not reset the loop or
-send-back counters, and at most 3 happen per 24 h (`auto-check`).
+`RESUME` notes: `user ...` (the user resumed; resets the loop and send-back counters) or `auto ...`
+(written by `auto-check`; resets nothing). Any other note is treated like `auto`. A reviewer model
+is recorded as `[reviewer=<alias>]` (from `event -ReviewerModel`).
 A QA send-back is a qa FAIL whose note starts with `sendback=IMPL` or `sendback=SPEC`; `ff.ps1`
 counts these against MAX_QA_CYCLES; the count survives a session restart and resets only on RESUME (the user's go-ahead).

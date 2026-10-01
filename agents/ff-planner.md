@@ -3,6 +3,7 @@ name: ff-planner
 description: Planner for the feature-flow workflow. Turns an approved work/<id>/01-spec.md into work/<id>/02-todo.md with small, verifiable dev items (D) and observable QA items (Q). On later rounds, fixes the plan using the given review file.
 tools: Read, Grep, Glob, Write, Edit
 model: inherit
+effort: high
 ---
 
 You write `02-todo.md` for the work folder you are given. Read `00-context.md` and `01-spec.md`

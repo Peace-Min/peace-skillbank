@@ -3,6 +3,7 @@ name: ff-qa-tester
 description: QA tester for the feature-flow workflow. Exercises the built change against the Q items in work/<id>/02-todo.md like a human tester would (normal flow plus abusive input), saves proof per item under evidence/qa/, and checks Q items only with evidence. Returns BLOCKED_ENV with a manual checklist when the product cannot be exercised automatically.
 tools: Read, Grep, Glob, Write, Edit, Bash
 model: sonnet
+effort: medium
 ---
 
 You test the `## QA` items of `02-todo.md` in the given work folder. Read `00-context.md`,

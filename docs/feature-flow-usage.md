@@ -56,6 +56,47 @@
 각 단계는 검수자가 `PASS`할 때까지 최대 `MAX_ROUNDS`(기본 3) 반복한다. 같은 지적이 연속 두 번 나오거나
 상한을 넘으면 `LOOP_LIMIT`으로 멈추고 사람에게 보고한다. `BLOCKED_ENV`/`BLOCKED_PERMISSION`/`NEEDS_DECISION`도 즉시 보고한다.
 
+## 서브에이전트 모델 자동 선택
+
+평소 세션은 **Opus 5.5(노력 수준 중간)** 로 두고 스킬을 호출하면 된다. 마스터는 서브에이전트를 부를 때마다
+`ff.ps1 pick-model`로 모델을 정해 호출 인자로 넘긴다(호출 인자가 에이전트 파일의 `model:`보다 우선).
+
+| 역할 | 기본 | 위험도 high (명세 `## Risk`) | 올림 |
+|---|---|---|---|
+| 기획 | opus | fable | 같은 단계 2회 반려 시 한 단계 위 |
+| 개발 | D 항목 1~3개면 sonnet, 그 외 opus | opus | 2회 반려 또는 QA IMPL 반려 시 한 단계 위 |
+| QA / 검수자 | sonnet | opus | 2회 반려 시 한 단계 위 |
+| 위키 | sonnet | sonnet | 2회 반려 시 한 단계 위 |
+
+- 상한은 SKILL.md의 `MAX_MODEL`(기본 fable, 비용을 묶으려면 opus).
+- 고른 모델은 `events.log` 메모에 `[model=sonnet]`처럼 남는다.
+- **노력 수준은 에이전트 파일에 고정**한다(기획·개발·검수 high, QA medium, 위키 low). 서브에이전트는 세션의
+  노력 수준을 물려받지 않으므로, 세션을 medium으로 둬도 기획·개발은 high로 돈다. (`effort:` 필드는 Claude Code에
+  구현돼 있으나 공식 문서 표에는 아직 없다.)
+- 모델은 별칭(`opus`, `sonnet`, `fable`)으로 지정하므로 새 모델이 나와도 수정할 필요가 없다.
+- 폐쇄망 게이트웨이처럼 모든 별칭이 한 모델로 매핑되면 선택은 실행되지만 결과는 같다.
+  `CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1`이 설정된 환경에서는 그 값이 모든 선택을 덮어쓴다.
+
+## 자동 재개
+
+사용 한도나 오류로 세션이 멈추면, 멈춘 세션은 아무것도 예약할 수 없다. 그래서 **명세 승인 직후 미리 예약**한다.
+
+- `CronCreate`가 있으면 약 30분마다(`17,47 * * * *`) `/peace-skillbank:feature-flow resume <작업폴더> --auto`를
+  예약하고 id를 `work/<id>/schedule.txt`에 둔다. Claude Code가 **켜져 있고 쉬는 중일 때만** 실행되며 **7일 후 만료**된다.
+- 없으면 `/loop 30m /peace-skillbank:feature-flow resume <작업폴더> --auto`를 안내한다.
+
+매번 `ff.ps1 auto-check`가 판정한다.
+
+| 판정 | 조건 | 동작 |
+|---|---|---|
+| RESUME | 마지막 기록 후 45분 이상, 에스컬레이션 아님, 24시간 내 자동 재개 3회 미만 | `RESUME`(메모 `auto`) 기록 후 이어서 진행, 사용자에게 묻지 않음 |
+| WAIT | 최근 45분 내 기록 있음 (실행 중이거나 다른 세션이 진행 중) | 아무것도 안 함 |
+| STOP | 완료, 명세 미승인, `BLOCKED_*`/`NEEDS_DECISION`/`LOOP_LIMIT`/반려 상한 | 예약 삭제, 사람 판단 대기 |
+| LIMIT | 24시간 내 자동 재개 3회 | 예약 삭제, 보고 |
+
+자동 재개는 반복·반려 카운터를 **초기화하지 않는다**(사람이 `resume`할 때만 초기화). 그래서 자동 재개를 반복해도
+상한을 우회할 수 없다. 완료나 에스컬레이션 때 예약은 삭제되고, 사람이 `resume`하면 다시 예약된다.
+
 ## 남는 기록 (`work/<id>/`)
 
 | 파일 | 내용 |
@@ -67,6 +108,7 @@
 | `evidence/dev/` | 라운드별 빌드·테스트 로그, diff |
 | `evidence/qa/` | QA 항목별 증거(로그·스크린샷), 자동화 불가 시 `manual-checklist.md` |
 | `base.txt` | 라운드 diff의 기준 커밋 |
+| `schedule.txt` | 자동 재개 예약 id |
 | `events.log` | 단계·상태 타임라인 (`ff.ps1`만 기록). QA 반려는 `sendback=IMPL/SPEC`로 남아 재개 후에도 횟수가 유지됨 |
 
 진행 중에는 마스터에게 그냥 물어보면 된다("개발 단계 왜 반려됐어?"). 마스터는 기억이 아니라 위 파일을 읽고 답한다.

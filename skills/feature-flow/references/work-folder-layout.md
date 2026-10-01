@@ -20,6 +20,7 @@ work/<yyyyMMdd-HHmm>-<slug>/
     qa/manual-checklist.md  only when QA could not run automatically (qa tester)
   raw/                 optional: raw transcripts/exports if the user wants full traceability
   base.txt             git commit the round diffs are taken against (ff.ps1 init)
+  schedule.txt         CronCreate job id of the auto-resume schedule (master), if armed
   events.log           one line per event, written only by ff.ps1
 ```
 
@@ -27,7 +28,8 @@ work/<yyyyMMdd-HHmm>-<slug>/
 
 Sections: Goal, In scope, **Out of scope** (mandatory, never empty: write "none beyond In scope"
 only if truly none), Constraints / cautions, Acceptance criteria (testable sentences), Verify
-commands (build, test).
+commands (build, test), Risk (`- level: high|normal|low`; high for security, auth, concurrency,
+data migration/persistence formats, public API; read by `ff.ps1 pick-model`).
 
 ## 02-todo.md
 
@@ -78,5 +80,8 @@ ISSUES:
 ## events.log
 
 `<ISO time> | <stage> | <STATUS> | r<N> | <note>`; stages `intake plan dev qa wiki done`.
+A note may end with `[model=<alias>]` (from `event -Model`), recording which model ran that round.
+`RESUME` with a note starting `auto` is an unattended resume: it does not reset the loop or
+send-back counters, and at most 3 happen per 24 h (`auto-check`).
 A QA send-back is a qa FAIL whose note starts with `sendback=IMPL` or `sendback=SPEC`; `ff.ps1`
 counts these against MAX_QA_CYCLES; the count survives a session restart and resets only on RESUME (the user's go-ahead).

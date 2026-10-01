@@ -12,6 +12,8 @@ Settings (change here, nowhere else; always pass them to ff.ps1 as shown):
 
 - `MAX_ROUNDS = 3` worker/reviewer rounds per stage. Use 2 on weak/local models.
 - `MAX_QA_CYCLES = 2` times QA may send work back to dev/plan.
+- `MAX_MODEL = fable` strongest model `pick-model` may choose (`opus` to cap cost).
+- `AUTO_RESUME = on` schedule unattended resume after interruptions (usage limit, crash). `off` to disable.
 
 `<skill-dir>` is the folder containing this SKILL.md. Run everything from the project root.
 Standard helper calls (copy them; `<dir>` is the work folder):
@@ -26,6 +28,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File $ff check-todo -WorkDir <dir
 powershell -NoProfile -ExecutionPolicy Bypass -File $ff check-todo -WorkDir <dir> -Prefix Q -AllowOpen  (qa gate)
 powershell -NoProfile -ExecutionPolicy Bypass -File $ff diff -WorkDir <dir> -Round <N>               (dev gate)
 powershell -NoProfile -ExecutionPolicy Bypass -File $ff wiki-check                                   (wiki gate)
+powershell -NoProfile -ExecutionPolicy Bypass -File $ff pick-model -WorkDir <dir> -Role <role> [-Stage <stage>] -MaxModel fable -MaxRounds 3
+powershell -NoProfile -ExecutionPolicy Bypass -File $ff auto-check -WorkDir <dir> -MaxRounds 3 -MaxQaCycles 2
 ```
 
 Never hand-edit `events.log`. File formats: `references/work-folder-layout.md`. Status codes:
@@ -39,19 +43,32 @@ Never hand-edit `events.log`. File formats: `references/work-folder-layout.md`. 
 | Developer | `ff-developer` | source code, D checks, `evidence/dev/worker-run.log` |
 | QA tester | `ff-qa-tester` | `evidence/qa/`, Q checks |
 | Wiki writer | `ff-wiki-writer` | `docs/wiki/` |
-| Reviewer | `ff-reviewer` (read-only, fresh context, Sonnet) | nothing; you save its reply |
+| Reviewer | `ff-reviewer` (read-only, fresh context) | nothing; you save its reply |
+
+**Model per dispatch.** Before every subagent call, run `pick-model` for its role (reviewer: add
+`-Stage <stage>`) and pass the printed `MODEL` as the Agent call's `model`; the call's model wins
+over the agent file. Log it with `-Model <alias>` on that round's event. The rules live in ff.ps1:
+base by role and risk (planner opus, developer sonnet for 1-3 D items else opus, qa/reviewer/wiki
+sonnet; high risk raises planner to fable and developer/qa/reviewer to opus), one tier up after 2
+FAILs in the stage or after a QA IMPL send-back (developer), capped at `MAX_MODEL`. Effort is fixed
+per agent file (`effort:`), independent of your own session effort. On weak/local setups where the
+gateway maps every alias to one model, this still runs; it simply changes nothing.
 
 If an `ff-*` agent is not registered (clone-time use), spawn a general-purpose subagent, tell it
-to read and follow `<skill-dir>/../../agents/<name>.md`, pass the `model` from that file's
-frontmatter, and for the reviewer forbid any file change.
+to read and follow `<skill-dir>/../../agents/<name>.md`, pass the `pick-model` result as `model`,
+and for the reviewer forbid any file change.
 
 Pass agents **file paths only**, never your own reasoning or the worker's transcript. The reviewer
 must judge from the spec, the diff and the evidence, not from the worker's explanation.
 
 ## Step 0 - Intake (only stage with mandatory human approval)
 
-1. If the argument is `resume <dir>`: run `status`, log `RESUME` for the stage it reports, and
-   continue with its `NEXT` line. Skip the rest of Step 0.
+1. If the argument is `resume <dir>` (the user resuming): run `status`, log `RESUME` for the stage
+   it reports, re-arm Auto resume if `<dir>/schedule.txt` is missing, and continue with its
+   `NEXT` line. Skip the rest of Step 0.
+   If the argument is `resume <dir> --auto` (a scheduled firing, see Auto resume): run
+   `auto-check` and act only on `DECISION RESUME`; otherwise do nothing (and on `STOP` delete the
+   schedule). Never ask the user anything in an automatic firing.
 2. Run `init`; its `WORKDIR` line is `<dir>`. If it warns that the tree is dirty, that `work/` is not ignored, or that this is not
    a git repository, tell the user and get it fixed (commit/stash, add `work/` to `.gitignore`,
    `git init`) before continuing; round diffs depend on it.
@@ -62,7 +79,10 @@ must judge from the spec, the diff and the evidence, not from the worker's expla
    setup as the first D item.
 4. Interview the user until nothing is ambiguous: scope, explicit non-goals, edge cases, acceptance
    criteria. Ask in small batches. Write `01-spec.md` (Out of scope is mandatory).
-5. Show the spec, get explicit approval, log `intake PASS`.
+   In the spec's `## Risk` section set `level: high` when the change touches security, auth,
+   concurrency, data migration/persistence formats, or a public API; otherwise leave `normal`.
+   `pick-model` reads it.
+5. Show the spec, get explicit approval, log `intake PASS`. Then arm Auto resume.
    Non-interactive runs: if the request itself states scope, out of scope, acceptance criteria and
    verify commands and says the spec is pre-approved, skip the interview, write the spec from it,
    and log `intake PASS` with note `pre-approved by request`.
@@ -73,7 +93,7 @@ For each stage, log `<stage> START`, then repeat rounds until PASS or a limit. T
 number N from `status` (`NEXT ... round N`): round numbers continue within a stage for the whole
 work folder (also after a QA send-back), so no round file is ever overwritten.
 
-1. **Worker.** Dispatch the stage agent with: `00-context.md`, `01-spec.md`, `02-todo.md` (from dev
+1. **Worker.** Run `pick-model` for the role, then dispatch the stage agent with that `model` and: `00-context.md`, `01-spec.md`, `02-todo.md` (from dev
    on), and, when there is one, the latest review for this stage (or, after a QA send-back, the
    latest `reviews/qa-r*.md`) as the fix list.
    If its last line is not `RESULT: DONE...`, log the reported status (`BLOCKED_ENV`,
@@ -87,7 +107,8 @@ work folder (also after a QA send-back), so no round file is ever overwritten.
    - wiki: `wiki-check`.
    - If anything fails, write `reviews/<stage>-r<N>.md` as `VERDICT: FAIL (gate)` plus the failing
      output, log FAIL, and go to the next round. Do not call the reviewer on a failed gate.
-3. **Review.** Dispatch `ff-reviewer` with the stage name and the file list. Save its reply verbatim
+3. **Review.** Run `pick-model -Role reviewer -Stage <stage>`, then dispatch `ff-reviewer` with that
+   `model`, the stage name and the file list. Save its reply verbatim
    to `reviews/<stage>-r<N>.md`.
 4. **Decide.**
    - `PASS` -> log PASS, next stage.
@@ -116,8 +137,28 @@ Resume with: /feature-flow resume <dir>
 
 Development is sequential in this version: one developer at a time on the main working tree.
 
+## Auto resume (AUTO_RESUME = on)
+
+A usage limit or crash stops the session mid-run, and a stopped session cannot schedule anything,
+so arm the schedule **before** the work starts (right after `intake PASS`):
+
+- If the `CronCreate` tool exists: create a recurring job about every 30 minutes on off-minutes
+  (cron `17,47 * * * *`) with prompt `/peace-skillbank:feature-flow resume <dir> --auto` (clone-time:
+  `/feature-flow resume <dir> --auto`). Write the returned job id to `<dir>/schedule.txt`. Jobs fire
+  only while Claude Code is open and idle, and expire after 7 days; tell the user both facts once.
+- Otherwise tell the user they can run `/loop 30m /peace-skillbank:feature-flow resume <dir> --auto`.
+
+`auto-check` decides each firing: `RESUME` (idle at least 45 min, not escalated, under 3 automatic
+resumes per 24 h) -> log `RESUME` with note `auto`, then continue from `NEXT` without asking
+anything; tell the worker of an interrupted round to inspect the current diff first. `WAIT` -> do
+nothing. `STOP` or `LIMIT` -> `CronDelete` the id in `schedule.txt` and, for `LIMIT` or an
+escalation, leave the escalation report for the user. An `auto` RESUME does not reset the loop or
+send-back counters; only the user's `resume` does.
+
+On `done PASS` or any escalation you report yourself, delete the schedule too.
+
 ## Finish
 
-Log `done PASS`. Report: what was built, verify results, QA evidence folder, wiki pages touched,
+Log `done PASS`, delete the schedule (see Auto resume). Report: what was built, verify results, QA evidence folder, wiki pages touched,
 review rounds per stage (from `events.log`), and anything left open. The user can ask about any
 past step; answer from `events.log`, `reviews/` and `evidence/`, not from memory.

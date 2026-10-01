@@ -255,6 +255,88 @@ try {
     Set-Content -LiteralPath (Join-Path $gp "docs\wiki\index.md") -Value @("- [t](gone.md `"title`")", "[r]: also-gone.md") -Encoding UTF8
     $r = Invoke-Ff $gp @("wiki-check")
     Check "wiki-check catches broken titled and reference links" (($r.Code -eq 1) -and ($r.Out -match '2 broken')) $r.Out
+
+    # 13. pick-model: base by role/risk/size, escalation on failures and send-back, MaxModel cap.
+    $r = Invoke-Ff $project @("init", "-Title", "model pick")
+    $mw = Get-WorkDirLine $r.Out
+    Check "init spec has Risk section" (([System.IO.File]::ReadAllText((Join-Path $mw "01-spec.md"))) -match '## Risk') ""
+    $pick = {
+        param([string[]]$Extra)
+        $res = Invoke-Ff $project (@("pick-model", "-WorkDir", $mw) + $Extra)
+        $m = [regex]::Match($res.Out, '(?m)^MODEL\s+(\S+)')
+        if ($m.Success) { return $m.Groups[1].Value }
+        return "ERR(" + $res.Code + "): " + $res.Out
+    }
+    Check "planner normal -> opus" ((& $pick @("-Role", "planner")) -eq "opus") ""
+    Check "developer without todo -> opus" ((& $pick @("-Role", "developer")) -eq "opus") ""
+    Set-Content -LiteralPath (Join-Path $mw "02-todo.md") -Value @("## Dev", "- [ ] D1: a", "  - evidence:", "- [ ] D2: b", "  - evidence:", "## QA", "- [ ] Q1: c", "  - evidence:") -Encoding UTF8
+    Check "developer small (2 D) -> sonnet" ((& $pick @("-Role", "developer")) -eq "sonnet") ""
+    Check "qa normal -> sonnet" ((& $pick @("-Role", "qa")) -eq "sonnet") ""
+    Check "wiki -> sonnet" ((& $pick @("-Role", "wiki")) -eq "sonnet") ""
+    Check "reviewer normal -> sonnet" ((& $pick @("-Role", "reviewer", "-Stage", "dev")) -eq "sonnet") ""
+    $r = Invoke-Ff $project @("pick-model", "-WorkDir", $mw, "-Role", "reviewer")
+    Check "reviewer without -Stage -> exit 2" ($r.Code -eq 2) $r.Out
+    $r = Invoke-Ff $project @("pick-model", "-WorkDir", $mw)
+    Check "pick-model without -Role -> exit 2" ($r.Code -eq 2) $r.Out
+    $specText = [System.IO.File]::ReadAllText((Join-Path $mw "01-spec.md")) -replace 'level: normal', 'level: high'
+    [System.IO.File]::WriteAllText((Join-Path $mw "01-spec.md"), $specText)
+    Check "planner high risk -> fable" ((& $pick @("-Role", "planner")) -eq "fable") ""
+    Check "developer high risk -> opus" ((& $pick @("-Role", "developer")) -eq "opus") ""
+    Check "reviewer high risk -> opus" ((& $pick @("-Role", "reviewer", "-Stage", "qa")) -eq "opus") ""
+    Check "planner high risk capped by -MaxModel opus" ((& $pick @("-Role", "planner", "-MaxModel", "opus")) -eq "opus") ""
+    [System.IO.File]::WriteAllText((Join-Path $mw "01-spec.md"), ($specText -replace 'level: high', 'level: normal'))
+    $null = Invoke-Ff $project @("event", "-WorkDir", $mw, "-Stage", "dev", "-Status", "START")
+    $null = Invoke-Ff $project @("event", "-WorkDir", $mw, "-Stage", "dev", "-Status", "FAIL", "-Round", "1")
+    Check "developer after 1 FAIL stays sonnet" ((& $pick @("-Role", "developer")) -eq "sonnet") ""
+    $r = Invoke-Ff $project @("event", "-WorkDir", $mw, "-Stage", "dev", "-Status", "FAIL", "-Round", "2", "-Model", "sonnet")
+    Check "event -Model appends [model=...]" ($r.Out -match 'r2 \|\s+\[model=sonnet\]|r2 \| \[model=sonnet\]') $r.Out
+    Check "developer after 2 FAILs -> opus" ((& $pick @("-Role", "developer")) -eq "opus") ""
+    Check "reviewer for dev after 2 FAILs -> opus" ((& $pick @("-Role", "reviewer", "-Stage", "dev")) -eq "opus") ""
+    $null = Invoke-Ff $project @("event", "-WorkDir", $mw, "-Stage", "dev", "-Status", "PASS", "-Round", "3")
+    $null = Invoke-Ff $project @("event", "-WorkDir", $mw, "-Stage", "qa", "-Status", "FAIL", "-Round", "1", "-Note", "sendback=IMPL")
+    $null = Invoke-Ff $project @("event", "-WorkDir", $mw, "-Stage", "dev", "-Status", "START")
+    Check "developer after QA IMPL send-back -> opus" ((& $pick @("-Role", "developer")) -eq "opus") ""
+
+    # 14. auto-check: STOP / WAIT / RESUME / LIMIT; auto RESUME does not reset counters.
+    $ac = Join-Path $project "ac"
+    New-Item -ItemType Directory -Path $ac -Force | Out-Null
+    $log = Join-Path $ac "events.log"
+    $old = (Get-Date).AddMinutes(-90).ToString("yyyy-MM-ddTHH:mm:ss")
+    $recent = (Get-Date).AddMinutes(-5).ToString("yyyy-MM-ddTHH:mm:ss")
+    $setLog = {
+        param([string[]]$Lines, [int]$AgeMinutes)
+        [System.IO.File]::WriteAllText($log, (($Lines -join "`n") + "`n"))
+        (Get-Item -LiteralPath $log).LastWriteTime = (Get-Date).AddMinutes(-$AgeMinutes)
+    }
+    $decide = {
+        $res = Invoke-Ff $project @("auto-check", "-WorkDir", $ac)
+        $m = [regex]::Match($res.Out, '(?m)^DECISION\s+(\S+)')
+        if ($m.Success) { return $m.Groups[1].Value }
+        return "ERR: " + $res.Out
+    }
+    & $setLog @() 90
+    Check "auto-check no events -> STOP" ((& $decide) -eq "STOP") ""
+    & $setLog @("$old | intake | START | r0 | ") 90
+    Check "auto-check unapproved intake -> STOP" ((& $decide) -eq "STOP") ""
+    & $setLog @("$old | intake | PASS | r0 | ", "$old | plan | START | r0 | ", "$old | plan | BLOCKED_ENV | r1 | no python") 90
+    Check "auto-check escalated -> STOP" ((& $decide) -eq "STOP") ""
+    & $setLog @("$old | intake | PASS | r0 | ", "$old | wiki | PASS | r1 | ", "$old | done | PASS | r0 | ") 90
+    Check "auto-check finished -> STOP" ((& $decide) -eq "STOP") ""
+    & $setLog @("$old | intake | PASS | r0 | ", "$recent | dev | START | r0 | ") 5
+    Check "auto-check recent activity -> WAIT" ((& $decide) -eq "WAIT") ""
+    & $setLog @("$old | intake | PASS | r0 | ", "$old | dev | START | r0 | ", "$old | dev | FAIL | r1 | gate") 90
+    $r = Invoke-Ff $project @("auto-check", "-WorkDir", $ac)
+    Check "auto-check idle mid-run -> RESUME with NEXT" (($r.Out -match 'DECISION\s+RESUME') -and ($r.Out -match 'NEXT\s+dev round 2')) $r.Out
+    $a1 = (Get-Date).AddHours(-3).ToString("yyyy-MM-ddTHH:mm:ss"); $a2 = (Get-Date).AddHours(-2).ToString("yyyy-MM-ddTHH:mm:ss"); $a3 = (Get-Date).AddHours(-1.6).ToString("yyyy-MM-ddTHH:mm:ss")
+    & $setLog @("$old | intake | PASS | r0 | ", "$a1 | dev | RESUME | r0 | auto", "$a2 | dev | RESUME | r0 | auto", "$a3 | dev | RESUME | r0 | auto", "$old | dev | FAIL | r1 | gate") 90
+    Check "auto-check 3 auto resumes in 24h -> LIMIT" ((& $decide) -eq "LIMIT") ""
+    $d26 = (Get-Date).AddHours(-26).ToString("yyyy-MM-ddTHH:mm:ss")
+    & $setLog @("$old | intake | PASS | r0 | ", "$d26 | dev | RESUME | r0 | auto", "$d26 | dev | RESUME | r0 | auto", "$d26 | dev | RESUME | r0 | auto", "$old | dev | FAIL | r1 | gate") 90
+    Check "auto resumes older than 24h do not count" ((& $decide) -eq "RESUME") ""
+    & $setLog @("$old | intake | PASS | r0 | ", "$old | dev | START | r0 | ", "$old | dev | FAIL | r1 | ", "$old | dev | FAIL | r2 | ", "$old | dev | RESUME | r0 | auto", "$old | dev | FAIL | r3 | ") 90
+    Check "auto RESUME does not reset the fail counter (3rd FAIL -> STOP)" ((& $decide) -eq "STOP") ""
+    & $setLog @("$old | intake | PASS | r0 | ", "$old | dev | START | r0 | ", "$old | dev | FAIL | r1 | ", "$old | dev | FAIL | r2 | ", "$old | dev | RESUME | r0 | user", "$old | dev | FAIL | r3 | ") 90
+    Check "user RESUME resets the fail counter (-> RESUME)" ((& $decide) -eq "RESUME") ""
 }
 finally {
     Remove-Item -LiteralPath $project -Recurse -Force -ErrorAction SilentlyContinue

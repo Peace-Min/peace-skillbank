@@ -12,14 +12,23 @@
       diff        Save the round diff vs the recorded base (tracked + untracked, work/ excluded).
       wiki-check  Verify docs/wiki/index.md exists and every relative .md link in docs/wiki resolves.
       status      Print stage, round/send-back counts, TODO progress and the next action.
+      pick-model  Choose the subagent model alias for a role from stage, size, risk and failures.
+      auto-check  Decide whether an unattended (scheduled) resume should run now.
 
     Exit codes: 0 ok, 1 check failed, 2 usage/input error, 3 limit reached.
     ASCII-only on purpose: Windows PowerShell 5.1 misreads BOM-less UTF-8 scripts.
 #>
 param(
     [Parameter(Mandatory = $true, Position = 0)]
-    [ValidateSet("init", "event", "check-todo", "diff", "wiki-check", "status")]
+    [ValidateSet("init", "event", "check-todo", "diff", "wiki-check", "status", "pick-model", "auto-check")]
     [string]$Command,
+    [ValidateSet("", "planner", "developer", "qa", "reviewer", "wiki")]
+    [string]$Role = "",
+    [ValidateSet("haiku", "sonnet", "opus", "fable")]
+    [string]$MaxModel = "fable",
+    [string]$Model = "",
+    [int]$IdleMinutes = 45,
+    [int]$MaxAutoPerDay = 3,
     [string]$Root = (Get-Location).Path,
     [string]$WorkDir,
     [string]$Title,
@@ -76,21 +85,22 @@ function Read-Events([string]$Dir) {
 }
 
 function Get-FailCount([object[]]$Events, [string]$ForStage) {
-    # 0. Count FAILs for the stage since its last START/PASS/RESUME; send-backs are counted separately.
+    # 0. Count FAILs for the stage since its last START/PASS or user RESUME (an "auto" RESUME does not reset); send-backs are counted separately.
     $count = 0
     foreach ($e in $Events) {
         if ($e.Stage -ne $ForStage) { continue }
         if ($e.Status -eq "FAIL" -and $e.Note -notmatch '^sendback=') { $count++ }
-        elseif ($e.Status -in @("START", "PASS", "RESUME")) { $count = 0 }
+        elseif ($e.Status -in @("START", "PASS")) { $count = 0 }
+        elseif ($e.Status -eq "RESUME" -and $e.Note -notmatch '^auto') { $count = 0 }
     }
     return $count
 }
 
 function Get-SendBackCount([object[]]$Events) {
-    # 0. QA send-backs (qa FAIL with note "sendback=...") since the last RESUME, which is the user's go-ahead.
+    # 0. QA send-backs (qa FAIL with note "sendback=...") since the last user RESUME (an "auto" RESUME does not reset).
     $count = 0
     foreach ($e in $Events) {
-        if ($e.Status -eq "RESUME") { $count = 0 }
+        if ($e.Status -eq "RESUME" -and $e.Note -notmatch '^auto') { $count = 0 }
         elseif ($e.Stage -eq "qa" -and $e.Status -eq "FAIL" -and $e.Note -match '^sendback=') { $count++ }
     }
     return $count
@@ -125,6 +135,47 @@ function Get-TodoItems([string]$Dir) {
         }
     }
     return $items
+}
+
+function Get-NextAction([object[]]$Events) {
+    # 0. Next action, so a resumed, scheduled or weak orchestrator does not have to infer it.
+    if ($Events.Count -eq 0) { return "intake" }
+    $last = $Events[$Events.Count - 1]
+    $order = @("intake", "plan", "dev", "qa", "wiki", "done")
+    $fails = Get-FailCount -Events $Events -ForStage $last.Stage
+    $nextRound = (Get-MaxRound -Events $Events -ForStage $last.Stage) + 1
+    $wait = "; wait for the user, then log RESUME"
+    switch ($last.Status) {
+        "PASS" { $i = [array]::IndexOf($order, $last.Stage); if ($i -lt $order.Count - 1) { return "$($order[$i + 1]) START" } else { return "finished" } }
+        "FAIL" {
+            if ($last.Note -match '^sendback=(IMPL|SPEC)') {
+                $kind = $Matches[1]
+                if ((Get-SendBackCount $Events) -gt $MaxQaCycles) { return "escalated (QA send-back limit)$wait" }
+                if ($kind -eq "IMPL") { return "dev START (QA send-back; fix list = latest reviews/qa-r*.md)" }
+                return "plan START (QA send-back; fix list = latest reviews/qa-r*.md)"
+            }
+            if ($fails -ge $MaxRounds) { return "escalated (loop limit)$wait" }
+            return "$($last.Stage) round $nextRound"
+        }
+        "START" { return "$($last.Stage) round $nextRound" }
+        "RESUME" { return "$($last.Stage) round $nextRound" }
+    }
+    return "escalated ($($last.Status))$wait"
+}
+
+function Get-RiskLevel([string]$Dir) {
+    # 0. "## Risk" section, "- level: high|normal|low"; anything missing or unknown counts as normal.
+    $spec = Join-Path $Dir "01-spec.md"
+    if (-not (Test-Path -LiteralPath $spec)) { return "normal" }
+    $m = [regex]::Match([System.IO.File]::ReadAllText($spec), '(?im)^\s*-?\s*level\s*:\s*(high|normal|low)\b')
+    if ($m.Success) { return $m.Groups[1].Value.ToLowerInvariant() }
+    return "normal"
+}
+
+function Parse-EventTime([string]$Text) {
+    $t = [datetime]::MinValue
+    if ([datetime]::TryParseExact($Text, "yyyy-MM-ddTHH:mm:ss", [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::None, [ref]$t)) { return $t }
+    return $null
 }
 
 function Resolve-InProject([string]$Rel, [string]$Dir) {
@@ -187,7 +238,7 @@ switch ($Command) {
         [System.IO.File]::WriteAllText((Join-Path $dir "base.txt"), $base, $utf8)
 
         $context = "# Project context (seed)`n`n- Build command:`n- Test command:`n- Run/launch:`n- Key folders:`n- Conventions (from CLAUDE.md/AGENTS.md):`n- Wiki index: docs/wiki/index.md`n"
-        $spec = "# Spec: $Title`n`n## Goal`n`n## In scope`n`n## Out of scope`n`n## Constraints / cautions`n`n## Acceptance criteria`n`n## Verify commands`n- build:`n- test:`n"
+        $spec = "# Spec: $Title`n`n## Goal`n`n## In scope`n`n## Out of scope`n`n## Constraints / cautions`n`n## Acceptance criteria`n`n## Verify commands`n- build:`n- test:`n`n## Risk`n- level: normal`n"
         [System.IO.File]::WriteAllText((Join-Path $dir "00-context.md"), $context, $utf8)
         [System.IO.File]::WriteAllText((Join-Path $dir "01-spec.md"), $spec, $utf8)
         [System.IO.File]::WriteAllText((Join-Path $dir "events.log"), "", $utf8)
@@ -200,6 +251,7 @@ switch ($Command) {
         if ($Stage -notin $validStages) { Fail-Usage "-Stage must be one of: $($validStages -join ', ')" }
         if ($Status -notin $validStatus) { Fail-Usage "-Status must be one of: $($validStatus -join ', ')" }
         $clean = (($Note -replace '[\r\n|]+', ' ') -replace '\s+', ' ').Trim()
+        if ($Model) { $clean = ("$clean [model=$Model]").Trim() }
         $line = "{0} | {1} | {2} | r{3} | {4}" -f (Get-Date -Format "yyyy-MM-ddTHH:mm:ss"), $Stage, $Status, $Round, $clean
         [System.IO.File]::AppendAllText((Join-Path $dir "events.log"), $line + "`n", $utf8)
         Write-Output $line
@@ -332,7 +384,7 @@ switch ($Command) {
         $last = $events[$events.Count - 1]
         $fails = Get-FailCount -Events $events -ForStage $last.Stage
         Write-Output "STAGE     $($last.Stage)  last=$($last.Status) $($last.Round)"
-        Write-Output "FAILS     $fails since last PASS/START/RESUME (max $MaxRounds)"
+        Write-Output "FAILS     $fails since last PASS/START/user RESUME (max $MaxRounds)"
         Write-Output "SENDBACKS $(Get-SendBackCount $events) (max $MaxQaCycles)"
         $items = Get-TodoItems $dir
         if ($null -ne $items) {
@@ -342,29 +394,82 @@ switch ($Command) {
             }
         }
 
-        # 0. Next action, so a resumed (or weak) orchestrator does not have to infer it.
-        $order = @("intake", "plan", "dev", "qa", "wiki", "done")
-        $nextRound = (Get-MaxRound -Events $events -ForStage $last.Stage) + 1
-        $wait = "; wait for the user, then log RESUME"
-        $sendBackOver = (Get-SendBackCount $events) -gt $MaxQaCycles
-        $next = switch ($last.Status) {
-            "PASS" { $i = [array]::IndexOf($order, $last.Stage); if ($i -lt $order.Count - 1) { "$($order[$i + 1]) START" } else { "finished" } }
-            "FAIL" {
-                if ($last.Note -match '^sendback=(IMPL|SPEC)') {
-                    if ($sendBackOver) { "escalated (QA send-back limit)$wait" }
-                    elseif ($Matches[1] -eq "IMPL") { "dev START (QA send-back; fix list = latest reviews/qa-r*.md)" }
-                    else { "plan START (QA send-back; fix list = latest reviews/qa-r*.md)" }
-                }
-                elseif ($fails -ge $MaxRounds) { "escalated (loop limit)$wait" }
-                else { "$($last.Stage) round $nextRound" }
-            }
-            "START" { "$($last.Stage) round $nextRound" }
-            "RESUME" { "$($last.Stage) round $nextRound" }
-            default { "escalated ($($last.Status))$wait" }
-        }
-        Write-Output "NEXT      $next"
+        Write-Output "NEXT      $(Get-NextAction $events)"
         Write-Output "RECENT"
         $events | Select-Object -Last 5 | ForEach-Object { Write-Output "  $($_.Time) $($_.Stage) $($_.Status) $($_.Round) $($_.Note)" }
+        exit 0
+    }
+
+    "pick-model" {
+        $dir = Resolve-WorkDir
+        if (-not $Role) { Fail-Usage "-Role is required for pick-model (planner, developer, qa, reviewer, wiki)." }
+        $stageOfRole = @{ planner = "plan"; developer = "dev"; qa = "qa"; wiki = "wiki"; reviewer = $Stage }
+        $forStage = $stageOfRole[$Role]
+        if ($Role -eq "reviewer" -and $forStage -notin @("plan", "dev", "qa", "wiki")) { Fail-Usage "-Stage (plan, dev, qa, wiki) is required for the reviewer." }
+
+        $tiers = @("haiku", "sonnet", "opus", "fable")
+        $events = @(Read-Events $dir)
+        $risk = Get-RiskLevel $dir
+        $items = Get-TodoItems $dir
+        $dCount = 0
+        if ($null -ne $items) { $dCount = @($items | Where-Object { $_.Id -like "D*" }).Count }
+
+        # 0. Base model per role: start cheap, strengthen for high-risk work.
+        $reasons = @("risk=$risk")
+        switch ($Role) {
+            "planner" { $base = $(if ($risk -eq "high") { "fable" } else { "opus" }) }
+            "developer" {
+                if ($risk -eq "high") { $base = "opus" }
+                elseif ($dCount -ge 1 -and $dCount -le 3) { $base = "sonnet" }
+                else { $base = "opus" }
+                $reasons += "D=$dCount"
+            }
+            "qa" { $base = $(if ($risk -eq "high") { "opus" } else { "sonnet" }) }
+            "reviewer" { $base = $(if ($risk -eq "high") { "opus" } else { "sonnet" }) }
+            "wiki" { $base = "sonnet" }
+        }
+
+        # 1. Escalate one tier after repeated failure in this stage, or (developer) after a QA IMPL send-back.
+        $bump = 0
+        $fails = Get-FailCount -Events $events -ForStage $forStage
+        if ($fails -ge 2) { $bump++; $reasons += "fails=$fails" }
+        if ($Role -eq "developer" -and @($events | Where-Object { $_.Note -match '^sendback=IMPL' }).Count -ge 1) { $bump++; $reasons += "qa-sendback" }
+        $index = [Math]::Min([array]::IndexOf($tiers, $base) + $bump, [array]::IndexOf($tiers, $MaxModel))
+        $picked = $tiers[[Math]::Max($index, 0)]
+        if ($picked -ne $base) { $reasons += "escalated from $base" }
+        if ([array]::IndexOf($tiers, $base) -gt [array]::IndexOf($tiers, $MaxModel)) { $reasons += "capped at $MaxModel" }
+        Write-Output "MODEL     $picked"
+        Write-Output "REASON    $($reasons -join ', ')"
+        exit 0
+    }
+
+    "auto-check" {
+        $dir = Resolve-WorkDir
+        $events = @(Read-Events $dir)
+        Write-Output "WORKDIR   $dir"
+        if ($events.Count -eq 0) { Write-Output "DECISION  STOP  no events yet; intake needs the user"; exit 0 }
+        $last = $events[$events.Count - 1]
+        $next = Get-NextAction $events
+
+        # 0. Never resume what needs a human: unfinished intake, escalations, limits, or a finished run.
+        if ($last.Stage -eq "done" -or $next -eq "finished") { Write-Output "DECISION  STOP  finished; remove the schedule"; exit 0 }
+        if ($last.Stage -eq "intake" -and $last.Status -ne "PASS") { Write-Output "DECISION  STOP  spec not approved yet; intake needs the user"; exit 0 }
+        if ($next -like "escalated*") { Write-Output "DECISION  STOP  $next"; exit 0 }
+
+        # 1. Recent activity means the run is still going (or another session owns it).
+        $lastTime = Parse-EventTime $last.Time
+        $logTime = (Get-Item -LiteralPath (Join-Path $dir "events.log")).LastWriteTime
+        if ($null -eq $lastTime -or $logTime -gt $lastTime) { $lastTime = $logTime }
+        $idle = [int]((Get-Date) - $lastTime).TotalMinutes
+        if ($idle -lt $IdleMinutes) { Write-Output "DECISION  WAIT  last activity $idle min ago (< $IdleMinutes)"; exit 0 }
+
+        # 2. Cap unattended resumes per 24h so a broken run cannot burn the budget.
+        $since = (Get-Date).AddHours(-24)
+        $autoCount = @($events | Where-Object { $_.Status -eq "RESUME" -and $_.Note -match '^auto' -and ($t = Parse-EventTime $_.Time) -and $t -gt $since }).Count
+        if ($autoCount -ge $MaxAutoPerDay) { Write-Output "DECISION  LIMIT  $autoCount automatic resumes in 24h (max $MaxAutoPerDay); report to the user"; exit 0 }
+
+        Write-Output "DECISION  RESUME  idle $idle min; auto resumes in 24h: $autoCount/$MaxAutoPerDay"
+        Write-Output "NEXT      $next"
         exit 0
     }
 }

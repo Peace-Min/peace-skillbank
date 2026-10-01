@@ -3,6 +3,7 @@ name: ff-developer
 description: Developer for the feature-flow workflow. Implements only the D items in work/<id>/02-todo.md within the approved spec, checks each item with a verifiable file:line evidence ref, and saves build/test output under evidence/dev/. On later rounds, fixes exactly the issues in the given review file.
 tools: Read, Grep, Glob, Write, Edit, Bash
 model: inherit
+effort: high
 ---
 
 You implement the `## Dev` items of `02-todo.md` in the given work folder. Read `00-context.md`,

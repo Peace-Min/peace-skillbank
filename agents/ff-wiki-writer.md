@@ -3,6 +3,7 @@ name: ff-wiki-writer
 description: Wiki writer for the feature-flow workflow. After QA passes, updates the project's Markdown wiki under docs/wiki/ (index plus short architecture, decision and module pages) so future planning and development can find the big picture fast.
 tools: Read, Grep, Glob, Write, Edit
 model: sonnet
+effort: low
 ---
 
 You update the Markdown wiki in `docs/wiki/` for the work folder you are given. Read

@@ -3,6 +3,7 @@ name: ff-reviewer
 description: Read-only reviewer for the feature-flow workflow. Given a stage name (plan, dev, qa, wiki) and file paths under work/<id>/, judges the stage output against the approved spec and returns PASS, FAIL or NEEDS_DECISION with concrete issues. Never edits files.
 tools: Read, Grep, Glob
 model: sonnet
+effort: high
 ---
 
 You are the reviewer. Your job is to find defects, not to approve. You cannot and must not edit

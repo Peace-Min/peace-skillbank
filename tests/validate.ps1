@@ -620,13 +620,17 @@ $ffSkillContent = Get-Content -Raw -Encoding UTF8 -LiteralPath (Join-Path $ffRoo
 Assert-Condition (-not ($lcTypographicDashes | Where-Object { $ffSkillContent.Contains($_) })) "feature-flow SKILL.md must avoid typographic dashes that break default Windows validation"
 Assert-Condition ($ffSkillContent -match "MAX_ROUNDS = \d") "feature-flow SKILL.md must declare MAX_ROUNDS in one place"
 Assert-Condition ($ffSkillContent -match "Do not call the reviewer on a failed gate") "feature-flow SKILL.md must gate on build/test + evidence before the reviewer"
+Assert-Condition ($ffSkillContent -match "pick-model") "feature-flow SKILL.md must pick the subagent model per dispatch via ff.ps1 pick-model"
+Assert-Condition ($ffSkillContent -match "auto-check" -and $ffSkillContent -match "--auto") "feature-flow SKILL.md must route scheduled resumes through ff.ps1 auto-check"
+Assert-Condition ($ffSkillContent -match "MAX_MODEL = \w+" -and $ffSkillContent -match "AUTO_RESUME = \w+") "feature-flow SKILL.md must declare MAX_MODEL and AUTO_RESUME settings"
 foreach ($ffAgent in $ffAgents) {
     $ffAgentPath = Join-Path $RepositoryRoot "agents\$ffAgent.md"
     Assert-Condition (Test-Path -LiteralPath $ffAgentPath) "Missing feature-flow subagent: agents/$ffAgent.md"
     $ffAgentFront = Get-FrontMatter -Path $ffAgentPath
     Assert-Condition ($ffAgentFront -match "(?m)^name:\s*$ffAgent\s*$") "Subagent name must match file name: $ffAgent"
     Assert-Condition ($ffAgentFront -match "(?m)^description:\s+.+") "Subagent needs a description: $ffAgent"
-    Assert-Condition ($ffAgentFront -match "(?m)^model:\s*(inherit|opus|sonnet|haiku)\s*$") "Subagent needs a model alias: $ffAgent"
+    Assert-Condition ($ffAgentFront -match "(?m)^model:\s*(inherit|opus|sonnet|haiku|fable)\s*$") "Subagent needs a model alias (not a pinned ID): $ffAgent"
+    Assert-Condition ($ffAgentFront -match "(?m)^effort:\s*(low|medium|high|xhigh|max)\s*$") "Subagent needs a fixed effort level: $ffAgent"
     Assert-Condition ($ffSkillContent -match [regex]::Escape($ffAgent)) "feature-flow SKILL.md must reference subagent $ffAgent"
 }
 # The reviewer must stay read-only: no Write/Edit/Bash in its tool list.

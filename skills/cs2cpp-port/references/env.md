@@ -64,6 +64,8 @@
 
 ## 5. 외부 라이브러리 대체
 
+`PORT_CONFIG.md`의 "추가 허용 라이브러리"(`project.md` 5절)에 적힌 것만 더 쓸 수 있다. 없으면 아래 대체를 쓴다.
+
 | 필요 | 쓰는 것 |
 |---|---|
 | 소켓 | Winsock2 (`net.md`) |
@@ -73,5 +75,5 @@
 | 파일·경로 | `<fstream>`, `<filesystem>`. **한글 경로는 `std::filesystem::u8path(utf8)`로 만든다** (MSVC는 `std::string` 경로를 ACP로 해석) |
 | 로그 | 프로젝트 `Logger` 한 곳 (`idioms.md` 8절) |
 | 단위 시험 | 외부 프레임워크 없음 (`testing.md`) |
-| 정규식 | `std::regex`는 .NET `Regex`와 문법·동작이 달라 쓰지 않는다. 정리 단계에서 보고된 위치는 사람이 정한다 |
-| 설정·XML | **미결정**. `ConfigStore` 등 정리 단계에서 모은 클래스의 선언만 옮기고 구현은 `TODO(PORT)` |
+| 정규식 | `std::regex`는 .NET `Regex`와 문법·동작이 달라 쓰지 않는다. `PREPORT-DECISION` 또는 `PORT_CONFIG.md`의 방식을 따르고, 없으면 `TODO(PORT)` |
+| 설정·XML | `PORT_CONFIG.md`의 방식(`project.md` 5절). 없으면 설정을 모은 클래스의 선언만 옮기고 구현은 `TODO(PORT)` |

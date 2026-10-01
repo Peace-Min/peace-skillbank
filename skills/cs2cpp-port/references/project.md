@@ -20,7 +20,7 @@ DLL로 만들지 않는 이유: STL 형식이 DLL 경계를 넘으면 모든 DLL
 1. 솔루션의 `<ProjectReference>`로 의존 그래프를 만든다. 아무것도 참조하지 않는 프로젝트가 가장 하위다.
 2. **하위 프로젝트부터** 하나씩 포팅한다. 위 프로젝트는 아래 프로젝트의 관문이 끝난 뒤 시작한다.
 3. 프로젝트 안 순서: 열거형·상수 → 구조체·값 형식 → 메시지 클래스 → 유틸리티 → 서비스 → 관리자 → `Program`.
-4. **공용 패턴 헤더**(`Win32.h`, `NetCompat.h`, `StrFormat.h`, `Logger.h`, `ByteStream.h`, `ActionQueueThread.h`, `ThreadTimer.h`, `Event.h`, `WaitHandle.h`, `Stopwatch.h`)는 **가장 하위 공용 프로젝트에 한 번만** 둔다. 정리 단계의 C# 대체 클래스와 같은 이름이다.
+4. **공용 패턴 헤더**(`Win32.h`, `NetCompat.h`, `StrFormat.h`, `Logger.h`, `ByteStream.h`, `ActionQueueThread.h`, `ThreadTimer.h`, `Event.h`, `WaitHandle.h`, `Stopwatch.h`)는 **가장 하위 공용 프로젝트에 한 번만** 둔다. C# 대체 클래스(`csharp-helpers.md`)와 같은 이름이다.
 
 ## 3. API_MAP.md
 
@@ -48,3 +48,45 @@ DLL로 만들지 않는 이유: STL 형식이 DLL 경계를 넘으면 모든 DLL
 2. `testing.md`의 "시험 필요" 메서드가 골든 대조를 모두 통과
 3. `API_MAP.md` 작성 완료 (공개 API 전부)
 4. 남은 `TODO(PORT)`와 `TODO(PORT-BUG?)`를 목록으로 정리하고, 사람이 처리 여부를 결정
+
+## 5. PORT_CONFIG.md (프로젝트 설정, 선택)
+
+대상 저장소 루트(또는 C++ 솔루션 폴더)에 `PORT_CONFIG.md`가 있으면 **작업 전에 읽고**, 적힌 항목은 이 스킬의 기본값보다 우선한다. 없으면 기본값으로 한다. 적히지 않은 항목도 기본값이다.
+
+```markdown
+# PORT_CONFIG
+
+## 추가 허용 라이브러리
+| 이름 | include | 링크 | 쓰는 곳 |
+|---|---|---|---|
+| (없음) | | | |
+
+## 정한 방식
+| 항목 | 방식 |
+|---|---|
+| 설정 파일 | 예: INI를 GetPrivateProfileStringW로 / (미정) |
+| XML | 예: 사용 위치 없음 / (미정) |
+| 문화권 의존 서식 | 예: 고정 "C" 로캘, 소수점 '.' / (미정) |
+| 정규식 | 예: 손으로 쓴 문자 비교 / (미정) |
+| Encoding.Default 코드페이지 | 예: 949 고정 / CP_ACP |
+
+## 대체 클래스 이름
+| 프로젝트 C# 이름 | 이 스킬의 이름 |
+|---|---|
+| 예: `WorkQueue` | `ActionQueueThread` |
+
+## 폴더
+| C# 프로젝트 | C++ 프로젝트 폴더 |
+|---|---|
+```
+
+| 항목 | 기본값 | 바꿀 수 있나 |
+|---|---|---|
+| 추가 허용 라이브러리 | 없음 (표준 + Win32만) | 예. 표에 없는 라이브러리는 여전히 금지 |
+| 설정 파일·XML·문화권 서식·정규식 | 미정 → `TODO(PORT)` | 예. 적힌 방식대로 옮긴다 |
+| `Encoding.Default` 코드페이지 | `CP_ACP` | 예. 번호를 적으면 `TextEncoding`에 그 번호를 쓴다 |
+| 대체 클래스 이름 | `csharp-helpers.md`의 이름 | 예. 동작이 같을 때만 (`input-contract.md` 5절) |
+| 폴더 대응 | C#과 같은 구조 | 예 |
+| C++17, VS2022 v143 x64, UTF-8 `std::string`, `lock` → `recursive_mutex`, `NetCompat`, 정적 라이브러리 | 고정 | **아니오.** 패턴 코드가 이 전제로 쓰여 있다. 바꿔야 하면 스킬을 복사해 고친다 |
+
+`PORT_CONFIG.md`의 내용이 이 스킬의 규칙과 부딪히면(예: 고정 항목을 바꾸라고 함) 따르지 않고 보고한다.

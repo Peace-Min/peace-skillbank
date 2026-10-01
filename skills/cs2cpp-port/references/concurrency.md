@@ -2,7 +2,7 @@
 
 목차: 1. ActionQueueThread · 2. ThreadTimer · 3. WaitHandle · 4. lock·Interlocked·Monitor · 5. Stopwatch·시각
 
-아래 클래스는 **가장 하위 공용 프로젝트에 한 번만** 둔다. 포팅 전 정리 단계의 C# 대체 클래스와 **이름·동작이 같다.** 정리된 C#의 호출을 아래 표대로 1:1로 옮긴다.
+아래 클래스는 **가장 하위 공용 프로젝트에 한 번만** 둔다. C# 대체 클래스(`csharp-helpers.md`)와 **이름·동작이 같다.** 정리된 C#의 호출을 아래 표대로 1:1로 옮긴다. C# 대체 클래스 파일 자체는 번역하지 않고 이 헤더를 넣는다.
 
 ## 1. ActionQueueThread (C# `ActionQueueThread`, WPF Dispatcher 대체)
 
@@ -26,6 +26,9 @@
 - 다른 스레드에서 `Stop`하면 펌프 루프가 끝날 때까지 기다리고, `Start`로 만든 스레드면 `join`한다.
 - 작업 예외: 처리기가 있으면 넘기고, 없으면 다시 던져 프로세스를 끝낸다(C#과 같음).
 - **큐 스레드의 작업 안에서 그 큐 객체를 파괴하지 않는다.** 파괴하면 소멸자가 스레드를 분리해 `terminate`만 막는다.
+- 작업은 큐 잠금을 푼 뒤 실행한다. 작업 안에서 같은 큐에 `Post`·`Invoke`해도 교착하지 않는다(`Invoke`는 바로 실행).
+- 큐 A의 작업이 B에 `Invoke`하고 B의 작업이 A에 `Invoke`하면 교착한다. C# 판도 같으므로 고치지 않고 보고한다.
+- `Post`·타이머 람다의 캡처는 `idioms.md` 3절 "람다 캡처"를 따른다. 표의 `[this]`는 그 조건을 만족할 때만 쓴다.
 
 ```cpp
 // ActionQueueThread.h
@@ -42,7 +45,7 @@
 #include <thread>
 #include <utility>
 
-// C#: 포팅 전 정리 단계의 ActionQueueThread와 같은 동작.
+// C#: csharp-helpers.md 1절 ActionQueueThread와 같은 동작.
 class ActionQueueThread {
 public:
     explicit ActionQueueThread(std::string name) : mName(std::move(name)) {}
@@ -315,7 +318,7 @@ inline ActionQueueThread& MainQueue() {
 #include <thread>
 #include <utility>
 
-// C#: 포팅 전 정리 단계의 ThreadTimer와 같은 동작.
+// C#: csharp-helpers.md 2절 ThreadTimer와 같은 동작.
 class ThreadTimer {
 public:
     static constexpr int32_t kInfinite = -1;   // C#: Timeout.Infinite

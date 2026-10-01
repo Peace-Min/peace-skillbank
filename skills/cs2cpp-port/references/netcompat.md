@@ -223,4 +223,4 @@ inline int32_t ConvertToInt32(double x) {
 }  // namespace NetCompat
 ```
 
-`double.Parse`, `DateTime.Parse`, 문화권 의존 서식은 이 헤더에 없다. 포팅 전 정리 단계에서 사람이 정한 방식을 따르고, 정해지지 않았으면 `TODO(PORT)`.
+`double.Parse`, `DateTime.Parse`, 문화권 의존 서식은 이 헤더에 없다. `PREPORT-DECISION` 또는 `PORT_CONFIG.md`의 "문화권 의존 서식"을 따르고, 정해지지 않았으면 `TODO(PORT)`.

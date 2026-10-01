@@ -16,7 +16,7 @@
 | `float` | `float` | |
 | `double` | `double` | |
 | `char` | `char16_t` (문자 코드로 쓸 때) / `char` (ASCII 바이트로만 쓸 때) | C# char는 UTF-16 코드 단위 |
-| `decimal` | 변환하지 않음 | 정리 단계의 결정(`PREPORT-DECISION`)을 따른다. 전문에 들어가면 C# `decimal`의 16바이트 표현을 그대로 재현해야 한다 |
+| `decimal` | 변환하지 않음 | `PREPORT-DECISION`(`input-contract.md` 3절)을 따른다. 전문에 들어가면 C# `decimal`의 16바이트 표현을 그대로 재현해야 한다 |
 | `object` | 변환하지 않음 | 실제 들어가는 타입을 확인해 구체 타입으로. 불명확하면 TODO |
 | `IntPtr` | `intptr_t` / 포인터 | |
 
@@ -73,7 +73,7 @@
 | `s.ToUpper()` | ASCII만이면 `std::toupper(static_cast<unsigned char>(c))` 루프 |
 | `int.Parse(s)` (`short`·`long`·`uint` 등도) | `NetCompat::ParseInteger<int32_t>(s)` — `std::stoi`는 `"12abc"`를 12로 읽어 C#과 다름 |
 | `int.TryParse(s, out v)` | `NetCompat::TryParseInteger<int32_t>(s, v)` (실패 시 `v = 0`) |
-| `double.Parse` | 정리 단계의 결정(`PREPORT-DECISION`)을 따른다. 정해지지 않았으면 `TODO(PORT)` |
+| `double.Parse` | `PREPORT-DECISION` 또는 `PORT_CONFIG.md`의 "문화권 의존 서식"을 따른다. 정해지지 않았으면 `TODO(PORT)` |
 | `"Count: " + n` (문자열 + 숫자·bool·enum) | `StrFormat("Count: %d", n)` — `+`로 옮기면 포인터 연산이 된다 |
 | `const string X = "..."` | `static constexpr const char* X = "...";` (`constexpr std::string`은 C++17에서 불가) |
 | `StringBuilder` | `std::string` + `append` / `+=` |
@@ -126,7 +126,7 @@
 | 값 명시 `A = 0x10` | 그대로 |
 | `[Flags] enum` | `enum class` + `operator|`, `operator&` 정의, 검사는 `(static_cast<uint32_t>(v) & bit) != 0` |
 | `e.ToString()` (이름 문자열) | 이름 표 함수 `const char* ToString(E)`를 `switch`로 작성. 로그 외 용도면 보고 |
-| `Enum.Parse` | 정리 단계에서 보고된 위치. 사람이 정한 방식을 따른다 |
+| `Enum.Parse` | `PREPORT-DECISION`의 방식을 따른다. 없으면 `TODO(PORT)` |
 | `(int)e` | `static_cast<int32_t>(e)` |
 
 ## 7. Nullable

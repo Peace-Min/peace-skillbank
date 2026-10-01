@@ -10,7 +10,10 @@ param(
 #      tests/fixtures/cs2cpp-port/PatternTests.cpp is compiled as C++17 with the warning set from references/env.md
 #      treated as errors, and the behaviour tests are run (NetCompat parsing/rounding/indexers/exception hierarchy,
 #      ActionQueueThread incl. 16 queues on RunOnCurrentThread, ThreadTimer modes and Dispose, ByteStream both orders,
-#      FieldVisit, TextEncoding, UdpSocket loopback/Receive/multicast).
+#      FieldVisit, TextEncoding, UdpSocket loopback/Receive/multicast, terminate logger).
+#   3. when a C# compiler exists (VS Roslyn csc.exe, else .NET SDK csc.dll): the C# replacement classes in
+#      references/csharp-helpers.md are built with C# 7.3 and warnings as errors against .NET Framework 4.x and
+#      tests/fixtures/cs2cpp-port/HelperTests.cs runs the same queue/timer/event scenarios as the C++ tests.
 
 $ErrorActionPreference = "Stop"
 
@@ -34,7 +37,7 @@ foreach ($md in Get-ChildItem -LiteralPath (Join-Path $skill "references") -Filt
         if ($hm.Success) { $headers[$hm.Groups[1].Value] = $code }
     }
 }
-foreach ($required in @("ActionQueueThread.h", "ThreadTimer.h", "WaitHandle.h", "Stopwatch.h", "Event.h", "StrFormat.h", "Logger.h", "Win32.h", "UdpSocket.h", "NetCompat.h", "ByteStream.h", "MsgFactory.h", "TextEncoding.h", "FieldVisit.h")) {
+foreach ($required in @("ActionQueueThread.h", "ThreadTimer.h", "WaitHandle.h", "Stopwatch.h", "Event.h", "StrFormat.h", "Logger.h", "Win32.h", "UdpSocket.h", "NetCompat.h", "ByteStream.h", "MsgFactory.h", "TextEncoding.h", "FieldVisit.h", "TerminateLogger.h")) {
     Assert-Fixture ($headers.ContainsKey($required)) "pattern header not found in references: $required"
 }
 
@@ -55,6 +58,50 @@ foreach ($name in $headers.Keys) {
     }
 }
 Write-Host "cs2cpp-port fixtures: static checks passed ($($headers.Count) pattern headers)."
+
+$vswhere0 = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
+# --- 2b. C# replacement classes (references/csharp-helpers.md): build with C# 7.3 + warnings as errors, run HelperTests.cs ---
+$csOut = Join-Path $RepositoryRoot "out\cs2cpp-port-csharp"
+$helpersMd = [System.IO.File]::ReadAllText((Join-Path $skill "references\csharp-helpers.md"), [System.Text.Encoding]::UTF8)
+$csBlocks = @([regex]::Matches($helpersMd, '(?s)```csharp\r?\n(.*?)```') | ForEach-Object { $_.Groups[1].Value } | Where-Object { $_ -match '^\s*using\s+System' })
+Assert-Fixture ($csBlocks.Count -eq 3) "expected 3 C# helper blocks (queue, timer, event) in csharp-helpers.md, found $($csBlocks.Count)"
+$csc = $null; $cscViaDotnet = $false
+if (Test-Path -LiteralPath $vswhere0) {
+    $csc = & $vswhere0 -latest -products * -find "MSBuild\**\Bin\Roslyn\csc.exe" 2>$null | Select-Object -First 1
+}
+if (-not $csc) {
+    $dotnet = Get-Command dotnet -ErrorAction SilentlyContinue
+    if ($dotnet) {
+        $csc = Get-ChildItem -Path (Join-Path (Split-Path -Parent $dotnet.Source) "sdk\*\Roslyn\bincore\csc.dll") -ErrorAction SilentlyContinue | Sort-Object FullName -Descending | Select-Object -First 1 -ExpandProperty FullName
+        if ($csc) { $cscViaDotnet = $true }
+    }
+}
+$fwRef = @("${env:ProgramFiles(x86)}\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2", "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319") | Where-Object { Test-Path -LiteralPath (Join-Path $_ "mscorlib.dll") } | Select-Object -First 1
+if (-not $csc -or -not $fwRef) {
+    Write-Host "cs2cpp-port fixtures: no C# compiler (VS Roslyn csc.exe or .NET SDK) or .NET Framework assemblies found; C# helper tests skipped."
+}
+else {
+    if (Test-Path -LiteralPath $csOut) { Remove-Item -LiteralPath $csOut -Recurse -Force }
+    New-Item -ItemType Directory -Force -Path $csOut | Out-Null
+    $utf8cs = New-Object System.Text.UTF8Encoding($false)
+    for ($i = 0; $i -lt $csBlocks.Count; $i++) { [System.IO.File]::WriteAllText((Join-Path $csOut "Helper$i.cs"), $csBlocks[$i], $utf8cs) }
+    Copy-Item -LiteralPath (Join-Path $RepositoryRoot "tests\fixtures\cs2cpp-port\HelperTests.cs") -Destination (Join-Path $csOut "HelperTests.cs")
+    $csExe = Join-Path $csOut "HelperTests.exe"
+    $cscArgs = @("-nologo", "-noconfig", "-nostdlib", "-langversion:7.3", "-warn:4", "-warnaserror", "-target:exe", "-platform:x64",
+        "-lib:$fwRef", "-r:mscorlib.dll", "-r:System.dll", "-r:System.Core.dll", "-out:$csExe") + @(Get-ChildItem -LiteralPath $csOut -Filter *.cs | ForEach-Object { $_.FullName })
+    if ($cscViaDotnet) { $csLog = & dotnet $csc @cscArgs 2>&1 | Out-String } else { $csLog = & $csc @cscArgs 2>&1 | Out-String }
+    Assert-Fixture (Test-Path -LiteralPath $csExe) "C# helper build failed (C# 7.3, warnings as errors):`n$csLog"
+    $csPassed = $false; $csFails = ""
+    for ($attempt = 1; $attempt -le 2 -and -not $csPassed; $attempt++) {
+        $csResult = @(& $csExe)
+        $csFails = (@($csResult | Where-Object { $_ -like 'FAIL*' }) -join '; ')
+        if ($LASTEXITCODE -eq 0 -and ($csResult -contains 'ALL OK')) {
+            $csPassed = $true
+            Write-Host "cs2cpp-port fixtures: C# helpers passed ($(@($csResult | Where-Object { $_ -like 'PASS*' }).Count) behaviour checks, attempt $attempt)."
+        }
+    }
+    Assert-Fixture $csPassed "C# helper behaviour tests failed twice: $csFails"
+}
 
 # --- 3. find a compiler ---
 $msvc = $null
@@ -121,3 +168,12 @@ for ($attempt = 1; $attempt -le 2 -and -not $passed; $attempt++) {
     }
 }
 Assert-Fixture $passed "pattern behaviour tests failed twice: $lastFails"
+
+# --- 6. unhandled exception in a thread: process ends and prints the exception first (InstallTerminateLogger) ---
+$termOut = Join-Path $out "terminate.txt"
+$termProc = Start-Process -FilePath $exe -ArgumentList "--terminate" -NoNewWindow -Wait -PassThru -RedirectStandardError $termOut
+$termText = [System.IO.File]::ReadAllText($termOut)
+Assert-Fixture ($termProc.ExitCode -ne 0) "--terminate: process exited with 0 (exception was swallowed)"
+Assert-Fixture ($termText -match 'Unhandled exception: boom from worker') "--terminate: exception text not printed: $termText"
+Write-Host "cs2cpp-port fixtures: terminate logger passed."
+

@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <thread>
 #include <map>
 #include <memory>
 #include <string>
@@ -16,6 +17,7 @@
 #include "NetCompat.h"
 #include "Stopwatch.h"
 #include "StrFormat.h"
+#include "TerminateLogger.h"
 #include "TextEncoding.h"
 #include "ThreadTimer.h"
 #include "WaitHandle.h"
@@ -50,7 +52,15 @@ struct StatusMsg : MessageBase {
     bool Read(ByteReader& r) override { FieldReader fr{r}; VisitFields(*this, fr); return fr.ok; }
 };
 
-int main() {
+int main(int argc, char** argv) {
+    // "--terminate": an exception escapes a thread with no handler. Like .NET, the process must end and print the
+    // exception first (InstallTerminateLogger). The fixture script checks stderr and the exit code.
+    if (argc > 1 && std::strcmp(argv[1], "--terminate") == 0) {
+        InstallTerminateLogger();
+        std::thread([] { throw NetCompat::InvalidOperationException("boom from worker"); }).join();
+        return 0;
+    }
+
     SetConsoleOutputCP(CP_UTF8);
 
     // ---- NetCompat: parsing ----

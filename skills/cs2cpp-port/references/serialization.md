@@ -172,7 +172,7 @@ C# `Read`/`Write` 메서드 대응:
 
 ## 3. 메시지 기반 클래스와 팩토리
 
-포팅 전 정리 단계를 거친 C#에는 클래스마다 **명시 `Write`/`Read`**, **가상 속성(`AttrMsgId`)**, **팩토리 표**가 있다. 그것을 1:1로 옮긴다. 필드 순서는 C# 명시 코드의 문장 순서 그대로다.
+정리된 C#(`input-contract.md` 1절)에는 클래스마다 **명시 `Write`/`Read`**, **가상 속성(`AttrMsgId`)**, **팩토리 표**가 있다. 그것을 1:1로 옮긴다. 필드 순서는 C# 명시 코드의 문장 순서 그대로다.
 
 ```cpp
 // MsgFactory.h (형태 예시 — 이름과 필드는 정리된 C#을 옮긴다)
@@ -224,7 +224,7 @@ inline std::shared_ptr<MessageBase> CreateMsg(uint16_t msgId) {
 
 | C# | 코드페이지 |
 |---|---|
-| `Encoding.Default` (.NET Framework) | `CP_ACP` — 실행 PC의 ANSI 코드페이지. 한국어 Windows면 949 |
+| `Encoding.Default` (.NET Framework) | `CP_ACP` — 실행 PC의 ANSI 코드페이지. 한국어 Windows면 949. `PORT_CONFIG.md`에 번호가 있으면 그 번호 |
 | `Encoding.UTF8` | 변환 없음 (내부가 UTF-8) |
 | `Encoding.ASCII` | 변환 없음. C#은 0x7F 초과 문자를 `?`로 바꾸므로 한글이 들어가면 보고 |
 | `Encoding.GetEncoding(949)` 등 | 그 번호 |
@@ -274,7 +274,7 @@ inline std::string AnsiToUtf8(const std::string& ansi) { return FromWide(ToWide(
 
 ## 5. VisitFields (B안 전용: C# 리플렉션을 그대로 두고 C++ 코드를 직접 생성할 때)
 
-정리 단계에서 C#을 명시화했으면(A안) 이 절은 쓰지 않는다. B안이면 C# 생성기가 클래스마다 아래 `VisitFields`를 출력한다. 필드 목록이 한 곳뿐이라 `Write`와 `Read`의 순서가 어긋날 수 없다.
+C#에 명시 `Write`/`Read`가 있으면(A안) 이 절은 쓰지 않는다. B안이면 C# 생성기가 클래스마다 아래 `VisitFields`를 출력한다. 필드 목록이 한 곳뿐이라 `Write`와 `Read`의 순서가 어긋날 수 없다.
 
 ```cpp
 // FieldVisit.h

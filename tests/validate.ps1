@@ -533,8 +533,8 @@ if ($python) {
 $portKit = @(
     @{
         Name = "cs2cpp-port"
-        Refs = @("env.md", "project.md", "types.md", "idioms.md", "netcompat.md", "concurrency.md", "serialization.md", "net.md", "testing.md", "pitfalls-checklist.md")
-        Markers = @("PREPORT-VERIFY", "API_MAP", "NetCompat", "recursive_mutex", "TODO(PORT)", "PREPORT-DECISION", "MSBuild", "C++17")
+        Refs = @("input-contract.md", "csharp-helpers.md", "env.md", "project.md", "types.md", "idioms.md", "netcompat.md", "concurrency.md", "serialization.md", "net.md", "testing.md", "pitfalls-checklist.md")
+        Markers = @("PREPORT-VERIFY", "PORT_CONFIG", "input-contract.md", "API_MAP", "NetCompat", "recursive_mutex", "TODO(PORT)", "PREPORT-DECISION", "MSBuild", "C++17")
         Fixture = "cs2cpp-port-fixtures.ps1"
     }
 )
@@ -588,6 +588,7 @@ foreach ($pk in $portKit) {
     Assert-Condition (-not ($pkBytes | Where-Object { $_ -gt 127 } | Select-Object -First 1)) "$pkName fixture script must be ASCII-only: $pkFixtures"
 }
 Assert-Condition (Test-Path -LiteralPath (Join-Path $RepositoryRoot "tests\fixtures\cs2cpp-port\PatternTests.cpp")) "Missing cs2cpp-port fixture tests"
+Assert-Condition (Test-Path -LiteralPath (Join-Path $RepositoryRoot "tests\fixtures\cs2cpp-port\HelperTests.cs")) "Missing cs2cpp-port C# helper tests"
 # Behavioural fixtures: static checks always (positive + negative), build/run when a C++ compiler exists.
 & (Join-Path $RepositoryRoot "tests\cs2cpp-port-fixtures.ps1") -RepositoryRoot $RepositoryRoot
 

@@ -59,9 +59,29 @@ C#은 누가 지우는지 신경 쓰지 않는다. C++에서는 **한 객체에 
 | `OnX -= Handler;` | `OnX.Unsubscribe(mOnXSubId)` (std::function은 비교가 안 되므로 id로 해제). 해제 직후에도 다른 스레드에서 진행 중인 `Invoke`가 핸들러를 부를 수 있다. 해제하고 바로 객체를 파괴하는 경로는 보고 |
 | `EventHandler<TArgs>` (`sender, e`) | `Event<Sender*, const TArgs&>` 또는 원본이 sender를 안 쓰면 `Event<const TArgs&>` |
 | `OnX?.Invoke(a)` | `OnX.Invoke(a)` |
-| 람다 `x => Foo(x)` | `[this](T x) { Foo(x); }` |
-| 람다가 지역 변수를 캡처 | C#은 변수 자체를 공유. C++에서 람다가 나중에(다른 스레드·타이머) 실행되면 **값 캡처** `[=]` 또는 명시 `[a, b]`. `[&]`는 즉시 실행될 때만 |
-| 람다가 `this`를 캡처하고 나중에 실행 | 객체가 먼저 죽으면 댕글링. 구독 해제를 소멸자에서 하거나 보고에 적기 |
+| 람다 `x => Foo(x)` | `[this](T x) { Foo(x); }` (캡처 규칙은 아래 "람다 캡처") |
+
+### 람다 캡처 (GC가 없어서 생기는 차이)
+
+C#은 람다가 잡은 변수와 객체를 GC가 람다가 끝날 때까지 살려 둔다. C++은 살려 주지 않는다. **언제 실행되는지**로 캡처를 정한다.
+
+| 실행 시점 | 예 | 캡처 |
+|---|---|---|
+| 호출이 끝나기 전에 실행 | `Invoke`, `InvokeWithResult`, 정렬 비교자, 그 자리에서 부르는 람다 | `[&]`, `[this]` 가능 |
+| 나중에 실행 | `Post`, 타이머 콜백, `Subscribe` 핸들러, 스레드 본문 | 지역 변수는 **이름을 적어 값 캡처** `[a, b]`. `this`는 아래 표 |
+
+- 나중에 실행되는 람다에 `[&]`와 `[=]`를 쓰지 않는다. C++17의 `[=]`는 `this`를 몰래 잡는다.
+- C#은 지역 변수 **자체**를 공유한다. 람다를 넘긴 뒤 원본이 그 변수를 바꾸거나 람다 안에서 바꾸면 값 캡처와 결과가 달라진다. 그 변수는 `auto x = std::make_shared<T>(초기값);`로 만들고 `x`를 값 캡처한다.
+
+나중에 실행되는 람다의 `this`:
+
+| 조건 | 캡처 |
+|---|---|
+| 객체가 파괴되기 전에 그 큐를 `Stop`, 타이머를 `Dispose`, 이벤트를 `Unsubscribe`한다 (소멸자나 `Dispose`에서 먼저 함) | `[this]` |
+| 위가 아니고 객체를 `std::shared_ptr`로 관리한다 | `[self = shared_from_this()]` 후 `self->Foo()`. 클래스는 `std::enable_shared_from_this<T>`를 상속한다. 생성자 안에서는 부를 수 없다 |
+| 둘 다 아니다 | `[this]`로 두고 보고에 "수명 미보장"을 적는다 |
+
+`std::weak_ptr`로 실행 직전에 살아 있는지 검사하고 건너뛰는 형태는 쓰지 않는다. C#에서는 객체가 살아 있어서 그 작업이 실행되므로 동작이 달라진다. 원본에 해제 여부 검사(`if (mDisposed) return;`)가 있으면 그 검사만 옮긴다.
 
 ```cpp
 // Event.h
@@ -126,7 +146,7 @@ private:
 
 ## 5. 리플렉션·속성(Attribute)
 
-C++17에는 실행 중 리플렉션이 없다. 리플렉션은 **포팅 전 정리 단계에서 C# 안에서 명시 코드로 바뀌어 있어야 한다** (가상 속성, 팩토리 표, 명시 등록, 생성된 `Write`/`Read`). 포팅에서는 그 명시 코드를 1:1로 옮긴다.
+C++17에는 실행 중 리플렉션이 없다. 리플렉션은 **C# 안에서 명시 코드로 바뀌어 있어야 한다**(`input-contract.md` 1절) (가상 속성, 팩토리 표, 명시 등록, 생성된 `Write`/`Read`). 포팅에서는 그 명시 코드를 1:1로 옮긴다.
 
 | 정리된 C# | C++ |
 |---|---|
@@ -148,8 +168,8 @@ C++17에는 실행 중 리플렉션이 없다. 리플렉션은 **포팅 전 정�
 | `finally { }` | RAII 가드 객체(소멸자) 또는 블록 끝 정리 코드. 반드시 돌아야 하면 가드 클래스 |
 | `ex.Message` | `ex.what()` |
 | `ArgumentNullException` 가드 `if (x == null) throw ...` | `if (x == nullptr) { throw NetCompat::ArgumentNullException("x"); }` |
-| null 접근·0 나누기·잘못된 캐스트에 기대는 `catch` | C++에서는 크래시. 정리 단계의 결정(`PREPORT-DECISION`)을 따르고, 없으면 보고 |
-| 스레드 진입·타이머 콜백 | 원본과 같게 (SKILL.md 규칙 15). `ActionQueueThread`·`ThreadTimer`의 예외 처리기로 원본 동작을 재현 |
+| null 접근·0 나누기·잘못된 캐스트에 기대는 `catch` | C++에서는 크래시. `PREPORT-DECISION`(`input-contract.md` 3절)을 따르고, 없으면 보고 |
+| 스레드 진입·타이머 콜백 | 원본과 같게 (SKILL.md 규칙 16). `ActionQueueThread`·`ThreadTimer`의 예외 처리기로 원본 동작을 재현 |
 
 ## 7. 문자열 포맷
 
@@ -226,22 +246,22 @@ void Write(LogLevel level, const std::string& message);   // 콘솔 + 파일, �
 
 ## 9. 설정·XML
 
-포팅 전 정리 단계에서 설정 읽기는 `ConfigStore` 한 곳으로 모여 있다.
+입력 C#에서 설정 읽기는 한 정적 클래스(아래 예: `ConfigStore`)로 모여 있다.
 
 - 다른 클래스의 `ConfigStore.GetString("키")` 호출은 `ConfigStore::GetString("키")`로 그대로 옮긴다. 반환은 `std::optional<std::string>` (C# `null` = 키 없음).
-- `ConfigStore` 내부 구현은 **설정 파일 형식이 정해질 때까지** `// TODO(PORT): 설정 형식 미결정`과 함께 `std::nullopt` 반환만 둔다.
+- `ConfigStore` 내부 구현은 `PORT_CONFIG.md`의 설정 파일 방식으로 쓴다. 정해지지 않았으면 `// TODO(PORT): 설정 형식 미결정`과 함께 `std::nullopt` 반환만 둔다.
 - 기존 `GetPrivateProfileString` P/Invoke는 Win32 그대로 호출한다 (`GetPrivateProfileStringW`, 경로는 UTF-16 변환).
-- `XmlDocument` 사용 위치는 사람이 정한 방식을 따른다. 정해지지 않았으면 읽은 뒤 구조체를 채우는 로직만 옮기고 읽기 부분은 `TODO(PORT)`.
+- `XmlDocument` 사용 위치는 `PREPORT-DECISION` 또는 `PORT_CONFIG.md`의 방식을 따른다. 정해지지 않았으면 읽은 뒤 구조체를 채우는 로직만 옮기고 읽기 부분은 `TODO(PORT)`.
 
 ## 10. LINQ
 
-LINQ는 포팅 전 정리 단계에서 C# 반복문으로 바뀌어 있어야 한다(지연 실행·안정 정렬·`checked` 합계 등 의미를 C#에서 맞춘 상태). 남아 있으면 입력 확인에서 멈춘다. 반복문은 1:1로 옮긴다.
+LINQ는 C# 안에서 반복문으로 바뀌어 있어야 한다(지연 실행·안정 정렬·`checked` 합계 등 의미를 C#에서 맞춘 상태). 남아 있으면 입력 확인에서 멈춘다. 반복문은 1:1로 옮긴다.
 
 ## 11. 비동기·스레드
 
 | C# | C++ |
 |---|---|
-`async`/`await`/`Task.Run`은 정리 단계에서 C# 안에서 스레드로 바뀌어 있어야 한다. 남아 있으면 입력 확인에서 멈춘다.
+`async`/`await`/`Task.Run`은 C# 안에서 스레드로 바뀌어 있어야 한다. 남아 있으면 입력 확인에서 멈춘다.
 
 | 정리된 C# | C++ |
 |---|---|
@@ -258,7 +278,38 @@ LINQ는 포팅 전 정리 단계에서 C# 반복문으로 바뀌어 있어야 �
 | `Environment.Exit(n)` | `std::exit(n)` — 정적 객체 소멸자가 돈다. 실행 중인 `std::thread`가 있으면 그 전에 멈추고 `join` |
 | `AppDomain.CurrentDomain.ProcessExit` | `std::atexit` 또는 `main` 끝의 정리 코드 |
 | `AppDomain.CurrentDomain.UnhandledException` | `std::set_terminate` (로그만 가능, 계속 실행 불가) |
+| (처리되지 않은 예외로 끝날 때 .NET이 표준 오류에 예외를 출력함) | `main` 첫 줄에서 아래 `InstallTerminateLogger()`를 부른다. C++ `std::terminate`는 아무것도 출력하지 않아 원인을 알 수 없다. 원본에 처리기가 없어도 넣는다 |
 | `IsBackground = true` 스레드 | C#은 `Main`이 끝나면 강제 종료된다. C++은 `main` 끝에서 종료 신호 + `join`. 원본에 종료 신호가 없으면 보고 |
+
+```cpp
+// TerminateLogger.h
+#pragma once
+#include <cstdio>
+#include <cstdlib>
+#include <exception>
+
+// C#: 처리되지 않은 예외로 프로세스가 끝날 때 예외 내용을 표준 오류에 출력하는 .NET 동작.
+inline void InstallTerminateLogger() {
+    std::set_terminate([] {
+        std::exception_ptr error = std::current_exception();
+        if (error) {
+            try {
+                std::rethrow_exception(error);
+            } catch (const std::exception& ex) {
+                std::fprintf(stderr, "Unhandled exception: %s\n", ex.what());
+            } catch (...) {
+                std::fprintf(stderr, "Unhandled exception: (unknown)\n");
+            }
+        } else {
+            std::fprintf(stderr, "terminate called without an active exception\n");
+        }
+        std::fflush(stderr);
+        std::abort();
+    });
+}
+```
+
+작업·콜백마다 `try`/`catch`를 둘러 예외를 삼키지 않는다. C#도 처리기가 없으면 프로세스가 끝나므로, 삼키면 원본에서 죽던 결함이 C++에서 조용히 숨는다.
 
 ## 13. 자체 Service Locator
 

@@ -26,6 +26,10 @@ Rules:
   `evidence/dev/worker-run.log` (overwrite each round). Do not report success if they fail.
 - Never fake progress: no skipped or commented-out tests, no stubs that pretend to work, no
   editing tests to match wrong behavior.
+- UI harness items follow the contract in `references/ui-testing.md` section 2 (path from the
+  master): committed under the test folder, `--scenario` / `--out`, exit 0/1/2, drives the user's
+  path (commands, click path, bound controls), hidden windows, its own test data cleaned up. Run
+  it once and add its output to `evidence/dev/worker-run.log`.
 - If blocked by environment or permissions, stop and return `BLOCKED_ENV` or `BLOCKED_PERMISSION`
   with the exact command and error. If the spec is ambiguous, return `NEEDS_DECISION`.
 

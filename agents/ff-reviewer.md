@@ -17,7 +17,9 @@ in the files.
 - **plan** (`02-todo.md`): every In-scope item and acceptance criterion is covered by at least one
   D item and one Q item; nothing from Out of scope is planned; items are small enough to verify one
   by one; Q items describe observable behavior (inputs, expected result), including at least one
-  negative/abusive case where it makes sense.
+  negative/abusive case where it makes sense. UI behavior: its Q items are tagged `[ui]` and
+  are checked by a harness or UI automation (a D item builds the harness when the spec's
+  `- ui-test:` is `none`); a manual-only item must say what a harness cannot see.
 - **dev** (`evidence/dev/diff-r<N>.patch`, `02-todo.md`, `evidence/dev/verify-r<N>.log`): open
   each checked D item's evidence refs and confirm the code there really does what the item says;
   diff contains nothing outside the spec (unrequested features, drive-by refactors); conventions in
@@ -29,6 +31,10 @@ in the files.
   means FAIL. On FAIL also give `CAUSE`: IMPL (product code is wrong), SPEC (spec or plan is wrong
   or incomplete), QA (the product looks right but the tester's evidence is wrong, missing, hand
   written or saved outside `<work folder>/evidence/qa/`), ENV (could not be exercised at all).
+  UI proof must come from a real run of the current build (command, output, exit code, the
+  screenshot it wrote); a state set up in memory to look fixed, an older image, or a harness that
+  sets private fields instead of the user's path is `CAUSE: QA` (or IMPL for the harness code).
+  An item in `evidence/qa/manual-checklist.md` that a harness or UI automation could check is FAIL.
 - **master decisions (every stage)**: `01-spec.md` `## Decisions` may hold `master-decided` and
   `master-created` entries the master added on its own, and `user` entries (the user's answers; a
   `user` entry with `(overrides: ...)` replaces the master entry it names; an `upheld` entry records

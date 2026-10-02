@@ -557,6 +557,47 @@ try {
     $r = Invoke-Ff $gp @("gate", "-WorkDir", $qt, "-Stage", "dev", "-Round", "1")
     Check "quoted build command with && runs in the gate" (($r.Code -eq 0) -and ([System.IO.File]::ReadAllText((Join-Path $qt "evidence\dev\verify-r1.log")) -match 'hello world')) $r.Out
 
+    # 21c2. UI harness: ui-test runs in the QA gate only, exit 2 is "no verdict" (not a pass), the
+    #       harness gets FF_EVIDENCE_DIR, and every command is killed after VerifyTimeoutMin.
+    $ur = Invoke-Ff $gp @("init", "-Title", "ui harness", "-VerifyTimeoutMin", "0.05")
+    $uw = Get-WorkDirLine $ur.Out
+    Check "init records VerifyTimeoutMin" ([System.IO.File]::ReadAllText((Join-Path $uw "settings.txt")) -match 'VerifyTimeoutMin=0\.05') $ur.Out
+    Check "init spec template has '- ui-test: none'" ([System.IO.File]::ReadAllText((Join-Path $uw "01-spec.md")) -match '(?m)^- ui-test: none\s*$') ""
+    Check "init context asks for UI technology and harness command" ([System.IO.File]::ReadAllText((Join-Path $uw "00-context.md")) -match 'UI technology' -and [System.IO.File]::ReadAllText((Join-Path $uw "00-context.md")) -match 'UI test harness command') ""
+    $specU = [System.IO.File]::ReadAllText((Join-Path $uw "01-spec.md")) -replace '- build:', '- build: exit /b 0' -replace '- test:', '- test: exit /b 0' -replace '- ui-test: none', '- ui-test: echo dir=%FF_EVIDENCE_DIR% && exit /b 2'
+    [System.IO.File]::WriteAllText((Join-Path $uw "01-spec.md"), $specU)
+    $r = Invoke-Ff $gp @("verify", "-WorkDir", $uw, "-Stage", "dev", "-Round", "1", "-FromSpec")
+    Check "dev verify does not run ui-test" (($r.Code -eq 0) -and ($r.Out -notmatch 'ui-test')) $r.Out
+    $r = Invoke-Ff $gp @("verify", "-WorkDir", $uw, "-Stage", "qa", "-Round", "1", "-FromSpec")
+    $ul = [System.IO.File]::ReadAllText((Join-Path $uw "evidence\qa\verify-r1.log"))
+    Check "qa verify runs ui-test; exit 2 -> NO-VERDICT and gate fails" (($r.Code -eq 1) -and ($r.Out -match 'VERIFY\s+NO-VERDICT\s+exit 2\s+\[ui-test\]')) $r.Out
+    Check "ui-test sees FF_EVIDENCE_DIR = <work>\evidence\qa" ($ul -match [regex]::Escape("dir=" + (Join-Path $uw "evidence\qa"))) $ul
+    [System.IO.File]::WriteAllText((Join-Path $uw "01-spec.md"), ($specU -replace 'exit /b 2', 'exit /b 0'))
+    $r = Invoke-Ff $gp @("verify", "-WorkDir", $uw, "-Stage", "qa", "-Round", "2", "-FromSpec")
+    Check "ui-test exit 0 passes" (($r.Code -eq 0) -and ($r.Out -match 'VERIFY\s+PASS\s+exit 0\s+\[ui-test\]')) $r.Out
+    [System.IO.File]::WriteAllText((Join-Path $uw "01-spec.md"), ($specU -replace 'echo dir=%FF_EVIDENCE_DIR% && exit /b 2', 'ping -n 30 127.0.0.1 >nul'))
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    $r = Invoke-Ff $gp @("verify", "-WorkDir", $uw, "-Stage", "qa", "-Round", "3", "-FromSpec")
+    $sw.Stop()
+    Check "a hanging command is killed after VerifyTimeoutMin (TIMEOUT, exit 1, well under 30 s)" (($r.Code -eq 1) -and ($r.Out -match 'VERIFY\s+TIMEOUT\s+exit 124') -and ($sw.Elapsed.TotalSeconds -lt 20)) ($r.Out + " elapsed=" + $sw.Elapsed.TotalSeconds)
+    Check "timeout is written to the verify log" ([System.IO.File]::ReadAllText((Join-Path $uw "evidence\qa\verify-r3.log")) -match 'TIMEOUT after 0\.05 min') ""
+
+    # 21c3. manual-check: a Q item may go to a human only with the automation attempt recorded.
+    Set-Content -LiteralPath (Join-Path $uw "02-todo.md") -Value @("## Dev", "- [x] D1: a", "  - evidence: src/a.txt:1", "## QA", "- [ ] Q1: drag", "  - evidence:", "- [ ] Q2: dpi", "  - evidence:") -Encoding UTF8
+    $r = Invoke-Ff $gp @("manual-check", "-WorkDir", $uw)
+    Check "manual-check without a checklist -> exit 1" ($r.Code -eq 1) $r.Out
+    $mc = Join-Path $uw "evidence\qa\manual-checklist.md"
+    Set-Content -LiteralPath $mc -Value @("# Manual", "", "### Q1 drag", "- automation tried:", "1. drag", "", "### Q7 ghost", "- automation tried: FlaUI - x", "1. y") -Encoding UTF8
+    $r = Invoke-Ff $gp @("manual-check", "-WorkDir", $uw)
+    Check "manual-check: empty attempt and unknown Q id -> exit 1" (($r.Code -eq 1) -and ($r.Out -match 'Q1 has no') -and ($r.Out -match 'Q7 is not a Q item')) $r.Out
+    Set-Content -LiteralPath $mc -Value @("# Manual", "", "### Q2 real DPI", "- automation tried: in-process harness - renders at 96 DPI only; FlaUI - cannot change monitor scaling", "1. Set 150% scaling", "2. Expected: no clipped text") -Encoding UTF8
+    $r = Invoke-Ff $gp @("manual-check", "-WorkDir", $uw)
+    Check "manual-check: attempt recorded -> exit 0" (($r.Code -eq 0) -and ($r.Out -match 'MANUAL\s+PASS\s+1 item')) $r.Out
+    Set-Content -LiteralPath $mc -Value @("# Manual", "", "### Q2 real DPI", "1. Set 150% scaling") -Encoding UTF8
+    [System.IO.File]::WriteAllText((Join-Path $uw "01-spec.md"), ($specU -replace 'echo dir=%FF_EVIDENCE_DIR% && exit /b 2', 'none'))
+    $r = Invoke-Ff $gp @("gate", "-WorkDir", $uw, "-Stage", "qa", "-Round", "4")
+    Check "qa gate runs manual-check when a checklist exists" (($r.Code -eq 1) -and ($r.Out -match 'STEP\s+manual-check\s+exit 1')) $r.Out
+
     # 21d. "..", and paths into agent worktrees, are rejected as evidence.
     New-Item -ItemType Directory -Path (Join-Path $gp ".claude\worktrees\agent-a") -Force | Out-Null
     Set-Content -LiteralPath (Join-Path $gp ".claude\worktrees\agent-a\fa.txt") -Value "x" -Encoding ASCII

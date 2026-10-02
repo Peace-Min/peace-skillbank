@@ -15,12 +15,14 @@
       pick-model  Choose the subagent model alias for a role from stage, size, risk and failures.
       auto-check  Decide whether an unattended (scheduled) resume should run now; logs the auto RESUME itself.
       heartbeat   Touch <dir>/lock so a scheduled firing sees the run as active.
-      verify      Run the spec build and test commands (-Build, -Test) for a round, save the full log, exit 1 if any fails.
+      verify      Run the spec build and test commands (-Build, -Test; QA also ui-test) for a round, each with a
+                  timeout (VerifyTimeoutMin), save the full log, exit 1 if any fails or times out.
+      manual-check  Check evidence/qa/manual-checklist.md: every "### Q<n>" item names the automation tried.
       gate        Run the whole mechanical gate of a stage round; on failure write the review file and log FAIL.
       merge-evidence  Fold evidence/dev/group-*.md (parallel developers) into 02-todo.md.
       decision    Append a master-decided / master-created / user entry to the spec's "## Decisions" and log DECIDED.
 
-    MaxRounds, MaxGateFails, MaxQaCycles, MaxFixes and MaxModel are written to <dir>/settings.txt by init and read from
+    MaxRounds, MaxGateFails, MaxQaCycles, MaxFixes, MaxDecisions, MaxModel and VerifyTimeoutMin are written to <dir>/settings.txt by init and read from
     there whenever a later call does not pass them, so every call (including scheduled firings)
     uses the same limits.
 
@@ -29,7 +31,7 @@
 #>
 param(
     [Parameter(Mandatory = $true, Position = 0)]
-    [ValidateSet("init", "event", "check-todo", "diff", "wiki-check", "status", "pick-model", "auto-check", "heartbeat", "verify", "gate", "merge-evidence", "decision")]
+    [ValidateSet("init", "event", "check-todo", "diff", "wiki-check", "status", "pick-model", "auto-check", "heartbeat", "verify", "gate", "merge-evidence", "decision", "manual-check")]
     [string]$Command,
     [ValidateSet("", "planner", "developer", "qa", "reviewer", "second", "wiki")]
     [string]$Role = "",
@@ -59,6 +61,7 @@ param(
     [int]$MaxQaCycles = 2,
     [int]$MaxFixes = 1,
     [int]$MaxDecisions = 3,
+    [double]$VerifyTimeoutMin = 20,
     [ValidateSet("", "decided", "created", "user", "upheld")]
     [string]$Kind = "",
     [string]$Overrides = ""
@@ -79,7 +82,7 @@ function Import-WorkSettings {
     $file = Join-Path $dirPath "settings.txt"
     if (-not (Test-Path -LiteralPath $file)) { return }
     foreach ($line in [System.IO.File]::ReadAllLines($file)) {
-        $m = [regex]::Match($line, '^\s*(MaxRounds|MaxGateFails|MaxQaCycles|MaxFixes|MaxDecisions|MaxModel)\s*=\s*(\S+)\s*$')
+        $m = [regex]::Match($line, '^\s*(MaxRounds|MaxGateFails|MaxQaCycles|MaxFixes|MaxDecisions|MaxModel|VerifyTimeoutMin)\s*=\s*(\S+)\s*$')
         if (-not $m.Success -or $script:BoundNames -contains $m.Groups[1].Value) { continue }
         switch ($m.Groups[1].Value) {
             "MaxRounds" { $script:MaxRounds = [int]$m.Groups[2].Value }
@@ -87,6 +90,7 @@ function Import-WorkSettings {
             "MaxGateFails" { $script:MaxGateFails = [int]$m.Groups[2].Value }
             "MaxFixes" { $script:MaxFixes = [int]$m.Groups[2].Value }
             "MaxDecisions" { $script:MaxDecisions = [int]$m.Groups[2].Value }
+            "VerifyTimeoutMin" { $script:VerifyTimeoutMin = [double]::Parse($m.Groups[2].Value, [System.Globalization.CultureInfo]::InvariantCulture) }
             "MaxModel" { if ($m.Groups[2].Value -in @("haiku", "sonnet", "opus", "fable", "inherit")) { $script:MaxModel = $m.Groups[2].Value } }
         }
     }
@@ -229,9 +233,10 @@ function Get-DecisionCount([string]$Dir, [string]$Which) {
     return @([System.IO.File]::ReadAllLines($spec) | Where-Object { $_ -match "^\s*-\s*master-$Which\b" }).Count
 }
 
-function Get-VerifyCommands([string]$Dir) {
-    # 0. "- build: <cmd>" / "- test: <cmd>" inside the spec's "## Verify commands" section only;
-    #    empty values and "none" are skipped. [ \t] keeps an empty value from swallowing the next line.
+function Get-VerifyCommands([string]$Dir, [string]$ForStage = "dev") {
+    # 0. "- build: <cmd>" / "- test: <cmd>" / "- ui-test: <cmd>" inside the spec's "## Verify commands"
+    #    section only; empty values and "none" are skipped. [ \t] keeps an empty value from swallowing
+    #    the next line. ui-test (the project's GUI harness) runs in the QA gate only.
     $spec = Join-Path $Dir "01-spec.md"
     if (-not (Test-Path -LiteralPath $spec)) { return @() }
     $inSection = $false
@@ -239,14 +244,50 @@ function Get-VerifyCommands([string]$Dir) {
     foreach ($line in [System.IO.File]::ReadAllLines($spec)) {
         if ($line -match '^\s*##\s') { $inSection = ($line -match '^\s*##\s+Verify commands\s*$'); continue }
         if (-not $inSection) { continue }
-        $m = [regex]::Match($line, '^[ \t]*-[ \t]*(build|test)[ \t]*:[ \t]*(.*?)[ \t]*$', 'IgnoreCase')
+        $m = [regex]::Match($line, '^[ \t]*-[ \t]*(build|test|ui-test)[ \t]*:[ \t]*(.*?)[ \t]*$', 'IgnoreCase')
         if ($m.Success) { $found[$m.Groups[1].Value.ToLowerInvariant()] = $m.Groups[2].Value.Trim().Trim('`').Trim() }
     }
+    $kinds = @("build", "test")
+    if ($ForStage -eq "qa") { $kinds += "ui-test" }
     $commands = @()
-    foreach ($kind in @("build", "test")) {
-        if ($found.ContainsKey($kind) -and $found[$kind] -and $found[$kind] -ne "none") { $commands += $found[$kind] }
+    foreach ($kind in $kinds) {
+        if ($found.ContainsKey($kind) -and $found[$kind] -and $found[$kind] -ne "none") {
+            $commands += , ([pscustomobject]@{ Kind = $kind; Cmd = $found[$kind] })
+        }
     }
     return $commands
+}
+
+function Invoke-WithTimeout([string]$CommandLine, [double]$Minutes, [string]$EvidenceDir) {
+    # 0. Run one verify command through cmd.exe from the project root; on timeout kill its whole
+    #    process tree (a GUI harness stuck on a modal must not hang the gate) and report exit 124.
+    #    FF_EVIDENCE_DIR tells a harness where to write screenshots (evidence/<stage>/).
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = "cmd.exe"
+    $psi.Arguments = '/d /c "' + $CommandLine + ' 2>&1"'
+    $psi.WorkingDirectory = $Root
+    $psi.UseShellExecute = $false
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $psi.RedirectStandardInput = $true
+    $psi.CreateNoWindow = $true
+    if ($EvidenceDir) { $psi.EnvironmentVariables["FF_EVIDENCE_DIR"] = $EvidenceDir }
+    $proc = [System.Diagnostics.Process]::Start($psi)
+    $proc.StandardInput.Close()
+    $outTask = $proc.StandardOutput.ReadToEndAsync()
+    $errTask = $proc.StandardError.ReadToEndAsync()
+    $timedOut = $false
+    if (-not $proc.WaitForExit([int][Math]::Max(1000, $Minutes * 60000))) {
+        $timedOut = $true
+        & taskkill.exe /PID $proc.Id /T /F 2>&1 | Out-Null
+        [void]$proc.WaitForExit(10000)
+    }
+    else { $proc.WaitForExit() }
+    $text = ""
+    if ($outTask.Wait(10000)) { $text += $outTask.Result }
+    if ($errTask.Wait(2000)) { $text += $errTask.Result }
+    $code = $(if ($timedOut) { 124 } else { $proc.ExitCode })
+    return [pscustomobject]@{ Out = $text; Code = $code; TimedOut = $timedOut }
 }
 
 $SelfExit = 0
@@ -534,14 +575,14 @@ switch ($Command) {
         else { Write-Output "WARN: not a git repository; 'diff' will not work. Ask the user to git init." }
         [System.IO.File]::WriteAllText((Join-Path $dir "base.txt"), $base, $utf8)
 
-        $context = "# Project context (seed)`n`n- Build command:`n- Test command:`n- Run/launch:`n- Key folders:`n- Conventions (from CLAUDE.md/AGENTS.md):`n- Wiki index: docs/wiki/index.md`n"
-        $spec = "# Spec: $Title`n`n## Goal`n`n## In scope`n`n## Out of scope`n`n## Constraints / cautions`n`n## Acceptance criteria`n`n## Verify commands`n- build:`n- test:`n`n## Risk`n- level: normal`n"
+        $context = "# Project context (seed)`n`n- Build command:`n- Test command:`n- Run/launch:`n- UI technology (none / WPF / WinForms / WebView2 / Electron / web / other):`n- UI test harness command (or none):`n- Key folders:`n- Conventions (from CLAUDE.md/AGENTS.md):`n- Wiki index: docs/wiki/index.md`n"
+        $spec = "# Spec: $Title`n`n## Goal`n`n## In scope`n`n## Out of scope`n`n## Constraints / cautions`n`n## Acceptance criteria`n`n## Verify commands`n- build:`n- test:`n- ui-test: none`n`n## Risk`n- level: normal`n"
         [System.IO.File]::WriteAllText((Join-Path $dir "00-context.md"), $context, $utf8)
         [System.IO.File]::WriteAllText((Join-Path $dir "01-spec.md"), $spec, $utf8)
         [System.IO.File]::WriteAllText((Join-Path $dir "events.log"), "", $utf8)
-        $settings = "MaxRounds=$MaxRounds`nMaxGateFails=$MaxGateFails`nMaxQaCycles=$MaxQaCycles`nMaxFixes=$MaxFixes`nMaxDecisions=$MaxDecisions`nMaxModel=$MaxModel`n"
+        $settings = "MaxRounds=$MaxRounds`nMaxGateFails=$MaxGateFails`nMaxQaCycles=$MaxQaCycles`nMaxFixes=$MaxFixes`nMaxDecisions=$MaxDecisions`nMaxModel=$MaxModel`nVerifyTimeoutMin=$VerifyTimeoutMin`n"
         [System.IO.File]::WriteAllText((Join-Path $dir "settings.txt"), $settings, $utf8)
-        Write-Output "SETTINGS  MaxRounds=$MaxRounds MaxGateFails=$MaxGateFails MaxQaCycles=$MaxQaCycles MaxFixes=$MaxFixes MaxDecisions=$MaxDecisions MaxModel=$MaxModel"
+        Write-Output "SETTINGS  MaxRounds=$MaxRounds MaxGateFails=$MaxGateFails MaxQaCycles=$MaxQaCycles MaxFixes=$MaxFixes MaxDecisions=$MaxDecisions MaxModel=$MaxModel VerifyTimeoutMin=$VerifyTimeoutMin"
         Write-Output "WORKDIR   $dir"
         exit 0
     }
@@ -809,31 +850,39 @@ switch ($Command) {
         Touch-Lock $dir
         if ($Stage -notin @("dev", "qa")) { Fail-Usage "-Stage dev or qa is required for verify." }
         if ($Round -lt 1) { Fail-Usage "-Round <N> is required for verify." }
-        if ($FromSpec) { $commands = @(Get-VerifyCommands $dir) }
-        else { $commands = @(@($Build, $Test) | Where-Object { $_ -and $_.Trim() -and $_.Trim() -ne "none" }) }
+        if ($FromSpec) { $commands = @(Get-VerifyCommands $dir $Stage) }
+        else {
+            $commands = @()
+            if ($Build -and $Build.Trim() -and $Build.Trim() -ne "none") { $commands += , ([pscustomobject]@{ Kind = "build"; Cmd = $Build.Trim() }) }
+            if ($Test -and $Test.Trim() -and $Test.Trim() -ne "none") { $commands += , ([pscustomobject]@{ Kind = "test"; Cmd = $Test.Trim() }) }
+        }
         if ($commands.Count -eq 0) { Fail-Usage "No build/test command: pass -Build/-Test or fill the spec's Verify commands (-FromSpec)." }
 
-        # 0. Run each command through cmd.exe from the project root; the log and exit codes decide, not a model.
+        # 0. Run each command through cmd.exe from the project root, each with a timeout; the log and
+        #    exit codes decide, not a model. A ui-test exit 2 means "no verdict" and is not a pass.
         $log = Join-Path $dir ("evidence\{0}\verify-r{1}.log" -f $Stage, $Round)
         $text = New-Object System.Text.StringBuilder
         $failed = 0
         $prevEap = $ErrorActionPreference
         $ErrorActionPreference = "Continue"
-        Push-Location -LiteralPath $Root
         try {
             foreach ($c in $commands) {
-                $out = & cmd.exe /d /c "$c 2>&1"
-                $code = $LASTEXITCODE
-                [void]$text.AppendLine("### $c")
-                foreach ($l in @($out)) { [void]$text.AppendLine([string]$l) }
+                $run = Invoke-WithTimeout $c.Cmd $VerifyTimeoutMin (Join-Path $dir ("evidence\" + $Stage))
+                $code = $run.Code
+                [void]$text.AppendLine("### [$($c.Kind)] $($c.Cmd)")
+                foreach ($l in ($run.Out -split "\r?\n")) { [void]$text.AppendLine($l) }
+                if ($run.TimedOut) { [void]$text.AppendLine("TIMEOUT after $VerifyTimeoutMin min; process tree killed") }
                 [void]$text.AppendLine("EXIT $code")
                 [void]$text.AppendLine("")
-                $verdict = $(if ($code -eq 0) { "PASS" } else { "FAIL" })
-                if ($code -ne 0) { $failed++ }
-                Write-Output ("VERIFY    {0}  exit {1}  {2}" -f $verdict, $code, $c)
+                $verdict = "PASS"
+                if ($run.TimedOut) { $verdict = "TIMEOUT" }
+                elseif ($code -eq 2 -and $c.Kind -eq "ui-test") { $verdict = "NO-VERDICT" }
+                elseif ($code -ne 0) { $verdict = "FAIL" }
+                if ($verdict -ne "PASS") { $failed++ }
+                Write-Output ("VERIFY    {0}  exit {1}  [{2}] {3}" -f $verdict, $code, $c.Kind, $c.Cmd)
             }
         }
-        finally { Pop-Location; $ErrorActionPreference = $prevEap }
+        finally { $ErrorActionPreference = $prevEap }
         [System.IO.File]::WriteAllText($log, $text.ToString(), $utf8)
         Write-Output "LOG       $log"
         if ($failed -gt 0) { Write-Output "GATE      FAIL  $failed command(s) failed"; exit 1 }
@@ -849,7 +898,7 @@ switch ($Command) {
         # 0. The stage's checks, each run as its own ff.ps1 call so the logic is shared with the single
         #    commands; verify reads the build/test commands from the spec itself (-FromSpec), so no
         #    command text ever passes through a command line.
-        $hasVerify = (@(Get-VerifyCommands $dir).Count -gt 0)
+        $hasVerify = (@(Get-VerifyCommands $dir $Stage).Count -gt 0)
         $steps = @()
         switch ($Stage) {
             "plan" { $steps += , @("check-todo", "-FormatOnly") }
@@ -861,6 +910,7 @@ switch ($Command) {
             "qa" {
                 if ($hasVerify) { $steps += , @("verify", "-Stage", "qa", "-Round", "$Round", "-FromSpec") }
                 $steps += , @("check-todo", "-Prefix", "Q", "-AllowOpen")
+                if (Test-Path -LiteralPath (Join-Path $dir "evidence\qa\manual-checklist.md")) { $steps += , @("manual-check") }
             }
             "wiki" { $steps += , @("wiki-check") }
         }
@@ -890,6 +940,37 @@ switch ($Command) {
         Write-Output "GATE      FAIL  $($failedSteps -join ', ')"
         if ($evCode -eq 3) { exit 3 }
         exit 1
+    }
+
+    "manual-check" {
+        $dir = Resolve-WorkDir
+        Touch-Lock $dir
+        # 0. A Q item may go to a human only after automation was tried: every "### Q<n>" section of the
+        #    checklist needs a non-empty "- automation tried:" line naming the method and why it failed,
+        #    and every Q id must exist in 02-todo.md.
+        $file = Join-Path $dir "evidence\qa\manual-checklist.md"
+        if (-not (Test-Path -LiteralPath $file)) { Write-Output "MANUAL    FAIL  evidence/qa/manual-checklist.md not found"; exit 1 }
+        $todoIds = @{}
+        foreach ($it in @(Get-TodoItems $dir)) { $todoIds[$it.Id] = $true }
+        $problems = @()
+        $current = $null
+        $tried = @{}
+        $order = @()
+        foreach ($line in [System.IO.File]::ReadAllLines($file)) {
+            $h = [regex]::Match($line, '^\s*###\s+(Q\d+)\b')
+            if ($h.Success) { $current = $h.Groups[1].Value; $order += $current; $tried[$current] = $false; continue }
+            if ($line -match '^\s*##?\s') { $current = $null; continue }
+            if ($current -and $line -match '^\s*-\s*automation tried\s*:\s*\S') { $tried[$current] = $true }
+        }
+        if ($order.Count -eq 0) { $problems += "no '### Q<n>' item sections" }
+        foreach ($id in $order) {
+            if (-not $todoIds.ContainsKey($id)) { $problems += "$id is not a Q item in 02-todo.md" }
+            if (-not $tried[$id]) { $problems += "$id has no '- automation tried: <method> - <why it failed>' line" }
+        }
+        foreach ($p in $problems) { Write-Output "MANUAL    $p" }
+        if ($problems.Count -gt 0) { Write-Output "MANUAL    FAIL  $($problems.Count) problem(s)"; exit 1 }
+        Write-Output "MANUAL    PASS  $($order.Count) item(s) with automation attempts recorded"
+        exit 0
     }
 
     "decision" {

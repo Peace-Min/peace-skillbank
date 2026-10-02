@@ -18,6 +18,7 @@ Settings (change here, nowhere else). They are passed once to `init`, stored in
 - `MAX_FIXES = 1` master interventions per stage and kind (`block:` and `loop:` each) before escalating.
 - `MAX_DECISIONS = 3` in-scope decisions the master may take on its own per work item.
 - `MAX_MODEL = fable` strongest model `pick-model` may choose (`opus` to cap cost; `inherit` to never pass a model).
+- `VERIFY_TIMEOUT_MIN = 20` minutes each build/test/ui-test command may run in a gate before it is killed (FAIL).
 - `PARALLEL = on` develop independent `[group:X]` work in parallel worktrees when the conditions below hold.
 - `AUTO_RESUME = on` resume by schedule after a usage-limit or API-error stop while Claude Code stays open.
 
@@ -27,20 +28,23 @@ skill loader reports another base directory. Run everything from the project roo
 
 ```text
 $ff = "<skill-dir>/scripts/ff.ps1"
-powershell -NoProfile -ExecutionPolicy Bypass -File $ff init -Title "<short title>" -MaxRounds 3 -MaxGateFails 3 -MaxQaCycles 2 -MaxFixes 1 -MaxDecisions 3 -MaxModel fable
+powershell -NoProfile -ExecutionPolicy Bypass -File $ff init -Title "<short title>" -MaxRounds 3 -MaxGateFails 3 -MaxQaCycles 2 -MaxFixes 1 -MaxDecisions 3 -MaxModel fable -VerifyTimeoutMin 20
 powershell -NoProfile -ExecutionPolicy Bypass -File $ff status -WorkDir <dir>
 powershell -NoProfile -ExecutionPolicy Bypass -File $ff pick-model -WorkDir <dir> -Role <planner|developer|qa|wiki|reviewer> [-Stage <stage>]
 powershell -NoProfile -ExecutionPolicy Bypass -File $ff gate -WorkDir <dir> -Stage <plan|dev|qa|wiki> -Round <N>
 powershell -NoProfile -ExecutionPolicy Bypass -File $ff event -WorkDir <dir> -Stage <stage> -Status <STATUS> -Round <N> -Note "<one line>" [-SendBack IMPL|SPEC] [-Model <alias>] [-ReviewerModel <alias>]
 powershell -NoProfile -ExecutionPolicy Bypass -File $ff decision -WorkDir <dir> -Kind <decided|created|user|upheld> -Stage <stage> -Note "<text>" [-Overrides "<entry>"]
 powershell -NoProfile -ExecutionPolicy Bypass -File $ff merge-evidence -WorkDir <dir>      (after parallel dev)
+powershell -NoProfile -ExecutionPolicy Bypass -File $ff manual-check -WorkDir <dir>        (before handing QA items to a human)
 powershell -NoProfile -ExecutionPolicy Bypass -File $ff auto-check -WorkDir <dir>         (scheduled firings)
 ```
 
 `<dir>` is the absolute work folder. `-Round`: the current round N for FAIL, PASS, MASTER_FIX and
 halts; `0` for START, PAUSE, RESUME and the intake and done events. Never hand-edit `events.log`. References:
 `references/work-folder-layout.md` (files and formats; give the planner its absolute path),
-`references/status-codes.md`, `references/model-selection.md`, `references/auto-resume.md`.
+`references/ui-testing.md` (GUI QA; give its absolute path to planner, developer and QA tester
+whenever the change has UI behavior), `references/status-codes.md`, `references/model-selection.md`,
+`references/auto-resume.md`.
 
 ## Agents
 
@@ -83,10 +87,15 @@ reviewer any file change.
    dirty, that `work/` is not ignored, or that this is not a git repository, get it fixed first.
 3. Fill `00-context.md` yourself (the seed every agent reads instead of re-exploring): build and
    test commands, how to launch, key folders, conventions from CLAUDE.md/AGENTS.md, wiki index. No
-   test command -> `test: none`; the planner then adds a minimal test setup.
+   test command -> `test: none`; the planner then adds a minimal test setup. Also the UI technology
+   and the UI test harness command, found from the project files with `references/ui-testing.md`
+   section 1 (an existing UI test or loop runner wins); `none` when there is no UI.
 4. Interview the user until nothing is ambiguous: scope, explicit non-goals, edge cases, acceptance
    criteria. Ask in small batches. Write `01-spec.md` (Out of scope is mandatory; Verify commands
-   `- build:` / `- test:` are what `gate` runs). In `## Risk` set `level: high` for security, auth,
+   `- build:` / `- test:` are what `gate` runs; `- ui-test:` is the harness command the QA gate also
+   runs: the existing one, `none` when the change has no UI behavior, or `none` for now when a
+   harness must first be built - the planner then plans it). For UI behavior, write acceptance
+   criteria a harness can check (what is shown or enabled after which action), not only looks. In `## Risk` set `level: high` for security, auth,
    concurrency, data migration/persistence formats or a public API; otherwise `normal`.
 5. Show the spec, get explicit approval, log `intake PASS`, then arm Auto resume if `AUTO_RESUME = on`.
    Non-interactive runs: if the request itself states scope, out of scope, acceptance criteria and
@@ -109,7 +118,7 @@ Log `<stage> START`, then repeat rounds until PASS or a limit; take N from `stat
    evidence; wiki: links), and on failure writes `reviews/<stage>-r<N>.md` and logs the FAIL itself.
    Exit 1 -> next round. Exit 3 -> loop limit (below). Do not call the reviewer on a failed gate.
    Plan stage only: if the spec said `test: none` and the plan adds a test setup, update the spec's
-   `- test:` line first.
+   `- test:` line first; likewise set `- ui-test:` to the command a planned UI harness D item names.
 3. **Review.** Dispatch a fresh `ff-reviewer` (model from `pick-model -Role reviewer -Stage <stage>`)
    with the stage name and file list. Save its reply as `reviews/<stage>-r<N>.md`, removing only
    code-fence lines.
@@ -163,7 +172,10 @@ QA round. `CAUSE: IMPL` -> `event ... -Status FAIL -SendBack IMPL`, then dev wit
 the fix list. `CAUSE: SPEC` -> `-SendBack SPEC`, then plan; if fixing it needs a change to the
 approved spec itself, it is a Master decision. `CAUSE: ENV` -> Master fix first. When the product
 cannot be exercised automatically, the QA tester returns `BLOCKED_ENV` with
-`evidence/qa/manual-checklist.md`; if you cannot provide automation, give the checklist to the user.
+`evidence/qa/manual-checklist.md`. Run `manual-check` first: if it fails (an item without the
+automation it tried), send the checklist back to the tester; never hand a human an item nobody
+tried to automate. A missing harness is not an ENV block: if the plan has none, it is a
+`-SendBack SPEC` (the planner adds the harness D item). Only then give the checklist to the user.
 
 ## Parallel development (PARALLEL = on)
 

@@ -100,6 +100,27 @@
 - 모델은 별칭(`opus`, `sonnet`, `fable`)으로 지정하므로 새 모델이 나와도 수정할 필요가 없다.
   `CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1`이 설정된 환경에서는 그 값이 모든 선택을 덮어쓴다.
 
+## GUI QA (사람 없이)
+
+범용 스킬이라 프로젝트마다 다른 GUI 테스트 코드를 들고 있을 수 없다. 대신 **방법을 고르고, 하네스를 프로젝트에
+한 번 만들어 두고, 그 명령을 재사용하는 절차**를 지시한다. 상세: `skills/feature-flow/references/ui-testing.md`.
+
+1. **방법 선택 (Step 0):** 마스터가 프로젝트 파일을 보고 정해 `00-context.md`에 적는다. 기존 UI 테스트·루프
+   러너가 있으면 그것, `UseWPF`면 같은 프로세스 하네스(테스트 exe가 앱 어셈블리를 참조해 실제 View를 띄우고
+   명령 실행 → 값 확인 → `RenderTargetBitmap` PNG), WebView2·Electron·웹이면 디버그 포트(CDP)·Playwright,
+   WinForms 등은 FlaUI(UI Automation)로 실제 exe 구동.
+2. **하네스가 없으면 개발 항목으로:** 플래너가 하네스 D 항목과 `[ui]` Q 항목별 시나리오 D 항목을 넣고, 마스터가
+   명세의 `- ui-test:` 줄을 그 명령으로 채운다. 하네스는 `tests/` 아래에 커밋되어 다음 기능에서 재사용된다.
+3. **하네스 규약:** `--scenario <이름> --out <폴더>`, 종료 코드 0 통과 / 1 실패 / **2 판정 없음(통과 아님)**,
+   사용자 경로(명령·클릭 경로·바인딩된 컨트롤)로 조작, 창은 숨김(포커스 안 뺏음), 시험 데이터는 스스로 만들고 정리.
+4. **QA 게이트:** build·test에 더해 `- ui-test:` 명령을 실행한다. 명령마다 `VERIFY_TIMEOUT_MIN`(기본 20분)이
+   넘으면 프로세스 트리를 죽이고 FAIL(모달에 걸린 하네스가 게이트를 멈추지 못한다).
+5. **증거 규칙:** 현재 빌드를 실제로 돌린 결과(명령·출력·종료 코드·그 실행의 스크린샷)만 인정. 메모리에서 상태를
+   바꿔 "고친 것처럼" 렌더한 화면, 예전 이미지는 검수자가 FAIL 처리한다.
+6. **수동은 최후 수단:** 실제 DPI·드래그 감촉·하드웨어처럼 자동화가 못 보는 항목만 `manual-checklist.md`로
+   넘기고, 항목마다 `- automation tried: <방법> - <실패 이유>`가 있어야 한다. `ff.ps1 manual-check`와 QA
+   게이트가 이를 검사하고, 마스터는 통과한 체크리스트만 사람에게 준다.
+
 ## 자동 재개
 
 **대상:** 사용 한도나 API 오류로 턴이 끊겼고 **Claude Code는 켜져 있는** 경우. 앱을 닫거나 크래시하면 예약도
@@ -131,7 +152,7 @@
 | `02-todo.md` | D·Q 항목과 항목별 `evidence:` 근거 |
 | `reviews/<단계>-r<N>.md` | 라운드별 검수 결과 원문 (게이트 실패 포함, 첫 줄 `VERDICT:`) |
 | `evidence/dev/` | 라운드별 빌드·테스트 로그, diff, 병렬 모드의 `group-X.md` |
-| `evidence/qa/` | QA 항목별 증거(명령·실제 출력·종료 코드), 자동화 불가 시 `manual-checklist.md` |
+| `evidence/qa/` | QA 항목별 증거(명령·실제 출력·종료 코드·스크린샷), 자동화를 시도하고도 안 된 항목만 `manual-checklist.md` |
 | `settings.txt` | 이 작업의 상한 설정 (`init`이 기록, 이후 모든 호출이 사용) |
 | `base.txt` / `schedule.txt` / `lock` | diff 기준 커밋 / 자동 재개 예약 / heartbeat |
 | `events.log` | 단계·상태 타임라인 (`ff.ps1`만 기록) |
@@ -142,7 +163,7 @@
 
 ## 설정 바꾸기
 
-- SKILL.md 상단: `MAX_ROUNDS`, `MAX_GATE_FAILS`, `MAX_QA_CYCLES`, `MAX_FIXES`, `MAX_DECISIONS`, `MAX_MODEL`, `PARALLEL`, `AUTO_RESUME`.
+- SKILL.md 상단: `MAX_ROUNDS`, `MAX_GATE_FAILS`, `MAX_QA_CYCLES`, `MAX_FIXES`, `MAX_DECISIONS`, `MAX_MODEL`, `VERIFY_TIMEOUT_MIN`, `PARALLEL`, `AUTO_RESUME`.
   상한 값은 마스터가 `init`에 한 번 넘기면 `work/<id>/settings.txt`에 저장되고 이후 모든 호출이 쓴다.
   이미 시작한 작업은 `settings.txt`를 고친다.
 - `MAX_MODEL = inherit`: 모델 자동 선택을 끈다. `PARALLEL = off`: 항상 순차 개발. `AUTO_RESUME = off`: 예약 안 함.
@@ -157,7 +178,9 @@
 
 - Claude끼리의 검수는 다른 회사 모델과의 교차 검수보다 약하다. 그래서 검수자를 항상 다른 모델로 두고, 기계적
   게이트를 함께 쓴다. **테스트가 없는 코드베이스에서는 게이트가 약해진다**. 플래너가 테스트 작성 D 항목을 먼저 넣는다.
-- GUI·하드웨어처럼 자동으로 구동할 수 없는 대상은 QA가 결과를 지어내지 않고 `BLOCKED_ENV` + 수동 체크리스트를 낸다.
+- GUI는 하네스·UI 자동화로 검증하지만, 같은 프로세스 렌더는 실제 마우스·키보드 입력, 포커스, DPI, OS 창 합성을
+  보지 못한다. 그런 항목과 하드웨어·외부 서비스는 QA가 결과를 지어내지 않고 시도 기록과 함께 수동 체크리스트로 낸다.
+  UI Automation과 보이는 창 모드는 로그인된 데스크톱 세션이 필요하다(원격·CI 무화면 환경에서는 수동으로 넘어감).
 - 토큰 사용량이 크다(단계마다 작업자·검수자 호출). 작은 수정에는 쓰지 않는다.
 - 근거 검사는 파일·줄이 **존재하는지**만 본다. 그 코드가 맞는지는 검수자가 본다.
 - 병렬 개발은 첫 개발 라운드, 깨끗한 작업 트리, 파일이 겹치지 않는 그룹이 2개 이상일 때만 쓴다. worktree에 격리된

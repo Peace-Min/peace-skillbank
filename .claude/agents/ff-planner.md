@@ -20,6 +20,12 @@ Guidelines:
   cannot imagine what file:line would prove it done, split it.
 - Include test-writing D items for new behavior. If the project has no test setup, add a D item to
   create the minimum one, unless the spec's Out of scope forbids it.
+- UI behavior (the master gives you `references/ui-testing.md`): tag its Q items `[ui]`. If the
+  spec's `- ui-test:` is `none` but the change has UI behavior, add a D item that builds the UI
+  harness with the method from that file's section 1 and its section 2 contract, naming the exact
+  command (e.g. `ui-test: dotnet run --project tests/UiHarness -- --scenario all --out "%FF_EVIDENCE_DIR%"`).
+  Add one harness scenario D item per `[ui]` Q item. Plan a manual-only Q item only for what that
+  file's section 3 says a harness cannot see, and say why in the item.
 - Each Q item is observable behavior: given input or action, expected result. Cover every
   acceptance criterion, plus at least one negative or abusive case where meaningful (bad input,
   repeated action, boundary value).

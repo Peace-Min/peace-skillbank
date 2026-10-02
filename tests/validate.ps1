@@ -645,6 +645,10 @@ Assert-Condition ($ffSkillContent -match "gate -WorkDir") "feature-flow SKILL.md
 Assert-Condition ($ffSkillContent -match "decision -Kind decided" -and $ffSkillContent -match "MAX_DECISIONS = \d") "feature-flow SKILL.md must record master decisions through ff.ps1 decision with a MAX_DECISIONS cap"
 $ffReviewerBody = Get-Content -Raw -Encoding UTF8 -LiteralPath (Join-Path $RepositoryRoot "agents\ff-reviewer.md")
 Assert-Condition ($ffReviewerBody -match "master-decided") "ff-reviewer must check the master's own decisions"
+Assert-Condition (Test-Path -LiteralPath (Join-Path $ffRoot "references\ui-testing.md")) "feature-flow must ship references/ui-testing.md (GUI QA procedure)"
+Assert-Condition ($ffSkillContent -match "references/ui-testing.md" -and $ffSkillContent -match "manual-check") "feature-flow SKILL.md must route GUI QA through references/ui-testing.md and ff.ps1 manual-check"
+Assert-Condition ((Get-Content -Raw -Encoding UTF8 -LiteralPath (Join-Path $RepositoryRoot "agents\ff-qa-tester.md")) -match "automation tried") "ff-qa-tester must record the automation it tried before handing an item to a human"
+Assert-Condition ($ffReviewerBody -match "ui-test") "ff-reviewer must check that UI behavior is covered by a harness"
 # The reviewer must stay read-only: no Write/Edit/Bash in its tool list.
 $ffReviewerFront = Get-FrontMatter -Path (Join-Path $RepositoryRoot "agents\ff-reviewer.md")
 Assert-Condition ($ffReviewerFront -match "(?m)^tools:\s*Read, Grep, Glob\s*$") "ff-reviewer must be read-only (tools: Read, Grep, Glob)"

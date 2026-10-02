@@ -650,6 +650,15 @@ try {
     Set-Content -LiteralPath $rv2 -Value @("VERDICT: PASS", "ISSUES:", "- none", "DECISIONS:", "- [ok] hyphenated words count as one word - in scope") -Encoding UTF8
     $r = Invoke-Ff $project @("event", "-WorkDir", $vw, "-Stage", "plan", "-Status", "PASS", "-Round", "2")
     Check "after the upheld entry, a review judging only the rest may PASS" ($r.Code -eq 0) $r.Out
+    $r = Invoke-Ff $project @("event", "-WorkDir", $vw, "-Stage", "plan", "-Status", "FAIL", "-Round", "2", "-Note", "reviewer: x")
+    Check "FAIL over a review that says PASS -> rejected" (($r.Code -eq 2) -and ($r.Out -match 'says VERDICT: PASS')) $r.Out
+    $null = Invoke-Ff $project @("event", "-WorkDir", $vw, "-Stage", "qa", "-Status", "START")
+    $null = Invoke-Ff $project @("event", "-WorkDir", $vw, "-Stage", "qa", "-Status", "FAIL", "-Round", "1", "-Note", "review: master entry upheld by second opinion")
+    $null = Invoke-Ff $project @("event", "-WorkDir", $vw, "-Stage", "qa", "-Status", "FAIL", "-Round", "2", "-Note", "review: master entry upheld by second opinion")
+    $r = Invoke-Ff $project @("status", "-WorkDir", $vw)
+    Check "upheld-only FAILs do not count toward the review budget" ($r.Out -match 'FAILS\s+0 review') $r.Out
+    $r = Invoke-Ff $project @("pick-model", "-WorkDir", $vw, "-Role", "qa")
+    Check "upheld-only FAILs do not raise the worker model (qa stays sonnet)" ($r.Out -match 'MODEL\s+sonnet') $r.Out
     Set-Content -LiteralPath (Join-Path $vw "reviews\dev-r1.md") -Value @("Worker reply", "RESULT: NEEDS_DECISION - which encoding?") -Encoding UTF8
     $r = Invoke-Ff $project @("event", "-WorkDir", $vw, "-Stage", "dev", "-Status", "NEEDS_DECISION", "-Round", "1", "-Note", "worker asks")
     Check "worker NEEDS_DECISION (RESULT line saved as the round file) is accepted" ($r.Code -eq 0) $r.Out

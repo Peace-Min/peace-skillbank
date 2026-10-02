@@ -144,6 +144,8 @@ function Get-FailCount([object[]]$Events, [string]$ForStage, [string]$Kind = "al
         if ($e.Status -in @("START", "PASS")) { $count = 0; continue }
         if ($e.Status -eq "MASTER_FIX") { if (-not $KeepAcrossFix -and $e.Note -match '^loop') { $count = 0 }; continue }
         if ($e.Status -ne "FAIL" -or $e.Note -match '^sendback=') { continue }
+        # 1. A FAIL that only records a second opinion upholding a master entry is not a defect round.
+        if ($e.Note -match '^review: master entry upheld') { continue }
         $isGate = ($e.Note -match '^gate')
         if ($Kind -eq "all" -or ($Kind -eq "gate" -and $isGate) -or ($Kind -eq "review" -and -not $isGate)) { $count++ }
     }
@@ -557,10 +559,18 @@ switch ($Command) {
         if ($Model) { $clean = ("$clean [model=$Model]").Trim() }
         if ($ReviewerModel) { $clean = ("$clean [reviewer=$ReviewerModel]").Trim() }
 
-        # 0. A PASS or NEEDS_DECISION of a stage round must match the round's review file.
+        # 0. A PASS or NEEDS_DECISION of a stage round must match the round's review file, and a FAIL
+        #    may not be logged over a review that says PASS (gate FAILs write their own review file).
         if ($Status -in @("PASS", "NEEDS_DECISION") -and $Stage -in @("plan", "dev", "qa", "wiki")) {
             $mismatch = Test-ReviewMatches -Dir $dir -ForStage $Stage -ForRound $Round -ForStatus $Status
             if ($mismatch) { Write-Output "REJECTED  $Status not logged: $mismatch"; exit 2 }
+        }
+        if ($Status -eq "FAIL" -and $Stage -in @("plan", "dev", "qa", "wiki") -and $Round -ge 1 -and $clean -notmatch '^gate') {
+            $reviewPath = Join-Path $dir ("reviews\{0}-r{1}.md" -f $Stage, $Round)
+            if ((Test-Path -LiteralPath $reviewPath) -and ([System.IO.File]::ReadAllText($reviewPath) -match '(?m)^\s*VERDICT:\s*PASS\b')) {
+                Write-Output "REJECTED  FAIL not logged: reviews/$Stage-r$Round.md says VERDICT: PASS"
+                exit 2
+            }
         }
 
         # 0b. MASTER_FIX is checked before it is written: kind "block:" or "loop:", each with its own budget.

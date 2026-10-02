@@ -60,6 +60,17 @@ DECISIONS:
 ```
 
 Include the `CAUSE` line only for a qa-stage FAIL. With PASS, ISSUES may list `low` items or `none`.
-List every master entry you judged under DECISIONS, quoting its text, or write `DECISIONS: none`
-when there are none. The master cannot log your verdict unless every standing entry is listed.
+List under DECISIONS every standing master entry (one not closed by a `user` or `upheld` entry),
+quoting its text; do not list closed ones. Write `DECISIONS: none` when no entry is standing. The
+master cannot log your verdict unless every standing entry is listed.
+
+## Second opinion
+
+If the master asks you for a second opinion on one disputed master entry, judge only that entry
+against `01-spec.md` (In scope, Out of scope, acceptance criteria, public interfaces) and answer with
+exactly one line, no fence:
+
+```text
+[ok|NEEDS_DECISION] <the entry, as written> - <one-line reason>
+```
 Write nothing after the DECISIONS list (no summary, no "verified" notes).

@@ -114,9 +114,9 @@ Log `<stage> START`, then repeat rounds until PASS or a limit; take N from `stat
    with the stage name and file list. Save its reply as `reviews/<stage>-r<N>.md`, removing only
    code-fence lines.
 4. **Decide.** Log the round with `-Model <worker> -ReviewerModel <reviewer>`. `event` refuses (exit 2)
-   a PASS or NEEDS_DECISION that the round's review file does not say, or whose review skipped a
-   standing master entry under `DECISIONS:`; then copy the verdict correctly, or dispatch a fresh
-   reviewer for a review that skipped an entry.
+   a PASS or NEEDS_DECISION that the round's review file does not say, a FAIL over a review that says
+   PASS, or a verdict whose review skipped a standing master entry under `DECISIONS:`; then copy the
+   verdict correctly, or dispatch a fresh reviewer for a review that skipped an entry.
    - `PASS` -> log PASS, next stage.
    - `FAIL` -> log FAIL with a one-line note; exit 3 -> loop limit.
    - `NEEDS_DECISION` -> **Master decision**.
@@ -152,10 +152,11 @@ the first review, and asking only for `[ok|NEEDS_DECISION] <entry> - <reason>`; 
 `reviews/<stage>-r<N>-second.md`.
 - `NEEDS_DECISION` too -> log `NEEDS_DECISION` (the round's review says so) and escalate to the user.
 - `ok` -> record `decision -Kind upheld -Note "<entry text> (second opinion <model>: <reason>)"`,
-  log FAIL with note `review: master entry upheld by second opinion`, and run the next round: the
-  worker fixes any other issues of the first review (skip the worker if there were none), then a
-  fresh reviewer, which no longer judges the upheld entry. An upheld entry can only be changed by the
-  user.
+  log FAIL with note `review: master entry upheld by second opinion` (it does not count toward the
+  FAIL budget or model escalation), and run the next round as usual: the worker fixes any other
+  issues of the first review (skip the worker if there were none, and log the round with the previous
+  worker's model), then `gate`, then a fresh reviewer, which no longer judges the upheld entry. An
+  upheld entry can only be changed by the user.
 
 **QA FAIL by cause:** `CAUSE: QA` (the tester's evidence is wrong; product fine) -> plain FAIL, next
 QA round. `CAUSE: IMPL` -> `event ... -Status FAIL -SendBack IMPL`, then dev with the QA review as

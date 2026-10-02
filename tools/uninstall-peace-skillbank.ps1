@@ -37,7 +37,8 @@ $BankSkills = @(
     'lightningchart-72',
     'sparrow-static-analysis',
     'addsim-xml-report',
-    'xml-report'
+    'xml-report',
+    'feature-flow'
 )
 $BankEnvVars = @('DMP_TRIAGE_HOME', 'DMP_TRIAGE_CDB')
 

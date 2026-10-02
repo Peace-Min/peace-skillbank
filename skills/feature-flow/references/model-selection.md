@@ -20,9 +20,9 @@ Escalation:
 
 - Workers: one tier up after 2 FAILs in their stage (since the stage START or the last user RESUME).
 - Developer: one more tier up after a QA `sendback=IMPL` since the last user RESUME.
-- Reviewer: never weaker than the model the worker of that stage gets (so the plan reviewer is at
-  least opus, and an escalated developer gets an equally strong reviewer). Reviewers are not raised
-  by FAIL counts themselves; they produced those FAILs.
+- Reviewer: always a different model than the worker of its stage, because Claude reviewing the
+  same model shares its blind spots. One tier above the worker (at least opus for risk high); if
+  that is above `MAX_MODEL`, one tier below. Reviewers are not raised by FAIL counts themselves.
 - Everything is capped at `MAX_MODEL`. `REASON` says `escalated from <base>` only when the result
   is above the base, and `capped at <MAX_MODEL>` whenever the cap lowered it.
 

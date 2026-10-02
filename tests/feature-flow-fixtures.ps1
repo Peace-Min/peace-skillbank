@@ -140,9 +140,9 @@ try {
     # 7. event + loop limit: third FAIL after START trips exit 3; RESUME resets the counter.
     $r = Invoke-Ff $project @("event", "-WorkDir", $work, "-Stage", "dev", "-Status", "START")
     Check "event START exit 0" ($r.Code -eq 0) $r.Out
-    $r = Invoke-Ff $project @("event", "-WorkDir", $work, "-Stage", "dev", "-Status", "FAIL", "-Round", "1", "-Note", "gate | D3`nbad")
+    $r = Invoke-Ff $project @("event", "-WorkDir", $work, "-Stage", "dev", "-Status", "FAIL", "-Round", "1", "-Note", "review | D3`nbad")
     Check "FAIL 1 exit 0" ($r.Code -eq 0) $r.Out
-    Check "note sanitized (no pipe/newline)" ($r.Out -match 'r1 \| gate D3 bad') $r.Out
+    Check "note sanitized (no pipe/newline)" ($r.Out -match 'r1 \| review D3 bad') $r.Out
     $r = Invoke-Ff $project @("event", "-WorkDir", $work, "-Stage", "dev", "-Status", "FAIL", "-Round", "2")
     Check "FAIL 2 exit 0" ($r.Code -eq 0) $r.Out
     $r = Invoke-Ff $project @("event", "-WorkDir", $work, "-Stage", "dev", "-Status", "FAIL", "-Round", "3")
@@ -154,7 +154,7 @@ try {
     Check "-MaxRounds 2 trips on second FAIL" ($r.Code -eq 3) $r.Out
 
     $r = Invoke-Ff $project @("status", "-WorkDir", $work, "-MaxRounds", "2")
-    Check "status NEXT after loop limit is escalated" ($r.Out -match 'NEXT\s+escalated \(loop limit\)') $r.Out
+    Check "status NEXT after loop limit is escalated" ($r.Out -match 'NEXT\s+escalated \(loop limit') $r.Out
 
     # 8. QA send-backs: counted across stages and START resets; third trips with -MaxQaCycles 2;
     #    they do not inflate the qa round-fail counter; RESUME (user go-ahead) resets them.
@@ -302,7 +302,7 @@ try {
     Check "developer small (2 D) -> sonnet" ((& $pick @("-Role", "developer")) -eq "sonnet") ""
     Check "qa normal -> sonnet" ((& $pick @("-Role", "qa")) -eq "sonnet") ""
     Check "wiki -> sonnet" ((& $pick @("-Role", "wiki")) -eq "sonnet") ""
-    Check "reviewer normal -> sonnet" ((& $pick @("-Role", "reviewer", "-Stage", "dev")) -eq "sonnet") ""
+    Check "reviewer is one tier above the worker (dev sonnet -> opus)" ((& $pick @("-Role", "reviewer", "-Stage", "dev")) -eq "opus") ""
     $r = Invoke-Ff $project @("pick-model", "-WorkDir", $mw, "-Role", "reviewer")
     Check "reviewer without -Stage -> exit 2" ($r.Code -eq 2) $r.Out
     $r = Invoke-Ff $project @("pick-model", "-WorkDir", $mw)
@@ -311,7 +311,7 @@ try {
     [System.IO.File]::WriteAllText((Join-Path $mw "01-spec.md"), $specText)
     Check "planner high risk -> fable" ((& $pick @("-Role", "planner")) -eq "fable") ""
     Check "developer high risk -> opus" ((& $pick @("-Role", "developer")) -eq "opus") ""
-    Check "reviewer high risk -> opus" ((& $pick @("-Role", "reviewer", "-Stage", "qa")) -eq "opus") ""
+    Check "high risk qa worker opus -> reviewer fable" ((& $pick @("-Role", "reviewer", "-Stage", "qa")) -eq "fable") ""
     Check "planner high risk capped by -MaxModel opus" ((& $pick @("-Role", "planner", "-MaxModel", "opus")) -eq "opus") ""
     [System.IO.File]::WriteAllText((Join-Path $mw "01-spec.md"), ($specText -replace 'level: high', 'level: normal'))
     $null = Invoke-Ff $project @("event", "-WorkDir", $mw, "-Stage", "dev", "-Status", "START")
@@ -320,13 +320,13 @@ try {
     $r = Invoke-Ff $project @("event", "-WorkDir", $mw, "-Stage", "dev", "-Status", "FAIL", "-Round", "2", "-Model", "sonnet")
     Check "event -Model appends [model=...]" ($r.Out -match 'r2 \|\s+\[model=sonnet\]|r2 \| \[model=sonnet\]') $r.Out
     Check "developer after 2 FAILs -> opus" ((& $pick @("-Role", "developer")) -eq "opus") ""
-    Check "reviewer for dev after 2 FAILs -> opus" ((& $pick @("-Role", "reviewer", "-Stage", "dev")) -eq "opus") ""
+    Check "dev worker escalated to opus -> reviewer fable" ((& $pick @("-Role", "reviewer", "-Stage", "dev")) -eq "fable") ""
     $null = Invoke-Ff $project @("event", "-WorkDir", $mw, "-Stage", "dev", "-Status", "PASS", "-Round", "3")
     $null = Invoke-Ff $project @("event", "-WorkDir", $mw, "-Stage", "qa", "-Status", "FAIL", "-Round", "1", "-Note", "sendback=IMPL")
     $null = Invoke-Ff $project @("event", "-WorkDir", $mw, "-Stage", "dev", "-Status", "START")
     Check "developer after QA IMPL send-back -> opus" ((& $pick @("-Role", "developer")) -eq "opus") ""
-    Check "dev reviewer matches escalated developer (opus)" ((& $pick @("-Role", "reviewer", "-Stage", "dev")) -eq "opus") ""
-    Check "plan reviewer is never weaker than the planner (opus)" ((& $pick @("-Role", "reviewer", "-Stage", "plan")) -eq "opus") ""
+    Check "dev reviewer stays above escalated developer (fable)" ((& $pick @("-Role", "reviewer", "-Stage", "dev")) -eq "fable") ""
+    Check "plan reviewer above planner opus -> fable" ((& $pick @("-Role", "reviewer", "-Stage", "plan")) -eq "fable") ""
     $null = Invoke-Ff $project @("event", "-WorkDir", $mw, "-Stage", "dev", "-Status", "RESUME", "-Note", "user")
     Check "QA send-back escalation ends at the user's RESUME (developer back to sonnet)" ((& $pick @("-Role", "developer")) -eq "sonnet") ""
     $r = Invoke-Ff $project @("event", "-WorkDir", $mw, "-Stage", "dev", "-Status", "FAIL", "-Round", "4", "-Model", "sonnet", "-ReviewerModel", "opus")
@@ -470,6 +470,117 @@ try {
     $n = (Get-Date).AddMinutes(-2).ToString("yyyy-MM-ddTHH:mm:ss")
     & $setLog @("$old | intake | PASS | r0 | ", "$a1 | dev | RESUME | r0 | auto", "$a2 | dev | RESUME | r0 | auto", "$n | dev | RESUME | r0 | auto") 2
     Check "LIMIT is reported even while recently active" ((& $decide) -eq "LIMIT") ""
+
+    # 18. Absolute evidence paths: inside the project accepted, outside rejected, missing inside rejected.
+    $absOk = (Join-Path $project "src\Lockout.cs") + ":7"
+    $absMissing = (Join-Path $project "src\Ghost.cs") + ":1"
+    $absOutside = (Join-Path ([System.IO.Path]::GetTempPath()) "elsewhere.txt") + ":1"
+    Set-Content -LiteralPath ($absOutside -replace ':1$', '') -Value "x" -Encoding ASCII
+    Set-Content -LiteralPath (Join-Path $sw "02-todo.md") -Value @("## Dev", "- [x] D1: abs ok", "  - evidence: $absOk", "- [x] D2: abs missing", "  - evidence: src/Lockout.cs:2 | $absMissing", "- [x] D3: abs outside", "  - evidence: $absOutside") -Encoding UTF8
+    $r = Invoke-Ff $project @("check-todo", "-WorkDir", $sw, "-Prefix", "D")
+    Check "absolute path inside the project is a valid ref" ($r.Out -match '(?m)^OK\s+D1') $r.Out
+    Check "missing absolute path is caught even next to a valid ref" ($r.Out -match '(?m)^BAD-REF\s+D2.*missing file') $r.Out
+    Check "absolute path outside the project is rejected" ($r.Out -match '(?m)^BAD-REF\s+D3.*outside the project') $r.Out
+    Remove-Item -LiteralPath ($absOutside -replace ':1$', '') -Force
+
+    # 19. Reviewer at the cap goes one tier below the worker (still a different model).
+    $r = Invoke-Ff $project @("pick-model", "-WorkDir", $mw, "-Role", "reviewer", "-Stage", "plan", "-MaxModel", "opus")
+    Check "planner at cap opus -> reviewer sonnet (below)" (($r.Out -match 'MODEL\s+sonnet') -and ($r.Out -match 'reviewer below worker')) $r.Out
+
+    # 20. Separate budgets: gate FAILs vs reviewer FAILs; MASTER_FIX resets once, a second one trips.
+    $bw = Get-WorkDirLine (Invoke-Ff $project @("init", "-Title", "budget probe")).Out
+    $null = Invoke-Ff $project @("event", "-WorkDir", $bw, "-Stage", "dev", "-Status", "START")
+    foreach ($n in 1..2) { $null = Invoke-Ff $project @("event", "-WorkDir", $bw, "-Stage", "dev", "-Status", "FAIL", "-Round", "$n", "-Note", "gate: check-todo") }
+    foreach ($n in 3..4) { $null = Invoke-Ff $project @("event", "-WorkDir", $bw, "-Stage", "dev", "-Status", "FAIL", "-Round", "$n", "-Note", "reviewer: D2 wrong") }
+    $r = Invoke-Ff $project @("status", "-WorkDir", $bw)
+    Check "2 gate + 2 reviewer FAILs stay under both budgets" (($r.Out -match 'FAILS\s+2 review \(max 3\), 2 gate \(max 3\)') -and ($r.Out -match 'NEXT\s+dev round 5')) $r.Out
+    $r = Invoke-Ff $project @("event", "-WorkDir", $bw, "-Stage", "dev", "-Status", "FAIL", "-Round", "5", "-Note", "gate: diff")
+    Check "third gate FAIL trips the gate budget (exit 3)" (($r.Code -eq 3) -and ($r.Out -match 'gate FAILs reached')) $r.Out
+    $r = Invoke-Ff $project @("event", "-WorkDir", $bw, "-Stage", "dev", "-Status", "MASTER_FIX", "-Note", "loop: merged the two reviews into one fix list")
+    Check "first MASTER_FIX accepted" ($r.Code -eq 0) $r.Out
+    $r = Invoke-Ff $project @("status", "-WorkDir", $bw)
+    Check "MASTER_FIX resets the budgets and continues" (($r.Out -match 'FAILS\s+0 review') -and ($r.Out -match 'NEXT\s+dev round 6')) $r.Out
+    $r = Invoke-Ff $project @("event", "-WorkDir", $bw, "-Stage", "dev", "-Status", "MASTER_FIX", "-Note", "loop: again")
+    $bwLog = [System.IO.File]::ReadAllText((Join-Path $bw "events.log"))
+    Check "second loop MASTER_FIX -> exit 3 and LOOP_LIMIT logged instead" (($r.Code -eq 3) -and ($r.Out -match 'master fix') -and ($bwLog -match '\| dev \| LOOP_LIMIT \|') -and ($bwLog -notmatch 'MASTER_FIX \| r0 \| loop: again')) $r.Out
+    $r = Invoke-Ff $project @("status", "-WorkDir", $bw)
+    Check "after the refused fix, NEXT is escalated (not another round)" ($r.Out -match 'NEXT\s+escalated') $r.Out
+
+    # 20b. block fixes have their own budget and do not reset the FAIL counters; the model never drops after a fix.
+    $kw = Get-WorkDirLine (Invoke-Ff $project @("init", "-Title", "fix kinds")).Out
+    Set-Content -LiteralPath (Join-Path $kw "02-todo.md") -Value @("## Dev", "- [ ] D1: a", "  - evidence:", "- [ ] D2: b", "  - evidence:") -Encoding UTF8
+    $null = Invoke-Ff $project @("event", "-WorkDir", $kw, "-Stage", "dev", "-Status", "START")
+    foreach ($n in 1..2) { $null = Invoke-Ff $project @("event", "-WorkDir", $kw, "-Stage", "dev", "-Status", "FAIL", "-Round", "$n", "-Note", "reviewer: x") }
+    $r = Invoke-Ff $project @("event", "-WorkDir", $kw, "-Stage", "dev", "-Status", "MASTER_FIX", "-Round", "2", "-Note", "block: started the missing local service")
+    Check "block MASTER_FIX accepted" ($r.Code -eq 0) $r.Out
+    $r = Invoke-Ff $project @("status", "-WorkDir", $kw)
+    Check "block MASTER_FIX keeps the reviewer FAIL count (2)" ($r.Out -match 'FAILS\s+2 review') $r.Out
+    $r = Invoke-Ff $project @("event", "-WorkDir", $kw, "-Stage", "dev", "-Status", "MASTER_FIX", "-Round", "2", "-Note", "loop: consolidated")
+    Check "loop MASTER_FIX still available after a block fix" ($r.Code -eq 0) $r.Out
+    $r = Invoke-Ff $project @("pick-model", "-WorkDir", $kw, "-Role", "developer")
+    Check "developer stays escalated (opus) after a loop MASTER_FIX" ($r.Out -match 'MODEL\s+opus') $r.Out
+    $r = Invoke-Ff $project @("event", "-WorkDir", $kw, "-Stage", "dev", "-Status", "MASTER_FIX", "-Note", "fixed things")
+    Check "MASTER_FIX without block:/loop: -> exit 2" ($r.Code -eq 2) $r.Out
+    Check "event refreshes the lock" (Test-Path (Join-Path $bw "lock")) ""
+
+    # 21. gate: runs the stage checks with commands from the spec; writes the review file and logs FAIL on failure.
+    $gs = Get-WorkDirLine (Invoke-Ff $gp @("init", "-Title", "gate probe")).Out
+    $specG = [System.IO.File]::ReadAllText((Join-Path $gs "01-spec.md")) -replace '- build:', '- build: echo build-ok' -replace '- test:', '- test: exit /b 0'
+    [System.IO.File]::WriteAllText((Join-Path $gs "01-spec.md"), $specG)
+    Set-Content -LiteralPath (Join-Path $gs "02-todo.md") -Value @("## Dev", "- [x] D1: a.txt changed", "  - evidence: src/a.txt:1", "## QA", "- [ ] Q1: q", "  - evidence:") -Encoding UTF8
+    $r = Invoke-Ff $gp @("gate", "-WorkDir", $gs, "-Stage", "plan", "-Round", "1")
+    Check "plan gate passes on a well-formed TODO" (($r.Code -eq 0) -and ($r.Out -match 'GATE\s+PASS')) $r.Out
+    $r = Invoke-Ff $gp @("gate", "-WorkDir", $gs, "-Stage", "dev", "-Round", "1")
+    Check "dev gate runs verify, check-todo and diff and passes" (($r.Code -eq 0) -and ($r.Out -match 'STEP\s+verify\s+exit 0') -and ($r.Out -match 'STEP\s+diff\s+exit 0') -and (Test-Path (Join-Path $gs "evidence\dev\verify-r1.log"))) $r.Out
+    [System.IO.File]::WriteAllText((Join-Path $gs "01-spec.md"), ($specG -replace 'exit /b 0', 'exit /b 4'))
+    $r = Invoke-Ff $gp @("gate", "-WorkDir", $gs, "-Stage", "dev", "-Round", "2")
+    $rv = Join-Path $gs "reviews\dev-r2.md"
+    Check "failing dev gate -> exit 1, review file and FAIL event written" (($r.Code -eq 1) -and (Test-Path $rv) -and ([System.IO.File]::ReadAllText($rv) -match '^VERDICT: FAIL \(gate\)') -and ([System.IO.File]::ReadAllText((Join-Path $gs "events.log")) -match '\| dev \| FAIL \| r2 \| gate: verify')) $r.Out
+    $specNone = [System.IO.File]::ReadAllText((Join-Path $gs "01-spec.md")) -replace '- build: echo build-ok', '- build: none' -replace '- test: exit /b 4', '- test: none'
+    [System.IO.File]::WriteAllText((Join-Path $gs "01-spec.md"), $specNone)
+    $r = Invoke-Ff $gp @("gate", "-WorkDir", $gs, "-Stage", "qa", "-Round", "1")
+    Check "qa gate with no spec commands skips verify" (($r.Out -match 'SKIP\s+verify') -and ($r.Code -eq 1) -and ($r.Out -match 'check-todo')) $r.Out
+
+    # 21b. Empty Verify lines from the init template never turn the next line into a command.
+    $et = Get-WorkDirLine (Invoke-Ff $gp @("init", "-Title", "empty verify")).Out
+    Set-Content -LiteralPath (Join-Path $et "02-todo.md") -Value @("## Dev", "- [x] D1: a", "  - evidence: src/a.txt:1", "## QA", "- [ ] Q1: q", "  - evidence:") -Encoding UTF8
+    $r = Invoke-Ff $gp @("gate", "-WorkDir", $et, "-Stage", "dev", "-Round", "1")
+    Check "template spec with empty build/test -> verify skipped, not '- test:' run" (($r.Out -match 'SKIP\s+verify') -and ($r.Out -notmatch 'STEP\s+verify')) $r.Out
+
+    # 21c. Quoted commands and && survive the gate (verify reads the spec itself).
+    $qt = Get-WorkDirLine (Invoke-Ff $gp @("init", "-Title", "quoted cmd")).Out
+    $specQ = [System.IO.File]::ReadAllText((Join-Path $qt "01-spec.md")) -replace '- build:', '- build: echo "hello world" && exit 0' -replace '- test:', '- test: exit /b 0'
+    [System.IO.File]::WriteAllText((Join-Path $qt "01-spec.md"), $specQ)
+    Set-Content -LiteralPath (Join-Path $qt "02-todo.md") -Value @("## Dev", "- [x] D1: a", "  - evidence: src/a.txt:1", "## QA", "- [ ] Q1: q", "  - evidence:") -Encoding UTF8
+    $r = Invoke-Ff $gp @("gate", "-WorkDir", $qt, "-Stage", "dev", "-Round", "1")
+    Check "quoted build command with && runs in the gate" (($r.Code -eq 0) -and ([System.IO.File]::ReadAllText((Join-Path $qt "evidence\dev\verify-r1.log")) -match 'hello world')) $r.Out
+
+    # 21d. "..", and paths into agent worktrees, are rejected as evidence.
+    New-Item -ItemType Directory -Path (Join-Path $gp ".claude\worktrees\agent-a") -Force | Out-Null
+    Set-Content -LiteralPath (Join-Path $gp ".claude\worktrees\agent-a\fa.txt") -Value "x" -Encoding ASCII
+    $outsideSibling = Join-Path (Split-Path $gp -Parent) "sibling.txt"
+    Set-Content -LiteralPath $outsideSibling -Value "x" -Encoding ASCII
+    Set-Content -LiteralPath (Join-Path $qt "02-todo.md") -Value @("## Dev", "- [x] D1: dotdot", "  - evidence: ../sibling.txt:1", "- [x] D2: worktree", "  - evidence: .claude/worktrees/agent-a/fa.txt:1") -Encoding UTF8
+    $r = Invoke-Ff $gp @("check-todo", "-WorkDir", $qt, "-Prefix", "D")
+    Check "'..' escaping the project is rejected" ($r.Out -match '(?m)^BAD-REF\s+D1.*outside the project') $r.Out
+    Check "evidence inside an agent worktree is rejected" ($r.Out -match '(?m)^BAD-REF\s+D2.*agent worktree') $r.Out
+    Remove-Item -LiteralPath $outsideSibling -Force
+    Remove-Item -LiteralPath (Join-Path $gp ".claude") -Recurse -Force
+
+    # 22. merge-evidence: parallel developers' group files fold into 02-todo.md; duplicates and unknown ids fail.
+    Set-Content -LiteralPath (Join-Path $gs "02-todo.md") -Value @("## Dev", "- [ ] D1: a [group:A]", "  - evidence:", "- [ ] D2: b [group:B]", "  - evidence:", "## QA", "- [ ] Q1: q", "  - evidence:") -Encoding UTF8
+    Set-Content -LiteralPath (Join-Path $gs "evidence\dev\group-A.md") -Value @("- [x] D1: a [group:A]", "  - evidence: src/a.txt:1") -Encoding UTF8
+    Set-Content -LiteralPath (Join-Path $gs "evidence\dev\group-B.md") -Value @("- [x] D2: b [group:B]", "  - evidence: src/b.txt:1") -Encoding UTF8
+    $r = Invoke-Ff $gp @("merge-evidence", "-WorkDir", $gs)
+    $todoAfter = [System.IO.File]::ReadAllText((Join-Path $gs "02-todo.md"))
+    Check "merge-evidence folds both groups" (($r.Code -eq 0) -and ($todoAfter -match '- \[x\] D1') -and ($todoAfter -match 'evidence: src/b\.txt:1') -and ($todoAfter -match '- \[ \] Q1')) $r.Out
+    Set-Content -LiteralPath (Join-Path $gs "evidence\dev\group-C.md") -Value @("- [x] D2: dup", "  - evidence: src/b.txt:1", "- [x] D9: ghost", "  - evidence: src/b.txt:1") -Encoding UTF8
+    $r = Invoke-Ff $gp @("merge-evidence", "-WorkDir", $gs)
+    Check "merge-evidence reports duplicate and unknown ids (exit 1)" (($r.Code -eq 1) -and ($r.Out -match 'DUPLICATE\s+D2') -and ($r.Out -match 'UNKNOWN\s+D9')) $r.Out
+    Remove-Item -LiteralPath (Join-Path $gs "evidence\dev\group-C.md") -Force
+    Set-Content -LiteralPath (Join-Path $gs "evidence\dev\group-B.md") -Value @("- [x] D2: b [group:B]", "- evidence: src/b.txt:1") -Encoding UTF8
+    $r = Invoke-Ff $gp @("merge-evidence", "-WorkDir", $gs)
+    Check "unindented evidence line in a group file is still merged (not blanked)" (($r.Code -eq 0) -and ([System.IO.File]::ReadAllText((Join-Path $gs "02-todo.md")) -match 'evidence: src/b\.txt:1')) $r.Out
 }
 finally {
     Remove-Item -LiteralPath $project -Recurse -Force -ErrorAction SilentlyContinue

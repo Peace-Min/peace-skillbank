@@ -11,10 +11,12 @@ work/<yyyyMMdd-HHmm>-<slug>/
   reviews/
     plan-r1.md         one file per review round, reviewer reply saved verbatim
     dev-r1.md ...      gate failures are written here too, as VERDICT: FAIL (gate)
+    dev-r3-master.md   the master's consolidated fix list after a loop limit (MASTER_FIX loop:)
   evidence/
     dev/verify-r1.log  full build/test output per round (master, gate)
     dev/diff-r1.patch  diff vs base per round, untracked files included (master, ff.ps1 diff)
     dev/worker-run.log the developer's own last build/test run (developer)
+    dev/group-A.md     parallel mode: one group's D items with checks and evidence (developer of group A)
     qa/verify-r1.log   test output per QA round (master, gate)
     qa/Q1-<short>.log  proof per Q item: steps, observed, expected (qa tester)
     qa/manual-checklist.md  only when QA could not run automatically (qa tester)
@@ -23,7 +25,7 @@ work/<yyyyMMdd-HHmm>-<slug>/
   base.txt             git commit the round diffs are taken against (ff.ps1 init)
   schedule.txt         "<CronCreate job id> <ISO time>" of the auto-resume schedule (master), if armed
   lock                 last master heartbeat time (ff.ps1 heartbeat), read by auto-check
-  settings.txt         MaxRounds / MaxQaCycles / MaxModel from init; read by every later ff.ps1 call
+  settings.txt         MaxRounds / MaxGateFails / MaxQaCycles / MaxFixes / MaxModel from init; read by every later ff.ps1 call
   events.log           one line per event, written only by ff.ps1
 ```
 
@@ -58,7 +60,8 @@ Rules enforced by `ff.ps1 check-todo`:
 - A checked item (`[x]`) must have an `evidence:` line with at least one **file ref**:
   `path`, `path:line` or `path:start-end`, relative to the project root or the work folder.
 - A token is a file ref when it has a folder (`src/x.cs`) or a line (`x.cs:12`); every such ref must
-  exist and its line numbers must be inside the file. A bare name like `x.cs` counts only if it
+  exist and its line numbers must be inside the file. Absolute paths are accepted only inside the
+  project root or the work folder; prefer paths relative to the project root. A bare name like `x.cs` counts only if it
   exists in the project root; otherwise it is treated as prose.
 - `evidence/...` refs resolve only inside the work folder; a file under the project root's
   `evidence/` never counts.
@@ -69,6 +72,10 @@ Rules enforced by `ff.ps1 check-todo`:
 - Dev gate: every D item checked. QA gate (`-AllowOpen`): a Q item may stay unchecked only if a
   proof file `evidence/qa/Q<n>-*` exists; the reviewer then fails the stage and names the CAUSE.
 - Plan gate (`-FormatOnly`): at least one D and one Q item, unique IDs, every item has an evidence line.
+
+Parallel groups: `[group:X]` on D items plus a `  - files:` line per item; groups never share a
+file. Parallel developers write their items to `evidence/dev/group-X.md`; `ff.ps1 merge-evidence`
+folds them into 02-todo.md (an id in two group files, or one missing from 02-todo.md, fails).
 
 Example of a valid checked item:
 

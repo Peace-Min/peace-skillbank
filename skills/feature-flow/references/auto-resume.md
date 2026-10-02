@@ -43,8 +43,8 @@ Safety properties:
   any other note, never does, and counts toward the 24 h limit.
 - `NEXT` ignores RESUME markers and is computed from the last real event, so a resume right after
   `intake PASS`, a QA send-back or a stage PASS goes to the right place.
-- The master runs `heartbeat` before every dispatch, so a second session (or a firing in this one)
-  waits while a round is in progress. A single subagent call longer than 45 min without any
+- Every working ff.ps1 call (event, gate, pick-model, check-todo, verify, diff) refreshes the
+  heartbeat `lock`, so a second session (or a firing in this one) waits while a round is in progress. A single subagent call longer than 45 min without any
   heartbeat can still look idle; this is the known limit.
 - If the user is chatting in the same session when a job fires, the firing runs between their
   messages; its first line `[feature-flow] auto resume of <dir>` makes that visible.

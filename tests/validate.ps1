@@ -606,7 +606,6 @@ foreach ($ffFile in @(
     (Join-Path $ffRoot "SKILL.md"), $ffScript, $ffFixtures,
     (Join-Path $ffRoot "references\work-folder-layout.md"),
     (Join-Path $ffRoot "references\status-codes.md"),
-    (Join-Path $ffRoot "references\model-agnostic-prompt.md"),
     (Join-Path $ffRoot "references\model-selection.md"),
     (Join-Path $ffRoot "references\auto-resume.md"),
     (Join-Path $ffRoot "agents\openai.yaml"),
@@ -634,7 +633,15 @@ foreach ($ffAgent in $ffAgents) {
     Assert-Condition ($ffAgentFront -match "(?m)^model:\s*(inherit|opus|sonnet|haiku|fable)\s*$") "Subagent needs a model alias (not a pinned ID): $ffAgent"
     Assert-Condition ($ffAgentFront -match "(?m)^effort:\s*(low|medium|high|xhigh|max)\s*$") "Subagent needs a fixed effort level: $ffAgent"
     Assert-Condition ($ffSkillContent -match [regex]::Escape($ffAgent)) "feature-flow SKILL.md must reference subagent $ffAgent"
+    # Clone-time mirror in .claude/agents must be byte-identical, so the reviewer stays read-only there too.
+    $ffMirror = Join-Path $RepositoryRoot ".claude\agents\$ffAgent.md"
+    Assert-Condition (Test-Path -LiteralPath $ffMirror) "Missing clone-time subagent mirror: .claude/agents/$ffAgent.md"
+    Assert-Condition ((Get-FileHash -LiteralPath $ffAgentPath).Hash -eq (Get-FileHash -LiteralPath $ffMirror).Hash) "Subagent mirror differs from agents/$ffAgent.md (copy it again)"
 }
+$ffEntryFront = Get-FrontMatter -Path (Join-Path $RepositoryRoot ".claude\skills\feature-flow\SKILL.md")
+$ffDescCanon = [regex]::Match($ffFrontMatter, "(?m)^description:.*$").Value
+Assert-Condition ($ffEntryFront.Contains($ffDescCanon)) "Clone-time feature-flow entrypoint description must match the canonical SKILL.md"
+Assert-Condition ($ffSkillContent -match "gate -WorkDir") "feature-flow SKILL.md must run the stage gate through ff.ps1 gate"
 # The reviewer must stay read-only: no Write/Edit/Bash in its tool list.
 $ffReviewerFront = Get-FrontMatter -Path (Join-Path $RepositoryRoot "agents\ff-reviewer.md")
 Assert-Condition ($ffReviewerFront -match "(?m)^tools:\s*Read, Grep, Glob\s*$") "ff-reviewer must be read-only (tools: Read, Grep, Glob)"

@@ -14,6 +14,7 @@
 | `LOOP_LIMIT` | master | a FAIL budget is used up and no MASTER_FIX is left or safe | escalate with the last two reviews |
 | `FAIL` + note `sendback=IMPL` or `sendback=SPEC` | master | QA sends work back to dev or plan | counted by ff.ps1 against MAX_QA_CYCLES |
 | `FAIL` after `CAUSE: QA` | master | the QA tester's evidence was wrong; the product is fine | next QA round, no send-back |
+| `DECIDED` | ff.ps1 decision | a decision was recorded in `## Decisions` (master or user) | none; a timeline marker that never changes NEXT |
 | `PAUSE` | master | the user interrupted or asked to stop | delete the schedule; no automatic resume |
 | `RESUME` + note `user ...` | master | the user resumes; lifts a halt and resets the loop and send-back counters | continue from `NEXT` |
 | `RESUME` + note `auto ...` | ff.ps1 auto-check | unattended resume after a usage-limit or API-error stop (Claude Code still open); resets nothing; max 3 per 24 h | continue from `NEXT`, ask nothing |

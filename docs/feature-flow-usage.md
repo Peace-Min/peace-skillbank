@@ -67,8 +67,10 @@
 | 반려 상한 도달 | 마지막 검수 결과들이 서로 어긋나거나 작업자가 잘못 읽었으면 `reviews/<단계>-r<N>-master.md`에 하나의 수정 목록으로 정리하고 `MASTER_FIX`(`loop:`) 후 다음 라운드. 반려 예산 초기화, 올라간 모델은 유지 | 정리할 수 없거나 `loop:` 개입(기본 1회)을 이미 썼을 때. 예산 초과 개입은 기록되지 않고 ff.ps1이 대신 중단을 기록 |
 | `NEEDS_DECISION` | 승인된 범위 안의 결정(경계 조건, 이름·구조, 명세가 열어 둔 동작)은 직접 정하고 `ff.ps1 decision`으로 `## Decisions`에 `master-decided`로 기록 | 범위·완료 기준·공개 인터페이스가 바뀌는 결정, 작업당 `MAX_DECISIONS`(기본 3)를 넘는 결정 |
 
-**마스터의 판단도 검수를 받는다.** 다음 검수자가 `master-decided`·`master-created` 항목이 승인된 범위 안인지
-확인하고, 벗어나면 `NEEDS_DECISION`을 낸다. 검수자가 마스터 결정에 이의를 제기하면 마스터는 다시 결정하지 않고
+**마스터의 판단도 검수를 받는다.** 모든 검수자가 사용자가 덮어쓰지 않은 `master-decided`·`master-created` 항목을
+승인된 범위와 대조해 검수 결과의 `DECISIONS:` 목록에 하나씩 판정을 남기고, 벗어나면 `NEEDS_DECISION`을 낸다.
+결정은 모두 `ff.ps1 decision`으로 기록되고(`events.log`에도 `DECIDED` 한 줄), 사용자 결정은 `-Kind user`로,
+마스터 항목을 뒤집을 때는 `-Overrides`로 남긴다. 검수자가 마스터 결정에 이의를 제기하면 마스터는 다시 결정하지 않고
 반드시 사람에게 올린다. 완료 보고에 `master-decided` 항목과 `MASTER_FIX`가 모두 나열된다.
 
 ## 서브에이전트 모델 자동 선택

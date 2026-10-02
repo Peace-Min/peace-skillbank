@@ -608,6 +608,13 @@ try {
     Check "status shows the decision counts" ($r.Out -match 'DECISIONS 2 master-decided \(max 2\), 1 master-created') $r.Out
     $r = Invoke-Ff $project @("decision", "-WorkDir", $dw, "-Stage", "dev", "-Note", "x")
     Check "decision without -Kind -> exit 2" ($r.Code -eq 2) $r.Out
+    $r = Invoke-Ff $project @("decision", "-WorkDir", $dw, "-Kind", "user", "-Stage", "dev", "-Note", "no CLI", "-Overrides", "master-decided (dev): second")
+    $specU = [System.IO.File]::ReadAllText((Join-Path $dw "01-spec.md"))
+    Check "user entry is recorded with its override and is not capped" (($r.Code -eq 0) -and ($specU -match '(?m)^- user \(\d{4}-\d{2}-\d{2}, dev\): no CLI \(overrides: master-decided \(dev\): second\)')) $r.Out
+    $logD = [System.IO.File]::ReadAllText((Join-Path $dw "events.log"))
+    Check "each decision adds a DECIDED line to events.log" ((([regex]::Matches($logD, '\| DECIDED \| r0 \|')).Count -eq 4) -and ($logD -match 'DECIDED \| r0 \| user: no CLI')) $logD
+    $r = Invoke-Ff $project @("status", "-WorkDir", $dw)
+    Check "DECIDED lines never change NEXT (still plan START after intake PASS)" ($r.Out -match 'NEXT\s+plan START') $r.Out
 
 }
 finally {

@@ -18,7 +18,7 @@
       verify      Run the spec build and test commands (-Build, -Test) for a round, save the full log, exit 1 if any fails.
       gate        Run the whole mechanical gate of a stage round; on failure write the review file and log FAIL.
       merge-evidence  Fold evidence/dev/group-*.md (parallel developers) into 02-todo.md.
-      decision    Append a master-decided / master-created entry to the spec's "## Decisions" (capped by MaxDecisions).
+      decision    Append a master-decided / master-created / user entry to the spec's "## Decisions" and log DECIDED.
 
     MaxRounds, MaxGateFails, MaxQaCycles, MaxFixes and MaxModel are written to <dir>/settings.txt by init and read from
     there whenever a later call does not pass them, so every call (including scheduled firings)
@@ -59,13 +59,14 @@ param(
     [int]$MaxQaCycles = 2,
     [int]$MaxFixes = 1,
     [int]$MaxDecisions = 3,
-    [ValidateSet("", "decided", "created")]
-    [string]$Kind = ""
+    [ValidateSet("", "decided", "created", "user")]
+    [string]$Kind = "",
+    [string]$Overrides = ""
 )
 
 $ErrorActionPreference = "Stop"
 $validStages = @("intake", "plan", "dev", "qa", "wiki", "done")
-$validStatus = @("START", "PASS", "FAIL", "MASTER_FIX", "BLOCKED_ENV", "BLOCKED_PERMISSION", "NEEDS_DECISION", "LOOP_LIMIT", "PAUSE", "RESUME")
+$validStatus = @("START", "PASS", "FAIL", "MASTER_FIX", "DECIDED", "BLOCKED_ENV", "BLOCKED_PERMISSION", "NEEDS_DECISION", "LOOP_LIMIT", "PAUSE", "RESUME")
 $haltStatus = @("BLOCKED_ENV", "BLOCKED_PERMISSION", "NEEDS_DECISION", "LOOP_LIMIT", "PAUSE")
 $utf8 = New-Object System.Text.UTF8Encoding($false)
 $BoundNames = @($PSBoundParameters.Keys)
@@ -259,6 +260,8 @@ function Read-TodoFile([string]$todo) {
 
 function Get-NextAction([object[]]$Events) {
     # 0. Next action, so a resumed or scheduled orchestrator does not have to infer it.
+    #    DECIDED lines only record a decision; they never change where the run is.
+    $Events = @($Events | Where-Object { $_.Status -ne "DECIDED" })
     if ($Events.Count -eq 0) { return "intake: interview and spec approval" }
 
     # 1. RESUME events are markers, not progress: decide from the last real event, and let a
@@ -815,7 +818,7 @@ switch ($Command) {
     "decision" {
         $dir = Resolve-WorkDir
         Touch-Lock $dir
-        if (-not $Kind) { Fail-Usage "-Kind decided (an in-scope choice the master made) or -Kind created (a file a MASTER_FIX created) is required." }
+        if (-not $Kind) { Fail-Usage "-Kind decided (an in-scope choice the master made), created (a file a MASTER_FIX created) or user (the user's answer to an escalation) is required." }
         if ($Stage -notin $validStages) { Fail-Usage "-Stage must be one of: $($validStages -join ', ')" }
         $text = (($Note -replace '[\r\n]+', ' ') -replace '\s+', ' ').Trim()
         if (-not $text) { Fail-Usage "-Note with the decision text is required." }
@@ -834,7 +837,9 @@ switch ($Command) {
         # 1. Append under "## Decisions" (created at the end of the spec if missing), before the next section.
         $lines = New-Object System.Collections.Generic.List[string]
         foreach ($l in [System.IO.File]::ReadAllLines($spec)) { $lines.Add($l) }
-        $entry = "- master-{0} ({1}, {2}): {3}" -f $Kind, (Get-Date -Format "yyyy-MM-dd"), $Stage, $text
+        $label = $(if ($Kind -eq "user") { "user" } else { "master-$Kind" })
+        $entry = "- {0} ({1}, {2}): {3}" -f $label, (Get-Date -Format "yyyy-MM-dd"), $Stage, $text
+        if ($Overrides) { $entry += " (overrides: " + (($Overrides -replace '[\r\n]+', ' ').Trim()) + ")" }
         $start = -1
         for ($i = 0; $i -lt $lines.Count; $i++) { if ($lines[$i] -match '^\s*##\s+Decisions\s*$') { $start = $i; break } }
         if ($start -lt 0) {
@@ -849,6 +854,10 @@ switch ($Command) {
             $lines.Insert($insert, $entry)
         }
         [System.IO.File]::WriteAllText($spec, (($lines -join "`n") + "`n"), $utf8)
+        # 2. One DECIDED line in the timeline, so the decision is visible there too (it never changes NEXT).
+        $short = $(if ($text.Length -gt 120) { $text.Substring(0, 120) + "..." } else { $text })
+        $evLine = "{0} | {1} | DECIDED | r0 | {2}: {3}" -f (Get-Date -Format "yyyy-MM-ddTHH:mm:ss"), $Stage, $label, ($short -replace '\|', '/')
+        [System.IO.File]::AppendAllText((Join-Path $dir "events.log"), $evLine + "`n", $utf8)
         Write-Output "DECISION  $entry"
         Write-Output ("COUNT     {0} master-decided (max {1})" -f (Get-DecisionCount $dir "decided"), $MaxDecisions)
         exit 0
@@ -938,7 +947,7 @@ switch ($Command) {
         if ($idle -lt $IdleMinutes) { Write-Output "DECISION  WAIT  last activity $idle min ago (< $IdleMinutes)"; Write-Output "ACTION    do nothing"; exit 0 }
 
         # 3. Resume: log the auto RESUME here so the decision and the record cannot drift apart.
-        $realStage = ($events | Where-Object { $_.Status -ne "RESUME" } | Select-Object -Last 1).Stage
+        $realStage = ($events | Where-Object { $_.Status -notin @("RESUME", "DECIDED") } | Select-Object -Last 1).Stage
         if (-not $realStage) { $realStage = $last.Stage }
         $line = "{0} | {1} | RESUME | r0 | auto idle={2}min" -f (Get-Date -Format "yyyy-MM-ddTHH:mm:ss"), $realStage, $idle
         [System.IO.File]::AppendAllText((Join-Path $dir "events.log"), $line + "`n", $utf8)

@@ -35,10 +35,11 @@ Sections: Goal, In scope, **Out of scope** (mandatory, never empty: write "none 
 only if truly none), Constraints / cautions, Acceptance criteria (testable sentences), Verify
 commands (build, test), Risk (`- level: high|normal|low`; high for security, auth, concurrency,
 data migration/persistence formats, public API; read by `ff.ps1 pick-model`), and, once the user
-answers an escalation, `## Decisions`: the user's decisions (dated, added by the master on resume)
-and the master's own entries written only by `ff.ps1 decision`, as
-`- master-decided (<date>, <stage>): <text>` or `- master-created (<date>, <stage>): <path> (<why>)`.
-Agents treat standing decisions as part of the spec; reviewers check every master entry.
+answers an escalation, `## Decisions`, written only by `ff.ps1 decision`:
+`- master-decided (<date>, <stage>): <text>`, `- master-created (<date>, <stage>): <path> (<why>)`,
+`- user (<date>, <stage>): <text> [(overrides: <master entry>)]`. Each also adds a `DECIDED` line to
+events.log. Agents treat standing decisions as part of the spec; reviewers judge every master entry
+no user entry overrides.
 
 ## 02-todo.md
 
@@ -93,6 +94,8 @@ VERDICT: PASS | FAIL | NEEDS_DECISION
 CAUSE: IMPL | SPEC | QA | ENV       (QA stage FAIL only)
 ISSUES:
 - [high|med|low] <where: file:line or TODO id> - <problem> - <expected>
+DECISIONS:                          (or "DECISIONS: none")
+- [ok|NEEDS_DECISION] <master entry> - <reason>
 ```
 
 ## events.log

@@ -30,11 +30,12 @@ in the files.
   or incomplete), QA (the product looks right but the tester's evidence is wrong, missing, hand
   written or saved outside `<work folder>/evidence/qa/`), ENV (could not be exercised at all).
 - **master decisions (every stage)**: `01-spec.md` `## Decisions` may hold `master-decided` and
-  `master-created` entries the master added on its own. Check each one you have not seen judged
-  before: it must stay inside In scope, respect Out of scope and the acceptance criteria, and not
-  change a public interface; a created file must be needed and minimal. If an entry fails this,
-  return `NEEDS_DECISION` naming the entry (the user decides, not the master). Also check the work
-  follows the decisions that stand.
+  `master-created` entries the master added on its own, and `user` entries (the user's answers; a
+  `user` entry with `(overrides: ...)` replaces the master entry it names). Judge every master entry
+  that no `user` entry overrides: it must stay inside In scope, respect Out of scope and the
+  acceptance criteria, and not change a public interface; a created file must be needed and
+  minimal. If one fails, return `NEEDS_DECISION` naming the entry (the user decides, not the
+  master). Also check the work follows the decisions that stand.
 - **wiki** (`docs/wiki/` changes): index links resolve; pages describe architecture, decisions and
   module map in short form; no code dumps; matches what was actually built.
 
@@ -53,7 +54,10 @@ VERDICT: PASS | FAIL | NEEDS_DECISION
 CAUSE: IMPL | SPEC | QA | ENV
 ISSUES:
 - [high|med|low] <file:line or TODO id> - <problem> - <expected>
+DECISIONS:
+- [ok|NEEDS_DECISION] <the master entry, as written> - <one-line reason>
 ```
 
 Include the `CAUSE` line only for a qa-stage FAIL. With PASS, ISSUES may list `low` items or `none`.
-Write nothing after the ISSUES list (no summary, no "verified" notes).
+List every master entry you judged under DECISIONS, or write `DECISIONS: none` when there are none.
+Write nothing after the DECISIONS list (no summary, no "verified" notes).

@@ -73,9 +73,10 @@ reviewer any file change.
 
 1. `resume <dir> --auto` (a scheduled firing): run `auto-check` and do exactly what its `ACTION`
    line says; it logs the RESUME itself. Never ask the user anything in such a firing.
-   `resume <dir>` (the user resuming): append the user's decision to `01-spec.md` under
-   `## Decisions` (dated); save manual QA results as `evidence/qa/Q<n>-manual.log` and check those Q
-   items; log `RESUME` with note `user <reason>`; re-arm Auto resume; continue with `status`'s
+   `resume <dir>` (the user resuming): record the user's decision with
+   `decision -Kind user -Stage <stage> -Note "<decision>"` (add `-Overrides "<master entry>"` when it
+   replaces one of your entries); save manual QA results as `evidence/qa/Q<n>-manual.log` and check
+   those Q items; log `RESUME` with note `user <reason>`; re-arm Auto resume; continue with `status`'s
    `NEXT` (after manual QA results, go straight to the qa gate and reviewer).
    Either way, skip the rest of Step 0.
 2. Run `init` with the settings above; its `WORKDIR` line is `<dir>`. If it warns that the tree is
@@ -136,9 +137,11 @@ Log `<stage> START`, then repeat rounds until PASS or a limit; take N from `stat
 (an edge case, a naming or structure choice, behavior the spec leaves open), decide it and record it
 with `decision -Kind decided -Stage <stage> -Note "<decision and why>"`, then continue. If it
 changes scope, acceptance criteria or a public interface, or `decision` exits 3 (`MAX_DECISIONS`
-used up), log `NEEDS_DECISION` and escalate. Your decisions are not final: the next reviewer of the
-stage checks every `master-decided` / `master-created` entry against the approved spec. If a
-reviewer raises `NEEDS_DECISION` about one of your entries, do not decide again: escalate to the user.
+used up), log `NEEDS_DECISION` and escalate. `decision` also writes a `DECIDED` line to events.log.
+Your decisions are not final: every reviewer judges each standing `master-decided` /
+`master-created` entry against the approved spec and lists it under `DECISIONS:`. If a reviewer
+raises `NEEDS_DECISION` about one of your entries, do not decide again: escalate to the user.
+Entries the user later overrides still count toward `MAX_DECISIONS`.
 
 **QA FAIL by cause:** `CAUSE: QA` (the tester's evidence is wrong; product fine) -> plain FAIL, next
 QA round. `CAUSE: IMPL` -> `event ... -Status FAIL -SendBack IMPL`, then dev with the QA review as

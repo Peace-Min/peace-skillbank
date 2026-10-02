@@ -194,6 +194,7 @@ try {
     Check "status todo progress" ($r.Out -match 'TODO-D\s+6/7 checked') $r.Out
     Check "status sendbacks since RESUME" ($r.Out -match 'SENDBACKS 1') $r.Out
     Check "round numbers continue (dev had r1..r5, then r1 again -> next r6)" ($r.Out -match 'NEXT\s+dev round 6') $r.Out
+    Set-Content -LiteralPath (Join-Path $work "reviews\dev-r2.md") -Value @("VERDICT: PASS", "ISSUES:", "- none", "DECISIONS: none") -Encoding UTF8
     $r = Invoke-Ff $project @("event", "-WorkDir", $work, "-Stage", "dev", "-Status", "PASS", "-Round", "2")
     $r = Invoke-Ff $project @("status", "-WorkDir", $work)
     Check "status next after PASS" ($r.Out -match 'NEXT\s+qa START') $r.Out
@@ -321,6 +322,7 @@ try {
     Check "event -Model appends [model=...]" ($r.Out -match 'r2 \|\s+\[model=sonnet\]|r2 \| \[model=sonnet\]') $r.Out
     Check "developer after 2 FAILs -> opus" ((& $pick @("-Role", "developer")) -eq "opus") ""
     Check "dev worker escalated to opus -> reviewer fable" ((& $pick @("-Role", "reviewer", "-Stage", "dev")) -eq "fable") ""
+    Set-Content -LiteralPath (Join-Path $mw "reviews\dev-r3.md") -Value @("VERDICT: PASS", "ISSUES:", "- none", "DECISIONS: none") -Encoding UTF8
     $null = Invoke-Ff $project @("event", "-WorkDir", $mw, "-Stage", "dev", "-Status", "PASS", "-Round", "3")
     $null = Invoke-Ff $project @("event", "-WorkDir", $mw, "-Stage", "qa", "-Status", "FAIL", "-Round", "1", "-Note", "sendback=IMPL")
     $null = Invoke-Ff $project @("event", "-WorkDir", $mw, "-Stage", "dev", "-Status", "START")
@@ -615,6 +617,42 @@ try {
     Check "each decision adds a DECIDED line to events.log" ((([regex]::Matches($logD, '\| DECIDED \| r0 \|')).Count -eq 4) -and ($logD -match 'DECIDED \| r0 \| user: no CLI')) $logD
     $r = Invoke-Ff $project @("status", "-WorkDir", $dw)
     Check "DECIDED lines never change NEXT (still plan START after intake PASS)" ($r.Out -match 'NEXT\s+plan START') $r.Out
+
+    # 24. Verdict cross-check: PASS / NEEDS_DECISION must match the round's review file, which must judge
+    #     every standing master entry; a second opinion can uphold an entry so later reviewers skip it.
+    $vw = Get-WorkDirLine (Invoke-Ff $project @("init", "-Title", "verdict probe")).Out
+    $null = Invoke-Ff $project @("event", "-WorkDir", $vw, "-Stage", "intake", "-Status", "PASS")
+    $null = Invoke-Ff $project @("event", "-WorkDir", $vw, "-Stage", "plan", "-Status", "START")
+    $r = Invoke-Ff $project @("event", "-WorkDir", $vw, "-Stage", "plan", "-Status", "PASS", "-Round", "1")
+    Check "PASS without a review file -> rejected (exit 2), not logged" (($r.Code -eq 2) -and ($r.Out -match 'REJECTED') -and ([System.IO.File]::ReadAllText((Join-Path $vw "events.log")) -notmatch '\| plan \| PASS \|')) $r.Out
+    $rv1 = Join-Path $vw "reviews\plan-r1.md"
+    Set-Content -LiteralPath $rv1 -Value @("VERDICT: FAIL", "ISSUES:", "- [high] D1 - wrong - right", "DECISIONS: none") -Encoding UTF8
+    $r = Invoke-Ff $project @("event", "-WorkDir", $vw, "-Stage", "plan", "-Status", "PASS", "-Round", "1")
+    Check "PASS while the review says FAIL -> rejected" (($r.Code -eq 2) -and ($r.Out -match 'says VERDICT: FAIL')) $r.Out
+    $null = Invoke-Ff $project @("decision", "-WorkDir", $vw, "-Kind", "decided", "-Stage", "plan", "-Note", "hyphenated words count as one word")
+    $null = Invoke-Ff $project @("decision", "-WorkDir", $vw, "-Kind", "decided", "-Stage", "plan", "-Note", "return 0 for whitespace-only input")
+    Set-Content -LiteralPath $rv1 -Value @("VERDICT: PASS", "ISSUES:", "- none", "DECISIONS:", "- [ok] master-decided (x, plan): hyphenated words count as one word - in scope") -Encoding UTF8
+    $r = Invoke-Ff $project @("event", "-WorkDir", $vw, "-Stage", "plan", "-Status", "PASS", "-Round", "1")
+    Check "PASS whose review skipped a standing master entry -> rejected" (($r.Code -eq 2) -and ($r.Out -match 'did not judge') -and ($r.Out -match 'whitespace-only')) $r.Out
+    Set-Content -LiteralPath $rv1 -Value @("VERDICT: PASS", "ISSUES:", "- none", "DECISIONS:", "- [ok] hyphenated words count as one word - in scope", "- [NEEDS_DECISION] return 0 for whitespace-only input - changes acceptance") -Encoding UTF8
+    $r = Invoke-Ff $project @("event", "-WorkDir", $vw, "-Stage", "plan", "-Status", "PASS", "-Round", "1")
+    Check "PASS with a [NEEDS_DECISION] master verdict -> rejected" (($r.Code -eq 2) -and ($r.Out -match 'log NEEDS_DECISION')) $r.Out
+    Set-Content -LiteralPath $rv1 -Value @("VERDICT: NEEDS_DECISION", "ISSUES:", "- [high] Decisions - whitespace entry changes acceptance - user decides", "DECISIONS:", "- [ok] hyphenated words count as one word - in scope", "- [NEEDS_DECISION] return 0 for whitespace-only input - changes acceptance") -Encoding UTF8
+    $r = Invoke-Ff $project @("event", "-WorkDir", $vw, "-Stage", "plan", "-Status", "NEEDS_DECISION", "-Round", "1", "-Note", "reviewer disputes whitespace entry")
+    Check "NEEDS_DECISION matching the review is logged" ($r.Code -eq 0) $r.Out
+    $r = Invoke-Ff $project @("pick-model", "-WorkDir", $vw, "-Role", "second", "-Stage", "plan")
+    Check "second opinion model is one tier above the plan reviewer (fable cap -> fable)" (($r.Out -match 'MODEL\s+fable') -and ($r.Out -match 'second opinion')) $r.Out
+    $r = Invoke-Ff $project @("pick-model", "-WorkDir", $vw, "-Role", "second", "-Stage", "dev")
+    Check "second opinion for dev (reviewer opus) -> fable" ($r.Out -match 'MODEL\s+fable') $r.Out
+    $r = Invoke-Ff $project @("decision", "-WorkDir", $vw, "-Kind", "upheld", "-Stage", "plan", "-Note", "return 0 for whitespace-only input (second opinion fable: in scope)")
+    Check "upheld entry recorded" (($r.Code -eq 0) -and ([System.IO.File]::ReadAllText((Join-Path $vw "01-spec.md")) -match '(?m)^- upheld \(')) $r.Out
+    $rv2 = Join-Path $vw "reviews\plan-r2.md"
+    Set-Content -LiteralPath $rv2 -Value @("VERDICT: PASS", "ISSUES:", "- none", "DECISIONS:", "- [ok] hyphenated words count as one word - in scope") -Encoding UTF8
+    $r = Invoke-Ff $project @("event", "-WorkDir", $vw, "-Stage", "plan", "-Status", "PASS", "-Round", "2")
+    Check "after the upheld entry, a review judging only the rest may PASS" ($r.Code -eq 0) $r.Out
+    Set-Content -LiteralPath (Join-Path $vw "reviews\dev-r1.md") -Value @("Worker reply", "RESULT: NEEDS_DECISION - which encoding?") -Encoding UTF8
+    $r = Invoke-Ff $project @("event", "-WorkDir", $vw, "-Stage", "dev", "-Status", "NEEDS_DECISION", "-Round", "1", "-Note", "worker asks")
+    Check "worker NEEDS_DECISION (RESULT line saved as the round file) is accepted" ($r.Code -eq 0) $r.Out
 
 }
 finally {

@@ -32,7 +32,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File $ff status -WorkDir <dir>
 powershell -NoProfile -ExecutionPolicy Bypass -File $ff pick-model -WorkDir <dir> -Role <planner|developer|qa|wiki|reviewer> [-Stage <stage>]
 powershell -NoProfile -ExecutionPolicy Bypass -File $ff gate -WorkDir <dir> -Stage <plan|dev|qa|wiki> -Round <N>
 powershell -NoProfile -ExecutionPolicy Bypass -File $ff event -WorkDir <dir> -Stage <stage> -Status <STATUS> -Round <N> -Note "<one line>" [-SendBack IMPL|SPEC] [-Model <alias>] [-ReviewerModel <alias>]
-powershell -NoProfile -ExecutionPolicy Bypass -File $ff decision -WorkDir <dir> -Kind <decided|created> -Stage <stage> -Note "<text>"
+powershell -NoProfile -ExecutionPolicy Bypass -File $ff decision -WorkDir <dir> -Kind <decided|created|user|upheld> -Stage <stage> -Note "<text>" [-Overrides "<entry>"]
 powershell -NoProfile -ExecutionPolicy Bypass -File $ff merge-evidence -WorkDir <dir>      (after parallel dev)
 powershell -NoProfile -ExecutionPolicy Bypass -File $ff auto-check -WorkDir <dir>         (scheduled firings)
 ```
@@ -113,7 +113,10 @@ Log `<stage> START`, then repeat rounds until PASS or a limit; take N from `stat
 3. **Review.** Dispatch a fresh `ff-reviewer` (model from `pick-model -Role reviewer -Stage <stage>`)
    with the stage name and file list. Save its reply as `reviews/<stage>-r<N>.md`, removing only
    code-fence lines.
-4. **Decide.** Log the round with `-Model <worker> -ReviewerModel <reviewer>`.
+4. **Decide.** Log the round with `-Model <worker> -ReviewerModel <reviewer>`. `event` refuses (exit 2)
+   a PASS or NEEDS_DECISION that the round's review file does not say, or whose review skipped a
+   standing master entry under `DECISIONS:`; then copy the verdict correctly, or dispatch a fresh
+   reviewer for a review that skipped an entry.
    - `PASS` -> log PASS, next stage.
    - `FAIL` -> log FAIL with a one-line note; exit 3 -> loop limit.
    - `NEEDS_DECISION` -> **Master decision**.
@@ -139,9 +142,20 @@ with `decision -Kind decided -Stage <stage> -Note "<decision and why>"`, then co
 changes scope, acceptance criteria or a public interface, or `decision` exits 3 (`MAX_DECISIONS`
 used up), log `NEEDS_DECISION` and escalate. `decision` also writes a `DECIDED` line to events.log.
 Your decisions are not final: every reviewer judges each standing `master-decided` /
-`master-created` entry against the approved spec and lists it under `DECISIONS:`. If a reviewer
-raises `NEEDS_DECISION` about one of your entries, do not decide again: escalate to the user.
-Entries the user later overrides still count toward `MAX_DECISIONS`.
+`master-created` entry against the approved spec and lists it under `DECISIONS:`. Entries the user
+later overrides still count toward `MAX_DECISIONS`.
+
+**Second opinion** (a reviewer marks one of your entries `[NEEDS_DECISION]`): you never decide it
+again yourself. Once per entry, before logging anything, dispatch a fresh `ff-reviewer` with the
+model from `pick-model -Role second -Stage <stage>`, giving it `01-spec.md`, the disputed entry and
+the first review, and asking only for `[ok|NEEDS_DECISION] <entry> - <reason>`; save the reply as
+`reviews/<stage>-r<N>-second.md`.
+- `NEEDS_DECISION` too -> log `NEEDS_DECISION` (the round's review says so) and escalate to the user.
+- `ok` -> record `decision -Kind upheld -Note "<entry text> (second opinion <model>: <reason>)"`,
+  log FAIL with note `review: master entry upheld by second opinion`, and run the next round: the
+  worker fixes any other issues of the first review (skip the worker if there were none), then a
+  fresh reviewer, which no longer judges the upheld entry. An upheld entry can only be changed by the
+  user.
 
 **QA FAIL by cause:** `CAUSE: QA` (the tester's evidence is wrong; product fine) -> plain FAIL, next
 QA round. `CAUSE: IMPL` -> `event ... -Status FAIL -SendBack IMPL`, then dev with the QA review as

@@ -12,6 +12,7 @@ work/<yyyyMMdd-HHmm>-<slug>/
     plan-r1.md         one file per review round, reviewer reply saved verbatim
     dev-r1.md ...      gate failures are written here too, as VERDICT: FAIL (gate)
     dev-r3-master.md   the master's consolidated fix list after a loop limit (MASTER_FIX loop:)
+    dev-r2-second.md   a second opinion on a disputed master entry
   evidence/
     dev/verify-r1.log  full build/test output per round (master, gate)
     dev/diff-r1.patch  diff vs base per round, untracked files included (master, ff.ps1 diff)
@@ -37,9 +38,11 @@ commands (build, test), Risk (`- level: high|normal|low`; high for security, aut
 data migration/persistence formats, public API; read by `ff.ps1 pick-model`), and, once the user
 answers an escalation, `## Decisions`, written only by `ff.ps1 decision`:
 `- master-decided (<date>, <stage>): <text>`, `- master-created (<date>, <stage>): <path> (<why>)`,
-`- user (<date>, <stage>): <text> [(overrides: <master entry>)]`. Each also adds a `DECIDED` line to
-events.log. Agents treat standing decisions as part of the spec; reviewers judge every master entry
-no user entry overrides.
+`- user (<date>, <stage>): <text> [(overrides: <master entry>)]`,
+`- upheld (<date>, <stage>): <master entry text> (second opinion <model>: <reason>)`. Each also adds
+a `DECIDED` line to events.log. Agents treat standing decisions as part of the spec; reviewers judge
+every master entry no user or upheld entry closes (matched on the first 20 characters of its text,
+so quote the entry text in `-Overrides` / upheld notes).
 
 ## 02-todo.md
 

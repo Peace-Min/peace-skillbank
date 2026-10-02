@@ -31,7 +31,7 @@ param(
     [Parameter(Mandatory = $true, Position = 0)]
     [ValidateSet("init", "event", "check-todo", "diff", "wiki-check", "status", "pick-model", "auto-check", "heartbeat", "verify", "gate", "merge-evidence", "decision")]
     [string]$Command,
-    [ValidateSet("", "planner", "developer", "qa", "reviewer", "wiki")]
+    [ValidateSet("", "planner", "developer", "qa", "reviewer", "second", "wiki")]
     [string]$Role = "",
     [ValidateSet("haiku", "sonnet", "opus", "fable", "inherit")]
     [string]$MaxModel = "fable",
@@ -59,7 +59,7 @@ param(
     [int]$MaxQaCycles = 2,
     [int]$MaxFixes = 1,
     [int]$MaxDecisions = 3,
-    [ValidateSet("", "decided", "created", "user")]
+    [ValidateSet("", "decided", "created", "user", "upheld")]
     [string]$Kind = "",
     [string]$Overrides = ""
 )
@@ -166,6 +166,57 @@ function Test-StageOverLimit([object[]]$Events, [string]$ForStage) {
     # 0. Loop limit: reviewer FAILs and gate FAILs have separate budgets.
     if ((Get-FailCount -Events $Events -ForStage $ForStage -Kind "review") -ge $MaxRounds) { return "reviewer FAILs reached MaxRounds=$MaxRounds" }
     if ((Get-FailCount -Events $Events -ForStage $ForStage -Kind "gate") -ge $MaxGateFails) { return "gate FAILs reached MaxGateFails=$MaxGateFails" }
+    return $null
+}
+
+function Get-StandingMasterEntries([string]$Dir) {
+    # 0. Master entries a reviewer must judge: not overridden by a user entry and not upheld by a
+    #    second opinion. Matching is on the first 20 characters of the entry text, case-insensitive.
+    $spec = Join-Path $Dir "01-spec.md"
+    if (-not (Test-Path -LiteralPath $spec)) { return @() }
+    $lines = [System.IO.File]::ReadAllLines($spec)
+    $closers = @()
+    foreach ($l in $lines) {
+        $mu = [regex]::Match($l, '^\s*-\s*user\s*\([^)]*\):.*\(overrides:\s*(.+)\)\s*$')
+        if ($mu.Success) { $closers += $mu.Groups[1].Value.ToLowerInvariant() }
+        $mh = [regex]::Match($l, '^\s*-\s*upheld\s*\([^)]*\):\s*(.+)$')
+        if ($mh.Success) { $closers += $mh.Groups[1].Value.ToLowerInvariant() }
+    }
+    $standing = @()
+    foreach ($l in $lines) {
+        $mm = [regex]::Match($l, '^\s*-\s*master-(decided|created)\s*\([^)]*\):\s*(.+)$')
+        if (-not $mm.Success) { continue }
+        $text = $mm.Groups[2].Value.Trim()
+        $key = $text.ToLowerInvariant()
+        if ($key.Length -gt 20) { $key = $key.Substring(0, 20) }
+        if (@($closers | Where-Object { $_.Contains($key) }).Count -gt 0) { continue }
+        $standing += [pscustomobject]@{ Line = $l.Trim(); Key = $key }
+    }
+    return $standing
+}
+
+function Test-ReviewMatches([string]$Dir, [string]$ForStage, [int]$ForRound, [string]$ForStatus) {
+    # 0. A PASS or NEEDS_DECISION may be logged only as the round's review file says; the master
+    #    copies verdicts, it does not make them. Returns $null when it matches, else the problem.
+    if ($ForRound -lt 1) { return "-Round must be the reviewed round N (reviews/$ForStage-r<N>.md)" }
+    $review = Join-Path $Dir ("reviews\{0}-r{1}.md" -f $ForStage, $ForRound)
+    if (-not (Test-Path -LiteralPath $review)) { return "no reviews/$ForStage-r$ForRound.md; save the reviewer's (or worker's) reply first" }
+    $text = [System.IO.File]::ReadAllText($review)
+    $mv = [regex]::Match($text, '(?m)^\s*VERDICT:\s*(PASS|FAIL|NEEDS_DECISION)\b')
+    $verdict = $(if ($mv.Success) { $mv.Groups[1].Value } else { "" })
+    if ($ForStatus -eq "PASS" -and $verdict -ne "PASS") { return "reviews/$ForStage-r$ForRound.md says VERDICT: $(if ($verdict) { $verdict } else { '(none)' }), not PASS" }
+    if ($ForStatus -eq "NEEDS_DECISION" -and $verdict -ne "NEEDS_DECISION" -and $text -notmatch '(?m)^\s*RESULT:\s*NEEDS_DECISION') { return "reviews/$ForStage-r$ForRound.md does not say NEEDS_DECISION" }
+    if (-not $verdict) { return $null }
+
+    # 1. A reviewer's file must judge every standing master entry under DECISIONS:, and a PASS must not
+    #    carry a NEEDS_DECISION verdict on one of them.
+    $section = ""
+    $md = [regex]::Match($text, '(?ms)^\s*DECISIONS:(.*)\z')
+    if ($md.Success) { $section = $md.Groups[1].Value.ToLowerInvariant() }
+    foreach ($entry in @(Get-StandingMasterEntries $Dir)) {
+        if (-not $section.Contains($entry.Key)) { return "the reviewer did not judge '$($entry.Line)' under DECISIONS:; dispatch a fresh reviewer" }
+    }
+    if ($ForStatus -eq "PASS" -and $section -match '\[needs_decision\]') { return "a master entry is marked [NEEDS_DECISION] under DECISIONS:; log NEEDS_DECISION, not PASS" }
     return $null
 }
 
@@ -506,7 +557,13 @@ switch ($Command) {
         if ($Model) { $clean = ("$clean [model=$Model]").Trim() }
         if ($ReviewerModel) { $clean = ("$clean [reviewer=$ReviewerModel]").Trim() }
 
-        # 0. MASTER_FIX is checked before it is written: kind "block:" or "loop:", each with its own budget.
+        # 0. A PASS or NEEDS_DECISION of a stage round must match the round's review file.
+        if ($Status -in @("PASS", "NEEDS_DECISION") -and $Stage -in @("plan", "dev", "qa", "wiki")) {
+            $mismatch = Test-ReviewMatches -Dir $dir -ForStage $Stage -ForRound $Round -ForStatus $Status
+            if ($mismatch) { Write-Output "REJECTED  $Status not logged: $mismatch"; exit 2 }
+        }
+
+        # 0b. MASTER_FIX is checked before it is written: kind "block:" or "loop:", each with its own budget.
         #    Over budget, the halt is logged instead, so no later reader sees an unpaid fix.
         if ($Status -eq "MASTER_FIX") {
             $mk = [regex]::Match($clean, '^(block|loop)\s*:')
@@ -702,9 +759,9 @@ switch ($Command) {
         $dir = Resolve-WorkDir
         Touch-Lock $dir
         if (-not $Role) { Fail-Usage "-Role is required for pick-model (planner, developer, qa, reviewer, wiki)." }
-        $stageOfRole = @{ planner = "plan"; developer = "dev"; qa = "qa"; wiki = "wiki"; reviewer = $Stage }
+        $stageOfRole = @{ planner = "plan"; developer = "dev"; qa = "qa"; wiki = "wiki"; reviewer = $Stage; second = $Stage }
         $forStage = $stageOfRole[$Role]
-        if ($Role -eq "reviewer" -and $forStage -notin @("plan", "dev", "qa", "wiki")) { Fail-Usage "-Stage (plan, dev, qa, wiki) is required for the reviewer." }
+        if ($Role -in @("reviewer", "second") -and $forStage -notin @("plan", "dev", "qa", "wiki")) { Fail-Usage "-Stage (plan, dev, qa, wiki) is required for the reviewer and the second opinion." }
         $items = Get-TodoItems $dir
         $dCount = 0
         if ($null -ne $items) { $dCount = @($items | Where-Object { $_.Id -like "D*" }).Count }
@@ -712,6 +769,16 @@ switch ($Command) {
             # 0. MaxModel=inherit: do not pass a model at all; the agent file's model applies.
             Write-Output "MODEL     inherit"
             Write-Output "REASON    MaxModel=inherit; omit the Agent call's model parameter"
+            exit 0
+        }
+        if ($Role -eq "second") {
+            # 1. Second opinion on a disputed master entry: one tier above the stage reviewer, at most MAX_MODEL.
+            $tiers = @("haiku", "sonnet", "opus", "fable")
+            $first = Get-PickedModel -ForRole "reviewer" -ForStage $forStage -Events @(Read-Events $dir) -Risk (Get-RiskLevel $dir) -DCount $dCount
+            $idx = [Math]::Min([array]::IndexOf($tiers, $first.Model) + 1, [array]::IndexOf($tiers, $MaxModel))
+            $note = $(if ($tiers[$idx] -eq $first.Model) { "same tier as the first reviewer (MAX_MODEL), fresh context" } else { "one tier above the first reviewer ($($first.Model))" })
+            Write-Output "MODEL     $($tiers[$idx])"
+            Write-Output "REASON    second opinion, $note"
             exit 0
         }
         $pick = Get-PickedModel -ForRole $Role -ForStage $forStage -Events @(Read-Events $dir) -Risk (Get-RiskLevel $dir) -DCount $dCount
@@ -818,7 +885,7 @@ switch ($Command) {
     "decision" {
         $dir = Resolve-WorkDir
         Touch-Lock $dir
-        if (-not $Kind) { Fail-Usage "-Kind decided (an in-scope choice the master made), created (a file a MASTER_FIX created) or user (the user's answer to an escalation) is required." }
+        if (-not $Kind) { Fail-Usage "-Kind decided (an in-scope choice the master made), created (a file a MASTER_FIX created), user (the user's answer to an escalation) or upheld (a second opinion kept a disputed master entry; -Note quotes the entry) is required." }
         if ($Stage -notin $validStages) { Fail-Usage "-Stage must be one of: $($validStages -join ', ')" }
         $text = (($Note -replace '[\r\n]+', ' ') -replace '\s+', ' ').Trim()
         if (-not $text) { Fail-Usage "-Note with the decision text is required." }
@@ -837,7 +904,7 @@ switch ($Command) {
         # 1. Append under "## Decisions" (created at the end of the spec if missing), before the next section.
         $lines = New-Object System.Collections.Generic.List[string]
         foreach ($l in [System.IO.File]::ReadAllLines($spec)) { $lines.Add($l) }
-        $label = $(if ($Kind -eq "user") { "user" } else { "master-$Kind" })
+        $label = $(if ($Kind -in @("user", "upheld")) { $Kind } else { "master-$Kind" })
         $entry = "- {0} ({1}, {2}): {3}" -f $label, (Get-Date -Format "yyyy-MM-dd"), $Stage, $text
         if ($Overrides) { $entry += " (overrides: " + (($Overrides -replace '[\r\n]+', ' ').Trim()) + ")" }
         $start = -1

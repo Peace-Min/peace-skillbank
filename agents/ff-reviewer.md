@@ -31,8 +31,9 @@ in the files.
   written or saved outside `<work folder>/evidence/qa/`), ENV (could not be exercised at all).
 - **master decisions (every stage)**: `01-spec.md` `## Decisions` may hold `master-decided` and
   `master-created` entries the master added on its own, and `user` entries (the user's answers; a
-  `user` entry with `(overrides: ...)` replaces the master entry it names). Judge every master entry
-  that no `user` entry overrides: it must stay inside In scope, respect Out of scope and the
+  `user` entry with `(overrides: ...)` replaces the master entry it names; an `upheld` entry records
+  that a second opinion kept a disputed master entry). Judge every master entry that no `user` or
+  `upheld` entry closes: it must stay inside In scope, respect Out of scope and the
   acceptance criteria, and not change a public interface; a created file must be needed and
   minimal. If one fails, return `NEEDS_DECISION` naming the entry (the user decides, not the
   master). Also check the work follows the decisions that stand.
@@ -59,5 +60,6 @@ DECISIONS:
 ```
 
 Include the `CAUSE` line only for a qa-stage FAIL. With PASS, ISSUES may list `low` items or `none`.
-List every master entry you judged under DECISIONS, or write `DECISIONS: none` when there are none.
+List every master entry you judged under DECISIONS, quoting its text, or write `DECISIONS: none`
+when there are none. The master cannot log your verdict unless every standing entry is listed.
 Write nothing after the DECISIONS list (no summary, no "verified" notes).

@@ -3,7 +3,7 @@
 | Code | Who emits | Meaning | Master action |
 |---|---|---|---|
 | `START` | master | stage begins (resets the stage FAIL counter) | dispatch worker |
-| `PASS` | reviewer / master | stage accepted | next stage |
+| `PASS` | reviewer / master | stage accepted; ff.ps1 refuses it unless the round's review says PASS and judged every standing master entry | next stage |
 | `FAIL` (note `gate: ...`) | ff.ps1 gate | a mechanical check failed | next round; counts toward MAX_GATE_FAILS |
 | `FAIL` (other note) | master, after the reviewer | defects found | next round; counts toward MAX_ROUNDS |
 | `MASTER_FIX` + note `block: ...` | master | the master fixed a blocker inside the project | run the next round; FAIL budgets unchanged; at most MAX_FIXES per stage |

@@ -40,7 +40,7 @@ in the files.
 - Be specific: every issue names a file:line or TODO id and the expected state.
 - Do not repeat style nitpicks as blocking issues; mark them `low`. Only `high`/`med` block a PASS.
 
-## Output (exactly this, nothing else)
+## Output (exactly this, nothing else; no code fence, the first line is `VERDICT:`)
 
 ```text
 VERDICT: PASS | FAIL | NEEDS_DECISION

@@ -18,10 +18,12 @@ work/<yyyyMMdd-HHmm>-<slug>/
     qa/verify-r1.log   test output per QA round (master, gate)
     qa/Q1-<short>.log  proof per Q item: steps, observed, expected (qa tester)
     qa/manual-checklist.md  only when QA could not run automatically (qa tester)
+    qa/Q1-manual.log   the user's manual QA result for an item, written by the master on resume
   raw/                 optional: raw transcripts/exports if the user wants full traceability
   base.txt             git commit the round diffs are taken against (ff.ps1 init)
   schedule.txt         "<CronCreate job id> <ISO time>" of the auto-resume schedule (master), if armed
   lock                 last master heartbeat time (ff.ps1 heartbeat), read by auto-check
+  settings.txt         MaxRounds / MaxQaCycles / MaxModel from init; read by every later ff.ps1 call
   events.log           one line per event, written only by ff.ps1
 ```
 
@@ -30,7 +32,9 @@ work/<yyyyMMdd-HHmm>-<slug>/
 Sections: Goal, In scope, **Out of scope** (mandatory, never empty: write "none beyond In scope"
 only if truly none), Constraints / cautions, Acceptance criteria (testable sentences), Verify
 commands (build, test), Risk (`- level: high|normal|low`; high for security, auth, concurrency,
-data migration/persistence formats, public API; read by `ff.ps1 pick-model`).
+data migration/persistence formats, public API; read by `ff.ps1 pick-model`), and, once the user
+answers an escalation, `## Decisions` (dated entries appended by the master; agents treat them as
+part of the spec).
 
 ## 02-todo.md
 

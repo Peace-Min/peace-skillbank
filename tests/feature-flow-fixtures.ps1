@@ -396,7 +396,7 @@ try {
     & $setLog @("$old | intake | PASS | r0 | ", "$old | qa | FAIL | r1 | sendback=IMPL", "$old | qa | RESUME | r0 | auto") 90
     $r = Invoke-Ff $project @("status", "-WorkDir", $ac)
     Check "send-back + RESUME -> NEXT dev START" ($r.Out -match 'NEXT\s+dev START') $r.Out
-    & $setLog @("$old | intake | PASS | r0 | ", "$old | plan | BLOCKED_ENV | r1 | x", "$old | plan | RESUME | r0 | user") 90
+    & $setLog @("$old | intake | PASS | r0 | ", "$old | plan | START | r0 | ", "$old | plan | BLOCKED_ENV | r1 | x", "$old | plan | RESUME | r0 | user") 90
     $r = Invoke-Ff $project @("status", "-WorkDir", $ac)
     Check "halt + user RESUME -> NEXT stage round" ($r.Out -match 'NEXT\s+plan round 2') $r.Out
     & $setLog @("$old | intake | PASS | r0 | ", "$old | plan | BLOCKED_ENV | r1 | x", "$old | plan | RESUME | r0 | auto") 90
@@ -415,6 +415,49 @@ try {
     & $setLog @("$old | intake | PASS | r0 | ", "$old | dev | START | r0 | ", "$old | dev | FAIL | r1 | ", "$old | dev | FAIL | r2 | ", "$old | dev | FAIL | r3 | ", "$old | dev | LOOP_LIMIT | r3 | ", "$old | qa | RESUME | r0 | user") 90
     $r = Invoke-Ff $project @("status", "-WorkDir", $ac)
     Check "user RESUME logged on another stage still lifts the loop limit" (($r.Out -match 'NEXT\s+dev round 4') -and ($r.Out -match 'FAILS\s+0')) $r.Out
+
+    # 16c. Halt + user RESUME keeps the meaning of the event before the halt, whatever stage the halt was logged on.
+    & $setLog @("$old | intake | PASS | r0 | ", "$old | qa | START | r0 | ", "$old | qa | FAIL | r1 | sendback=IMPL x", "$old | qa | PAUSE | r0 | user stopped", "$old | qa | RESUME | r0 | user") 90
+    $r = Invoke-Ff $project @("status", "-WorkDir", $ac)
+    Check "QA send-back -> PAUSE -> user RESUME -> NEXT dev START (not QA again)" ($r.Out -match 'NEXT\s+dev START') $r.Out
+    & $setLog @("$old | intake | PASS | r0 | ", "$old | dev | PASS | r2 | ", "$old | intake | PAUSE | r0 | user stopped", "$old | intake | RESUME | r0 | user") 90
+    $r = Invoke-Ff $project @("status", "-WorkDir", $ac)
+    Check "PAUSE logged on another stage after dev PASS -> NEXT qa START" ($r.Out -match 'NEXT\s+qa START') $r.Out
+
+    # 16d. Settings: init writes settings.txt; later calls without -MaxRounds use it (scheduled firings too).
+    $r = Invoke-Ff $project @("init", "-Title", "settings probe", "-MaxRounds", "2", "-MaxQaCycles", "1", "-MaxModel", "opus")
+    $sw = Get-WorkDirLine $r.Out
+    Check "init writes settings.txt" (([System.IO.File]::ReadAllText((Join-Path $sw "settings.txt"))) -match 'MaxRounds=2') $r.Out
+    $null = Invoke-Ff $project @("event", "-WorkDir", $sw, "-Stage", "dev", "-Status", "START")
+    $null = Invoke-Ff $project @("event", "-WorkDir", $sw, "-Stage", "dev", "-Status", "FAIL", "-Round", "1")
+    $r = Invoke-Ff $project @("event", "-WorkDir", $sw, "-Stage", "dev", "-Status", "FAIL", "-Round", "2")
+    Check "settings MaxRounds=2 applies without passing -MaxRounds" ($r.Code -eq 3) $r.Out
+    $r = Invoke-Ff $project @("status", "-WorkDir", $sw)
+    Check "status reads settings (max 2, NEXT escalated)" (($r.Out -match 'max 2') -and ($r.Out -match 'NEXT\s+escalated')) $r.Out
+    $r = Invoke-Ff $project @("pick-model", "-WorkDir", $sw, "-Role", "planner")
+    Check "settings MaxModel=opus caps without passing -MaxModel" ($r.Out -match 'MODEL\s+opus') $r.Out
+    $r = Invoke-Ff $project @("pick-model", "-WorkDir", $sw, "-Role", "planner", "-MaxModel", "inherit")
+    Check "MaxModel inherit -> MODEL inherit" ($r.Out -match 'MODEL\s+inherit') $r.Out
+
+    # 16e. event -SendBack writes the exact note prefix; invalid outside qa FAIL.
+    $r = Invoke-Ff $project @("event", "-WorkDir", $sw, "-Stage", "qa", "-Status", "FAIL", "-Round", "1", "-SendBack", "IMPL", "-Note", "median wrong")
+    Check "-SendBack IMPL writes sendback=IMPL note" ($r.Out -match 'r1 \| sendback=IMPL median wrong') $r.Out
+    $r = Invoke-Ff $project @("event", "-WorkDir", $sw, "-Stage", "dev", "-Status", "FAIL", "-SendBack", "IMPL")
+    Check "-SendBack outside qa FAIL -> exit 2" ($r.Code -eq 2) $r.Out
+
+    # 16f. verify: runs commands from the project root, logs output and exit codes, exit 1 on any failure.
+    $r = Invoke-Ff $project @("verify", "-WorkDir", $sw, "-Stage", "dev", "-Round", "1", "-Build", "echo build-ok", "-Test", "exit /b 0")
+    $vlog = Join-Path $sw "evidence\dev\verify-r1.log"
+    Check "verify all pass -> exit 0 with log" (($r.Code -eq 0) -and (Test-Path $vlog) -and ([System.IO.File]::ReadAllText($vlog) -match 'build-ok') -and ([System.IO.File]::ReadAllText($vlog) -match 'EXIT 0')) $r.Out
+    $r = Invoke-Ff $project @("verify", "-WorkDir", $sw, "-Stage", "qa", "-Round", "1", "-Build", "echo ok", "-Test", "exit /b 3")
+    Check "verify with a failing command -> exit 1, EXIT 3 logged" (($r.Code -eq 1) -and ($r.Out -match 'FAIL\s+exit 3') -and ([System.IO.File]::ReadAllText((Join-Path $sw "evidence\qa\verify-r1.log")) -match 'EXIT 3')) $r.Out
+    $r = Invoke-Ff $project @("verify", "-WorkDir", $sw, "-Stage", "dev", "-Round", "2", "-Build", "none", "-Test", "none")
+    Check "verify with no real command -> exit 2" ($r.Code -eq 2) $r.Out
+
+    # 16g. Reversed line range is rejected.
+    Set-Content -LiteralPath (Join-Path $sw "02-todo.md") -Value @("## Dev", "- [x] D1: reversed", "  - evidence: src/Lockout.cs:9-2") -Encoding UTF8
+    $r = Invoke-Ff $project @("check-todo", "-WorkDir", $sw, "-Prefix", "D")
+    Check "reversed range 9-2 -> BAD-REF" (($r.Code -eq 1) -and ($r.Out -match 'reversed')) $r.Out
 
     # 17. PAUSE stops automatic resumes; heartbeat makes a long-running round look active; LIMIT is checked before WAIT.
     & $setLog @("$old | intake | PASS | r0 | ", "$old | dev | START | r0 | ", "$old | dev | PAUSE | r0 | user stopped") 90

@@ -6,7 +6,7 @@
 
 .DESCRIPTION
     Commands:
-      init        Create work/<stamp>-<slug>/ with the standard layout; record the git base.
+      init        Create work/<stamp>-<slug>/ with the standard layout; record the git base and settings.
       event       Append one line to events.log. Exit 3 on loop limit or send-back limit.
       check-todo  Gate for TODO items (see -Prefix, -AllowOpen, -FormatOnly).
       diff        Save the round diff vs the recorded base (tracked + untracked, work/ excluded).
@@ -15,18 +15,27 @@
       pick-model  Choose the subagent model alias for a role from stage, size, risk and failures.
       auto-check  Decide whether an unattended (scheduled) resume should run now; logs the auto RESUME itself.
       heartbeat   Touch <dir>/lock so a scheduled firing sees the run as active.
+      verify      Run the spec build and test commands (-Build, -Test) for a round, save the full log, exit 1 if any fails.
+
+    MaxRounds, MaxQaCycles and MaxModel are written to <dir>/settings.txt by init and read from
+    there whenever a later call does not pass them, so every call (including scheduled firings)
+    uses the same limits.
 
     Exit codes: 0 ok, 1 check failed, 2 usage/input error, 3 limit reached.
     ASCII-only on purpose: Windows PowerShell 5.1 misreads BOM-less UTF-8 scripts.
 #>
 param(
     [Parameter(Mandatory = $true, Position = 0)]
-    [ValidateSet("init", "event", "check-todo", "diff", "wiki-check", "status", "pick-model", "auto-check", "heartbeat")]
+    [ValidateSet("init", "event", "check-todo", "diff", "wiki-check", "status", "pick-model", "auto-check", "heartbeat", "verify")]
     [string]$Command,
     [ValidateSet("", "planner", "developer", "qa", "reviewer", "wiki")]
     [string]$Role = "",
-    [ValidateSet("haiku", "sonnet", "opus", "fable")]
+    [ValidateSet("haiku", "sonnet", "opus", "fable", "inherit")]
     [string]$MaxModel = "fable",
+    [ValidateSet("", "IMPL", "SPEC")]
+    [string]$SendBack = "",
+    [string]$Build = "",
+    [string]$Test = "",
     [string]$Model = "",
     [string]$ReviewerModel = "",
     [int]$IdleMinutes = 45,
@@ -50,6 +59,25 @@ $validStages = @("intake", "plan", "dev", "qa", "wiki", "done")
 $validStatus = @("START", "PASS", "FAIL", "BLOCKED_ENV", "BLOCKED_PERMISSION", "NEEDS_DECISION", "LOOP_LIMIT", "PAUSE", "RESUME")
 $haltStatus = @("BLOCKED_ENV", "BLOCKED_PERMISSION", "NEEDS_DECISION", "LOOP_LIMIT", "PAUSE")
 $utf8 = New-Object System.Text.UTF8Encoding($false)
+$BoundNames = @($PSBoundParameters.Keys)
+
+function Import-WorkSettings {
+    # 0. Limits come from <dir>/settings.txt unless the caller passed them explicitly.
+    if ([string]::IsNullOrWhiteSpace($WorkDir)) { return }
+    $dirPath = $WorkDir
+    if (-not [System.IO.Path]::IsPathRooted($dirPath)) { $dirPath = Join-Path $Root $dirPath }
+    $file = Join-Path $dirPath "settings.txt"
+    if (-not (Test-Path -LiteralPath $file)) { return }
+    foreach ($line in [System.IO.File]::ReadAllLines($file)) {
+        $m = [regex]::Match($line, '^\s*(MaxRounds|MaxQaCycles|MaxModel)\s*=\s*(\S+)\s*$')
+        if (-not $m.Success -or $script:BoundNames -contains $m.Groups[1].Value) { continue }
+        switch ($m.Groups[1].Value) {
+            "MaxRounds" { $script:MaxRounds = [int]$m.Groups[2].Value }
+            "MaxQaCycles" { $script:MaxQaCycles = [int]$m.Groups[2].Value }
+            "MaxModel" { if ($m.Groups[2].Value -in @("haiku", "sonnet", "opus", "fable", "inherit")) { $script:MaxModel = $m.Groups[2].Value } }
+        }
+    }
+}
 
 function Fail-Usage([string]$Message) {
     Write-Output "ERROR: $Message"
@@ -165,16 +193,15 @@ function Get-NextAction([object[]]$Events) {
     $wait = "; wait for the user, then resume"
     if ($last.Status -in $haltStatus) {
         if ($resumedByUser) {
-            # 2. A halt logged after a PASS (or during intake) must not re-run finished work:
-            #    continue from the last real event before the halt instead.
+            # 2. A user RESUME lifts the halt: continue as if the halt never happened, from the last
+            #    real event before it (so a PASS, a QA send-back or intake keep their meaning), with
+            #    the user's RESUME applied so counters are reset; round numbers keep counting up.
             $j = $idx - 1
             while ($j -ge 0 -and ($Events[$j].Status -eq "RESUME" -or $Events[$j].Status -in $haltStatus)) { $j-- }
             if ($j -lt 0) { return "intake: interview and spec approval" }
-            $before = $Events[$j]
-            $haltAfterPass = ($before.Status -eq "PASS" -and $before.Stage -eq $last.Stage)
-            $haltInIntake = ($before.Stage -eq "intake" -and $before.Status -ne "PASS")
-            if ($haltAfterPass -or $haltInIntake) { return (Get-NextAction @($Events[0..$j])) }
-            return "$($last.Stage) round $nextRound"
+            $r = Get-NextAction (@($Events[0..$j]) + @($Events[$Events.Count - 1]))
+            if ($r -match '^(\w+) round \d+$') { return "$($Matches[1]) round $((Get-MaxRound -Events $Events -ForStage $Matches[1]) + 1)" }
+            return $r
         }
         if ($last.Status -eq "PAUSE") { return "paused$wait" }
         return "escalated ($($last.Status))$wait"
@@ -297,9 +324,12 @@ function Test-EvidenceRef([string]$Token, [string]$Dir) {
         $last = [int]$m.Groups["start"].Value
         if ($m.Groups["end"].Success) { $last = [int]$m.Groups["end"].Value }
         if ($last -gt $lineCount) { return "line $last beyond end of $rel ($lineCount lines)" }
+        if ($m.Groups["end"].Success -and [int]$m.Groups["end"].Value -lt [int]$m.Groups["start"].Value) { return "range $($m.Groups['start'].Value)-$($m.Groups['end'].Value) is reversed in $rel" }
     }
     return ""
 }
+
+Import-WorkSettings
 
 switch ($Command) {
     "init" {
@@ -334,6 +364,9 @@ switch ($Command) {
         [System.IO.File]::WriteAllText((Join-Path $dir "00-context.md"), $context, $utf8)
         [System.IO.File]::WriteAllText((Join-Path $dir "01-spec.md"), $spec, $utf8)
         [System.IO.File]::WriteAllText((Join-Path $dir "events.log"), "", $utf8)
+        $settings = "MaxRounds=$MaxRounds`nMaxQaCycles=$MaxQaCycles`nMaxModel=$MaxModel`n"
+        [System.IO.File]::WriteAllText((Join-Path $dir "settings.txt"), $settings, $utf8)
+        Write-Output "SETTINGS  MaxRounds=$MaxRounds MaxQaCycles=$MaxQaCycles MaxModel=$MaxModel"
         Write-Output "WORKDIR   $dir"
         exit 0
     }
@@ -343,6 +376,10 @@ switch ($Command) {
         if ($Stage -notin $validStages) { Fail-Usage "-Stage must be one of: $($validStages -join ', ')" }
         if ($Status -notin $validStatus) { Fail-Usage "-Status must be one of: $($validStatus -join ', ')" }
         $clean = (($Note -replace '[\r\n|]+', ' ') -replace '\s+', ' ').Trim()
+        if ($SendBack) {
+            if ($Status -ne "FAIL" -or $Stage -ne "qa") { Fail-Usage "-SendBack is only valid with -Stage qa -Status FAIL." }
+            $clean = ("sendback=$SendBack $clean").Trim()
+        }
         if ($Model) { $clean = ("$clean [model=$Model]").Trim() }
         if ($ReviewerModel) { $clean = ("$clean [reviewer=$ReviewerModel]").Trim() }
         $line = "{0} | {1} | {2} | r{3} | {4}" -f (Get-Date -Format "yyyy-MM-ddTHH:mm:ss"), $Stage, $Status, $Round, $clean
@@ -525,6 +562,12 @@ switch ($Command) {
         $items = Get-TodoItems $dir
         $dCount = 0
         if ($null -ne $items) { $dCount = @($items | Where-Object { $_.Id -like "D*" }).Count }
+        if ($MaxModel -eq "inherit") {
+            # 0. Gateways that do not map every alias (or one model for all): do not pass a model at all.
+            Write-Output "MODEL     inherit"
+            Write-Output "REASON    MaxModel=inherit; omit the Agent call's model parameter"
+            exit 0
+        }
         $pick = Get-PickedModel -ForRole $Role -ForStage $forStage -Events @(Read-Events $dir) -Risk (Get-RiskLevel $dir) -DCount $dCount
         Write-Output "MODEL     $($pick.Model)"
         Write-Output "REASON    $($pick.Reasons -join ', ')"
@@ -535,6 +578,40 @@ switch ($Command) {
         $dir = Resolve-WorkDir
         [System.IO.File]::WriteAllText((Join-Path $dir "lock"), (Get-Date -Format "yyyy-MM-ddTHH:mm:ss"), $utf8)
         Write-Output "HEARTBEAT $dir"
+        exit 0
+    }
+
+    "verify" {
+        $dir = Resolve-WorkDir
+        if ($Stage -notin @("dev", "qa")) { Fail-Usage "-Stage dev or qa is required for verify." }
+        if ($Round -lt 1) { Fail-Usage "-Round <N> is required for verify." }
+        $commands = @(@($Build, $Test) | Where-Object { $_ -and $_.Trim() -and $_.Trim() -ne "none" })
+        if ($commands.Count -eq 0) { Fail-Usage "-Build and/or -Test (spec Verify commands) are required for verify." }
+
+        # 0. Run each command through cmd.exe from the project root; the log and exit codes decide, not a model.
+        $log = Join-Path $dir ("evidence\{0}\verify-r{1}.log" -f $Stage, $Round)
+        $text = New-Object System.Text.StringBuilder
+        $failed = 0
+        $prevEap = $ErrorActionPreference
+        $ErrorActionPreference = "Continue"
+        Push-Location -LiteralPath $Root
+        try {
+            foreach ($c in $commands) {
+                $out = & cmd.exe /d /c "$c 2>&1"
+                $code = $LASTEXITCODE
+                [void]$text.AppendLine("### $c")
+                foreach ($l in @($out)) { [void]$text.AppendLine([string]$l) }
+                [void]$text.AppendLine("EXIT $code")
+                [void]$text.AppendLine("")
+                $verdict = $(if ($code -eq 0) { "PASS" } else { "FAIL" })
+                if ($code -ne 0) { $failed++ }
+                Write-Output ("VERIFY    {0}  exit {1}  {2}" -f $verdict, $code, $c)
+            }
+        }
+        finally { Pop-Location; $ErrorActionPreference = $prevEap }
+        [System.IO.File]::WriteAllText($log, $text.ToString(), $utf8)
+        Write-Output "LOG       $log"
+        if ($failed -gt 0) { Write-Output "GATE      FAIL  $failed command(s) failed"; exit 1 }
         exit 0
     }
 

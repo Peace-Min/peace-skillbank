@@ -22,7 +22,11 @@ folder carries all state, so that works too).
 ## Delete
 
 On finish, on any escalation the master reports, on `PAUSE`, and when `auto-check` says so:
-`CronDelete` the id in `schedule.txt`, then delete `schedule.txt`.
+`CronDelete` the id in `schedule.txt` (ignore "not found": a one-shot job deletes itself after
+firing, and jobs die with their session), then delete `schedule.txt`.
+
+An automatic resume does not re-arm anything: the recurring job armed at intake keeps firing, so
+a second interruption is covered too. Only a one-shot job (used in tests) leaves no safety net.
 
 ## Each firing: `ff.ps1 auto-check`
 

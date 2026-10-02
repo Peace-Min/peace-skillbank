@@ -124,12 +124,21 @@
 
 ## 설정 바꾸기
 
-- 반복 상한: `skills/feature-flow/SKILL.md` 상단 `MAX_ROUNDS`, `MAX_QA_CYCLES`. 바꾸면 같은 파일의
-  표준 호출 줄(`-MaxRounds`, `-MaxQaCycles`)도 함께 바꾼다.
+- 반복 상한·모델 상한: `skills/feature-flow/SKILL.md` 상단 `MAX_ROUNDS`, `MAX_QA_CYCLES`, `MAX_MODEL`.
+  마스터가 `init`에 한 번 넘기면 작업 폴더의 `settings.txt`에 저장되고, 이후 모든 `ff.ps1` 호출(예약 실행 포함)이
+  그 값을 쓴다. 이미 시작한 작업의 값은 `work/<id>/settings.txt`에서 바꾼다.
+- `MAX_MODEL = inherit`: 게이트웨이가 일부 별칭(예: fable)을 매핑하지 않을 수 있을 때. 모델을 넘기지 않는다.
+- `AUTO_RESUME = off`: 자동 재개 예약을 걸지 않는다.
 - 단계별 모델: `ff.ps1 pick-model`이 호출마다 결정(규칙은 `references/model-selection.md`, 상한은 `MAX_MODEL`).
   `agents/ff-*.md`의 `model:`은 pick-model 없이 부를 때의 기본값, `effort:`는 에이전트별 고정 노력 수준.
 - 폐쇄망 qwen 등 약한 로컬 모델: 게이트웨이가 모든 별칭을 같은 모델로 매핑하므로 모델 다양성은 사라진다.
   `MAX_ROUNDS = 2`로 낮추고, 기계적 게이트(빌드·테스트·check-todo)를 핵심 견제로 삼는다.
+
+## 에스컬레이션에 답할 때
+
+막힘·결정 필요로 멈추면 결정이나 수동 확인 결과를 말하고 `resume`하면 된다. 마스터가 결정을 `01-spec.md`의
+`## Decisions`에, 수동 QA 결과를 `evidence/qa/Q<n>-manual.log`에 기록한 뒤 이어서 진행한다(수동 QA 결과가 있으면
+그 라운드는 QA 담당자를 건너뛰고 바로 검사와 검수로 간다). 그래서 같은 이유로 다시 멈추지 않는다.
 
 ## 한계 (정직하게)
 

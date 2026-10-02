@@ -30,4 +30,7 @@ Effort is not chosen here: each agent file fixes it (`effort:` planner/developer
 medium, wiki low). Subagents do not inherit the session's effort, so a session at medium still
 plans and develops at high.
 
-Weak/local gateways that map every alias to one model: the selection still runs and changes nothing.
+Weak/local gateways: if every alias maps to one model, the selection runs and changes nothing. If
+the gateway may not map some alias (for example `fable`), set `MAX_MODEL = inherit`: `pick-model`
+then prints `MODEL inherit` and the master passes no model, so subagents use the agent file's
+`model:` or the session model.

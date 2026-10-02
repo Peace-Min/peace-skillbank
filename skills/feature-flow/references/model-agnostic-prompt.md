@@ -13,9 +13,9 @@ parts are in `<skill-dir>/scripts/ff.ps1` (`<skill-dir>` = `skills/feature-flow`
 ```powershell
 # build/test output for the round
 <build/test command> 2>&1 | Out-File -Encoding utf8 work\<id>\evidence\dev\verify-r1.log
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts\ff.ps1 diff -WorkDir work\<id> -Round 1
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts\ff.ps1 check-todo -WorkDir work\<id> -Prefix D
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts\ff.ps1 event -WorkDir work\<id> -Stage dev -Status FAIL -Round 1 -Note "gate: D3 no evidence"
+powershell -NoProfile -ExecutionPolicy Bypass -File skills\feature-flow\scripts\ff.ps1 diff -WorkDir work\<id> -Round 1
+powershell -NoProfile -ExecutionPolicy Bypass -File skills\feature-flow\scripts\ff.ps1 check-todo -WorkDir work\<id> -Prefix D
+powershell -NoProfile -ExecutionPolicy Bypass -File skills\feature-flow\scripts\ff.ps1 event -WorkDir work\<id> -Stage dev -Status FAIL -Round 1 -Note "gate: D3 no evidence"
 ```
 
 4. Save each reviewer reply verbatim as `reviews/<stage>-r<N>.md`. Stop when `ff.ps1 event`

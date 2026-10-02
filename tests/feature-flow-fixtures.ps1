@@ -567,6 +567,15 @@ try {
     Remove-Item -LiteralPath $outsideSibling -Force
     Remove-Item -LiteralPath (Join-Path $gp ".claude") -Recurse -Force
 
+    # 21e. A project that itself lives under .claude/worktrees (desktop sessions) keeps valid refs.
+    $wtProj = Join-Path $project "host\.claude\worktrees\session-x"
+    New-Item -ItemType Directory -Path (Join-Path $wtProj "src") -Force | Out-Null
+    Set-Content -LiteralPath (Join-Path $wtProj "src\m.txt") -Value @("one", "two") -Encoding ASCII
+    $wtWork = Get-WorkDirLine (Invoke-Ff $wtProj @("init", "-Title", "inside worktree")).Out
+    Set-Content -LiteralPath (Join-Path $wtWork "02-todo.md") -Value @("## Dev", "- [x] D1: m", "  - evidence: src/m.txt:2") -Encoding UTF8
+    $r = Invoke-Ff $wtProj @("check-todo", "-WorkDir", $wtWork, "-Prefix", "D")
+    Check "project inside a session worktree: relative refs stay valid" (($r.Code -eq 0) -and ($r.Out -match '(?m)^OK\s+D1')) $r.Out
+
     # 22. merge-evidence: parallel developers' group files fold into 02-todo.md; duplicates and unknown ids fail.
     Set-Content -LiteralPath (Join-Path $gs "02-todo.md") -Value @("## Dev", "- [ ] D1: a [group:A]", "  - evidence:", "- [ ] D2: b [group:B]", "  - evidence:", "## QA", "- [ ] Q1: q", "  - evidence:") -Encoding UTF8
     Set-Content -LiteralPath (Join-Path $gs "evidence\dev\group-A.md") -Value @("- [x] D1: a [group:A]", "  - evidence: src/a.txt:1") -Encoding UTF8

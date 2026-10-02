@@ -50,3 +50,4 @@ ISSUES:
 ```
 
 Include the `CAUSE` line only for a qa-stage FAIL. With PASS, ISSUES may list `low` items or `none`.
+Write nothing after the ISSUES list (no summary, no "verified" notes).

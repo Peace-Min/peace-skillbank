@@ -413,12 +413,18 @@ function Test-EvidenceRef([string]$Token, [string]$Dir) {
     #    folder, and never in an agent worktree that is cleaned up after the merge.
     $resolvedFull = [System.IO.Path]::GetFullPath($resolved)
     $insideResolved = $false
+    $relativePart = $null
     foreach ($base in @($Root, $Dir)) {
         $prefix = [System.IO.Path]::GetFullPath($base).TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
-        if ($resolvedFull.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) { $insideResolved = $true }
+        if ($resolvedFull.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+            $insideResolved = $true
+            if ($null -eq $relativePart) { $relativePart = $resolvedFull.Substring($prefix.Length) }
+        }
     }
     if (-not $insideResolved) { return "outside the project: $rel" }
-    if ($resolvedFull -match '[\\/]\.claude[\\/]worktrees[\\/]') { return "points into an agent worktree (use a path relative to the project root): $rel" }
+    # 4. Only the part below the project root counts: the project itself may live in a worktree
+    #    (Claude Code desktop sessions do), but evidence must not point into a nested agent worktree.
+    if ($relativePart -match '(^|[\\/])\.claude[\\/]worktrees[\\/]') { return "points into an agent worktree (use a path relative to the project root): $rel" }
 
     if ($m.Groups["start"].Success) {
         $lineCount = [System.IO.File]::ReadAllLines($resolved).Length

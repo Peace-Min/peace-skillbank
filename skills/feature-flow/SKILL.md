@@ -36,7 +36,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File $ff auto-check -WorkDir <dir
 ```
 
 `<dir>` is the absolute work folder. `-Round`: the current round N for FAIL, PASS, MASTER_FIX and
-halts; `0` for START, PAUSE and RESUME. Never hand-edit `events.log`. References:
+halts; `0` for START, PAUSE, RESUME and the intake and done events. Never hand-edit `events.log`. References:
 `references/work-folder-layout.md` (files and formats; give the planner its absolute path),
 `references/status-codes.md`, `references/model-selection.md`, `references/auto-resume.md`.
 
@@ -58,8 +58,9 @@ paths only, never your reasoning or a worker's transcript.
 **Continue the same worker** in later rounds after the same `<stage> START`: send the new fix list
 to the agent you already dispatched (SendMessage with its id) instead of starting a fresh one, as
 long as `pick-model` still returns the same model; it keeps its context and cache. Start a fresh
-worker after a new `START` (e.g. dev after a QA send-back), when the model changes, or when
-SendMessage is unavailable. The reviewer is always a fresh agent.
+worker after a new `START` (e.g. dev after a QA send-back), after parallel development (its
+worktrees are gone), when the model changes, or when SendMessage is unavailable. The reviewer is
+always a fresh agent.
 
 The `ff-*` agents come from the plugin, or from `.claude/agents/` in a repo checkout or a
 project-level install. Only if none is registered, spawn a general-purpose subagent, tell it to read
@@ -118,8 +119,10 @@ Log `<stage> START`, then repeat rounds until PASS or a limit; take N from `stat
 - Blocked: if the cause is inside the project and safe to fix (install a dependency the project
   already declares, stop a process this run started, create a missing folder or config from the
   spec, run the blocked command yourself when you are allowed to), fix it, log `MASTER_FIX` with note
-  `block: <what you did>`, and run the round `NEXT` names. Never change system settings, credentials
-  or anything outside the project, and never delete user data.
+  `block: <what you did>`, and run the round `NEXT` names. Blockers found in the same round (for
+  example two parallel groups) go into one `MASTER_FIX`. If the fix creates files, note them under
+  `## Decisions` as `master-created: <path> (<why>)` so the reviewer treats them as in scope. Never
+  change system settings, credentials or anything outside the project, and never delete user data.
 - Loop limit: compare the last reviews. If they disagree with each other or the worker misread
   them, write one consolidated fix list to `reviews/<stage>-r<N>-master.md` (N = the last round),
   log `MASTER_FIX` with note `loop: <summary>`, and run the round `NEXT` names; it resets the stage's
@@ -141,15 +144,20 @@ cannot be exercised automatically, the QA tester returns `BLOCKED_ENV` with
 
 ## Parallel development (PARALLEL = on)
 
-Use it only when all hold: this is the first dev round of the work item; `git status` shows no
-changes outside `work/`; `02-todo.md` tags D items with at least two `[group:X]` groups whose
-`files:` lists do not overlap. Then, in one message, dispatch one `ff-developer` per group with
-`isolation: "worktree"`, telling each its group letter and the absolute work folder; each writes
-its checks to `<dir>/evidence/dev/group-<X>.md` (not `02-todo.md`) and commits in its worktree.
-Each developer ends with `BRANCH: <name> COMMIT: <sha>`. When all return, apply each branch to the
-main working tree without committing, one after another: `git merge --squash <branch>`. If any
-squash conflicts, run `git reset --hard HEAD` (the tree was clean before, and `work/` is ignored) and
-develop all groups sequentially instead. Then remove the agent worktrees and branches
+Use it only when all hold at the start of the dev stage: this is the first dev round of the work
+item; `git status` shows no changes outside `work/`; `02-todo.md` tags D items with at least two
+`[group:X]` groups whose `files:` lists do not overlap. Then, in one message, dispatch one
+`ff-developer` per group with `isolation: "worktree"`, telling each its group letter and the work
+folder as a path relative to the project root (`work/<id>`). An isolated agent cannot write to the
+main work folder, so each writes its checks to `work/<id>/evidence/dev/group-<X>.md` inside its own
+worktree, commits its code there, and ends with `BRANCH: <name> COMMIT: <sha>`. The Agent result
+also reports the worktree path and branch. When all return, for each group:
+1. Check the branch starts from the current commit: `git merge-base --is-ancestor HEAD <branch>`;
+   if not, do not apply it (develop that group sequentially).
+2. Copy `<worktree>/work/<id>/evidence/dev/group-<X>.md` (and `worker-run-<X>.log`) into `<dir>/evidence/dev/`.
+3. Apply it to the main working tree without committing: `git merge --squash <branch>`.
+If any squash conflicts, run `git reset --hard HEAD` (the tree was clean before, and `work/` is
+ignored) and develop all groups sequentially instead. Then remove the agent worktrees and branches
 (`git worktree remove --force <path>`, `git branch -D <branch>`), run `merge-evidence`, and the normal
 dev gate and review on the combined change. In every other case develop sequentially.
 

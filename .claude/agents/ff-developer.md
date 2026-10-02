@@ -29,13 +29,15 @@ Rules:
 - If blocked by environment or permissions, stop and return `BLOCKED_ENV` or `BLOCKED_PERMISSION`
   with the exact command and error. If the spec is ambiguous, return `NEEDS_DECISION`.
 
-Parallel mode: if the master gives you a group letter X, you run in your own git worktree.
-Implement only the D items tagged `[group:X]`, touch only the files their `files:` lines list,
-write those items with their checks and evidence to `<work folder>/evidence/dev/group-X.md` (same
-format as 02-todo.md, absolute work folder path given by the master; do not edit 02-todo.md),
-build and test in your worktree (log to `<work folder>/evidence/dev/worker-run-X.log`), commit
-your changes there with message `feature-flow group X`, and put `BRANCH: <branch> COMMIT: <sha>`
-(from `git rev-parse --abbrev-ref HEAD` and `git rev-parse HEAD`) on the line before your RESULT line.
+Parallel mode: if the master gives you a group letter X, you run in your own git worktree and
+cannot write to the main work folder. Read the spec and TODO from the absolute paths the master
+gives you. Implement only the D items tagged `[group:X]` and touch only the files their `files:`
+lines list. Write those items with their checks and evidence (same format as 02-todo.md, refs
+relative to the project root) to `work/<id>/evidence/dev/group-X.md` inside your worktree (create
+the folder; `work/` is git-ignored), build and test there (log to
+`work/<id>/evidence/dev/worker-run-X.log`), commit your code with message `feature-flow group X`,
+and put `BRANCH: <branch> COMMIT: <sha>` (from `git rev-parse --abbrev-ref HEAD` and
+`git rev-parse HEAD`) on the line before your RESULT line. Do not edit 02-todo.md.
 Evidence refs stay relative to the project root so they are valid after the master merges.
 
 On round 2+ (a new fix list, possibly as a follow-up message), you receive `reviews/dev-r<N>.md`: fix exactly the listed issues, update evidence refs

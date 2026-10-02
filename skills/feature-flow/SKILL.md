@@ -11,9 +11,9 @@ interview, write the spec, dispatch subagents, run the gates, record state, and 
 Settings (change here, nowhere else). They are passed once to `init`, stored in
 `<dir>/settings.txt`, and every later ff.ps1 call (also scheduled firings) reads them from there:
 
-- `MAX_ROUNDS = 3` worker/reviewer rounds per stage. Use 2 on weak/local models.
+- `MAX_ROUNDS = 3` worker/reviewer rounds per stage.
 - `MAX_QA_CYCLES = 2` times QA may send work back to dev/plan.
-- `MAX_MODEL = fable` strongest model `pick-model` may choose (`opus` to cap cost; `inherit` to never pass a model, e.g. a gateway that does not map every alias).
+- `MAX_MODEL = fable` strongest model `pick-model` may choose (`opus` to cap cost; `inherit` to never pass a model, so subagents use their agent file's model).
 - `AUTO_RESUME = on` resume by schedule after a usage-limit or API-error stop while Claude Code stays open. `off` to disable.
 
 `<skill-dir>` is the copy of this skill that contains `scripts/ff.ps1`. If

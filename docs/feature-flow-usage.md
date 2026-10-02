@@ -76,7 +76,6 @@
   노력 수준을 물려받지 않으므로, 세션을 medium으로 둬도 기획·개발은 high로 돈다. (`effort:` 필드는 Claude Code에
   구현돼 있으나 공식 문서 표에는 아직 없다.)
 - 모델은 별칭(`opus`, `sonnet`, `fable`)으로 지정하므로 새 모델이 나와도 수정할 필요가 없다.
-- 폐쇄망 게이트웨이처럼 모든 별칭이 한 모델로 매핑되면 선택은 실행되지만 결과는 같다.
   `CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1`이 설정된 환경에서는 그 값이 모든 선택을 덮어쓴다.
 
 ## 자동 재개
@@ -127,12 +126,10 @@
 - 반복 상한·모델 상한: `skills/feature-flow/SKILL.md` 상단 `MAX_ROUNDS`, `MAX_QA_CYCLES`, `MAX_MODEL`.
   마스터가 `init`에 한 번 넘기면 작업 폴더의 `settings.txt`에 저장되고, 이후 모든 `ff.ps1` 호출(예약 실행 포함)이
   그 값을 쓴다. 이미 시작한 작업의 값은 `work/<id>/settings.txt`에서 바꾼다.
-- `MAX_MODEL = inherit`: 게이트웨이가 일부 별칭(예: fable)을 매핑하지 않을 수 있을 때. 모델을 넘기지 않는다.
+- `MAX_MODEL = inherit`: 모델 자동 선택을 끈다. 모델을 넘기지 않고 에이전트 파일의 `model:`을 쓴다.
 - `AUTO_RESUME = off`: 자동 재개 예약을 걸지 않는다.
 - 단계별 모델: `ff.ps1 pick-model`이 호출마다 결정(규칙은 `references/model-selection.md`, 상한은 `MAX_MODEL`).
   `agents/ff-*.md`의 `model:`은 pick-model 없이 부를 때의 기본값, `effort:`는 에이전트별 고정 노력 수준.
-- 폐쇄망 qwen 등 약한 로컬 모델: 게이트웨이가 모든 별칭을 같은 모델로 매핑하므로 모델 다양성은 사라진다.
-  `MAX_ROUNDS = 2`로 낮추고, 기계적 게이트(빌드·테스트·check-todo)를 핵심 견제로 삼는다.
 
 ## 에스컬레이션에 답할 때
 

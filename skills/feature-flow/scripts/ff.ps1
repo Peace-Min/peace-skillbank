@@ -174,7 +174,7 @@ function Get-TodoItems([string]$Dir) {
 }
 
 function Get-NextAction([object[]]$Events) {
-    # 0. Next action, so a resumed, scheduled or weak orchestrator does not have to infer it.
+    # 0. Next action, so a resumed or scheduled orchestrator does not have to infer it.
     if ($Events.Count -eq 0) { return "intake: interview and spec approval" }
 
     # 1. RESUME events are markers, not progress: decide from the last real event, and let a
@@ -563,7 +563,7 @@ switch ($Command) {
         $dCount = 0
         if ($null -ne $items) { $dCount = @($items | Where-Object { $_.Id -like "D*" }).Count }
         if ($MaxModel -eq "inherit") {
-            # 0. Gateways that do not map every alias (or one model for all): do not pass a model at all.
+            # 0. MaxModel=inherit: do not pass a model at all; the agent file's model applies.
             Write-Output "MODEL     inherit"
             Write-Output "REASON    MaxModel=inherit; omit the Agent call's model parameter"
             exit 0

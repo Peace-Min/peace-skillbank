@@ -15,7 +15,9 @@ Settings (change here, nowhere else; always pass them to ff.ps1 as shown):
 - `MAX_MODEL = fable` strongest model `pick-model` may choose (`opus` to cap cost).
 - `AUTO_RESUME = on` resume by schedule after a usage-limit or API-error stop while Claude Code stays open. `off` to disable.
 
-`<skill-dir>` is the folder containing this SKILL.md. Run everything from the project root.
+`<skill-dir>` is the folder containing this SKILL.md. If the project root has its own
+`.claude/skills/feature-flow/` (project-level install, possibly in a worktree), use that copy.
+Run everything from the project root.
 Standard helper calls (copy them; `<dir>` is the work folder):
 
 ```text
@@ -81,8 +83,9 @@ and for the reviewer forbid any file change.
 ## Stage loop (plan -> dev -> qa -> wiki)
 
 For each stage, log `<stage> START`, then repeat rounds until PASS or a limit. Take the round
-number N from `status` (`NEXT ... round N`); numbers continue for the whole work folder, so no
-round file is ever overwritten.
+number N from `status` (`NEXT ... round N`); numbers are per stage and never restart within a
+work folder (also after a QA send-back), so no round file is ever overwritten. Always give agents
+the work folder as an absolute path.
 
 1. **Worker.** Dispatch the stage agent with `00-context.md`, `01-spec.md`, `02-todo.md` (from dev
    on), and the latest review for this stage, or after a QA send-back the latest
@@ -91,13 +94,14 @@ round file is ever overwritten.
 2. **Gate (no model involved).**
    - plan: `check-todo -FormatOnly`.
    - dev: run the spec's build and test commands into `evidence/dev/verify-r<N>.log`;
-     `check-todo -Prefix D`; `diff -Round <N>`.
+     `check-todo -Prefix D`; `diff -Round <N>` (exit 1 when a file's line endings were rewritten).
    - qa: run the test command into `evidence/qa/verify-r<N>.log`; `check-todo -Prefix Q -AllowOpen`.
    - wiki: `wiki-check`.
    - On any failure write `reviews/<stage>-r<N>.md` as `VERDICT: FAIL (gate)` plus the failing
      output, log FAIL, next round. Do not call the reviewer on a failed gate.
 3. **Review.** Dispatch `ff-reviewer` (model from `pick-model -Role reviewer -Stage <stage>`) with
-   the stage name and file list. Save its reply verbatim to `reviews/<stage>-r<N>.md`.
+   the stage name and file list. Save its reply verbatim to `reviews/<stage>-r<N>.md` (drop only a
+   code fence wrapping the whole reply).
 4. **Decide.** Log the round with `-Model <worker model> -ReviewerModel <reviewer model>`.
    - `PASS` -> log PASS, next stage.
    - `FAIL` -> log FAIL with a one-line note. If two consecutive **reviewer** FAILs report the same
@@ -105,9 +109,10 @@ round file is ever overwritten.
      already raises the model after 2 FAILs). If `event` exits 3, escalate.
    - `NEEDS_DECISION` -> log it and escalate.
 
-QA send-back: on a qa FAIL whose review says `CAUSE: IMPL` or `CAUSE: SPEC`, log the FAIL with note
-`sendback=IMPL` or `sendback=SPEC`, then go to dev (IMPL) or plan (SPEC) with the QA review as the
-fix list. If `event` exits 3, escalate. `CAUSE: ENV` -> log `BLOCKED_ENV` and escalate. When the
+QA FAIL by cause: `CAUSE: QA` (the tester's own evidence is wrong or misplaced; product is fine) ->
+plain FAIL, next QA round. `CAUSE: IMPL` or `CAUSE: SPEC` -> log the FAIL with note `sendback=IMPL`
+or `sendback=SPEC`, then go to dev (IMPL) or plan (SPEC) with the QA review as the fix list; if
+`event` exits 3, escalate. `CAUSE: ENV` (could not be exercised) -> log `BLOCKED_ENV` and escalate. When the
 product cannot be exercised automatically (GUI without automation, hardware), the QA tester returns
 `BLOCKED_ENV` with `evidence/qa/manual-checklist.md`; give that checklist to the user, never fake it.
 

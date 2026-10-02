@@ -56,6 +56,8 @@ Rules enforced by `ff.ps1 check-todo`:
 - A token is a file ref when it has a folder (`src/x.cs`) or a line (`x.cs:12`); every such ref must
   exist and its line numbers must be inside the file. A bare name like `x.cs` counts only if it
   exists in the project root; otherwise it is treated as prose.
+- `evidence/...` refs resolve only inside the work folder; a file under the project root's
+  `evidence/` never counts.
 - Limit: the gate proves a ref exists and its lines are inside the file, not that the lines are
   the right ones. Whether the code there does what the item says is the reviewer's job.
 - Separate several refs with `|`. Free text is allowed next to refs but does not count; paths with
@@ -75,7 +77,7 @@ Example of a valid checked item:
 
 ```text
 VERDICT: PASS | FAIL | NEEDS_DECISION
-CAUSE: IMPL | SPEC | ENV            (QA stage FAIL only)
+CAUSE: IMPL | SPEC | QA | ENV       (QA stage FAIL only)
 ISSUES:
 - [high|med|low] <where: file:line or TODO id> - <problem> - <expected>
 ```

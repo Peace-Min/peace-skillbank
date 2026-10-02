@@ -27,7 +27,8 @@ in the files.
   expected result (log line, output, screenshot), not just that a command ran; failures were not
   hidden or retried until green. Any unchecked Q item (it has a proof file under `evidence/qa/`)
   means FAIL. On FAIL also give `CAUSE`: IMPL (product code is wrong), SPEC (spec or plan is wrong
-  or incomplete), ENV (could not be exercised).
+  or incomplete), QA (the product looks right but the tester's evidence is wrong, missing, hand
+  written or saved outside `<work folder>/evidence/qa/`), ENV (could not be exercised at all).
 - **wiki** (`docs/wiki/` changes): index links resolve; pages describe architecture, decisions and
   module map in short form; no code dumps; matches what was actually built.
 
@@ -43,7 +44,7 @@ in the files.
 
 ```text
 VERDICT: PASS | FAIL | NEEDS_DECISION
-CAUSE: IMPL | SPEC | ENV
+CAUSE: IMPL | SPEC | QA | ENV
 ISSUES:
 - [high|med|low] <file:line or TODO id> - <problem> - <expected>
 ```

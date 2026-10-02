@@ -77,6 +77,15 @@ try {
     Check "refs wrapped in ( ) [ ] or followed by . , are accepted" (($r.Code -eq 0) -and ($r.Out -match '(?m)^OK\s+D1')) $r.Out
     Set-Content -LiteralPath (Join-Path $work "02-todo.md") -Value $todoOk -Encoding UTF8
 
+    # 3b. "evidence/..." refs resolve only inside the work folder; a copy in the project root does not count.
+    New-Item -ItemType Directory -Path (Join-Path $project "evidence\qa") -Force | Out-Null
+    Set-Content -LiteralPath (Join-Path $project "evidence\qa\Q1-root.log") -Value "misplaced" -Encoding ASCII
+    Set-Content -LiteralPath (Join-Path $work "02-todo.md") -Value @("## QA", "- [x] Q1: misplaced proof", "  - evidence: evidence/qa/Q1-root.log") -Encoding UTF8
+    $r = Invoke-Ff $project @("check-todo", "-WorkDir", $work, "-Prefix", "Q")
+    Check "evidence/ in project root is not accepted" (($r.Code -eq 1) -and ($r.Out -match 'BAD-REF\s+Q1.*missing file')) $r.Out
+    Remove-Item -LiteralPath (Join-Path $project "evidence") -Recurse -Force
+    Set-Content -LiteralPath (Join-Path $work "02-todo.md") -Value $todoOk -Encoding UTF8
+
     # 4. -FormatOnly (plan gate).
     $r = Invoke-Ff $project @("check-todo", "-WorkDir", $work, "-FormatOnly")
     Check "format: valid plan -> exit 0" ($r.Code -eq 0) $r.Out
@@ -228,6 +237,26 @@ try {
     Check "diff includes Korean-named untracked file" ($patch2.Contains($ko.Replace(" ", "") + ".txt") -and $patch2.Contains("+new $ko")) ""
     $r = Invoke-Ff $gp @("diff", "-WorkDir", $gw)
     Check "diff without -Round -> exit 2" ($r.Code -eq 2) $r.Out
+
+    # 11c. Line-ending rewrite of a tracked file fails the dev diff gate; a real one-line change does not.
+    $gp2 = Join-Path $project "gitproj2"
+    New-Item -ItemType Directory -Path $gp2 -Force | Out-Null
+    $lf = (1..10 | ForEach-Object { "line $_" }) -join "`n"
+    [System.IO.File]::WriteAllText((Join-Path $gp2 "eol.txt"), $lf + "`n")
+    Set-Content -LiteralPath (Join-Path $gp2 ".gitignore") -Value "work/" -Encoding ASCII
+    $prevEap = $ErrorActionPreference; $ErrorActionPreference = "Continue"
+    & git -C $gp2 init -q 2>&1 | Out-Null
+    & git -C $gp2 config core.autocrlf false 2>&1 | Out-Null
+    & git -C $gp2 add . 2>&1 | Out-Null
+    & git -C $gp2 -c user.name=t -c user.email=t@t commit -q -m init 2>&1 | Out-Null
+    $ErrorActionPreference = $prevEap
+    $gw2 = Get-WorkDirLine (Invoke-Ff $gp2 @("init", "-Title", "eol test")).Out
+    [System.IO.File]::WriteAllText((Join-Path $gp2 "eol.txt"), ($lf -replace "`n", "`r`n") + "`r`n")
+    $r = Invoke-Ff $gp2 @("diff", "-WorkDir", $gw2, "-Round", "1")
+    Check "CRLF rewrite -> diff gate exit 1 with EOL line" (($r.Code -eq 1) -and ($r.Out -match '(?m)^EOL\s+eol\.txt')) $r.Out
+    [System.IO.File]::WriteAllText((Join-Path $gp2 "eol.txt"), ($lf -replace 'line 5', 'line five') + "`n")
+    $r = Invoke-Ff $gp2 @("diff", "-WorkDir", $gw2, "-Round", "2")
+    Check "real one-line change keeps the diff gate green" (($r.Code -eq 0) -and ($r.Out -notmatch '(?m)^EOL\s')) $r.Out
 
     # 12. wiki-check: missing index fails; broken link fails; resolved links (with anchors) pass.
     $r = Invoke-Ff $gp @("wiki-check")

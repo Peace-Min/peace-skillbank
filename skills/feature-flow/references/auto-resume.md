@@ -10,7 +10,8 @@ days. After any of those, the user runs `/feature-flow resume <dir>`, which re-a
 1. If `<dir>/schedule.txt` exists, `CronDelete` the id in it (ignore "not found": the job may have
    died with an earlier session) and delete the file.
 2. `CronCreate` a recurring job, cron `17,47 * * * *` (about every 30 min, off the :00/:30 marks),
-   prompt `/peace-skillbank:feature-flow resume <dir> --auto` (clone-time: `/feature-flow resume <dir> --auto`).
+   prompt `/peace-skillbank:feature-flow resume <dir> --auto` for a plugin install, or
+   `/feature-flow resume <dir> --auto` for a project-level or clone-time install.
 3. Write `<id> <ISO time>` to `<dir>/schedule.txt`. Tell the user once: it runs only while Claude
    Code is open and idle, and expires after 7 days.
 

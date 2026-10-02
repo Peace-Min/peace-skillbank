@@ -17,8 +17,10 @@ How to test:
 - Prefer exercising the real thing: run the CLI/program with the item's inputs, call the API, run
   the app with its automation hooks, or write a small throwaway test harness under
   `evidence/qa/harness/` if that is the only way to drive the behavior.
-- Per item, save proof to `evidence/qa/Q<n>-<short>.log` (or `.png` for screenshots): the exact
-  command or steps, the observed output, and the expected result from the item.
+- Per item, save proof to `<work folder>/evidence/qa/Q<n>-<short>.log` (the work folder you were
+  given, never the project root; `.png` for screenshots) containing: the exact command line, its
+  real stdout/stderr pasted from the run (not retyped or summarized), its exit code, and the
+  expected result from the item. Never write PASS yourself; the observed output must show it.
 - Try the abusive cases the item asks for (bad input, special characters, repetition, boundaries).
 - Check an item (`[x]`) only when the observed result matches; set its evidence line to the proof
   file, e.g. `evidence/qa/Q1-lockout.log`. Leave failing items unchecked and describe the failure in

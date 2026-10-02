@@ -268,7 +268,10 @@ function Parse-EventTime([string]$Text) {
 }
 
 function Resolve-InProject([string]$Rel, [string]$Dir) {
-    foreach ($base in @($Root, $Dir)) {
+    # 0. "evidence/..." always means the work folder; a copy written to the project root does not count.
+    $bases = @($Root, $Dir)
+    if ($Rel -match '^evidence[\\/]') { $bases = @($Dir) }
+    foreach ($base in $bases) {
         $p = $Rel
         if (-not [System.IO.Path]::IsPathRooted($p)) { $p = Join-Path $base $Rel }
         if (Test-Path -LiteralPath $p -PathType Leaf) { return $p }
@@ -437,6 +440,29 @@ switch ($Command) {
         $outFile = Join-Path $dir ("evidence\dev\diff-r{0}.patch" -f $Round)
         [System.IO.File]::WriteAllText($outFile, (($parts -join "`n") + "`n"), $utf8)
         Write-Output ("DIFF      {0} ({1} untracked file(s))" -f $outFile, @($untracked.Out | Where-Object { $_ }).Count)
+
+        # 1. Line-ending rewrites: files whose diff shrinks when CR at EOL is ignored were re-saved with other line endings.
+        $plain = @{}
+        foreach ($l in (Invoke-Git @("diff", "--numstat", $base, "--", ".", ":(exclude)work")).Out) {
+            $c = ([string]$l) -split "`t"
+            if ($c.Count -ge 3 -and $c[0] -match '^\d+$') { $plain[$c[2]] = [int]$c[0] + [int]$c[1] }
+        }
+        $eolFiles = @()
+        $ignoring = @{}
+        foreach ($l in (Invoke-Git @("diff", "--numstat", "--ignore-cr-at-eol", $base, "--", ".", ":(exclude)work")).Out) {
+            $c = ([string]$l) -split "`t"
+            if ($c.Count -ge 3 -and $c[0] -match '^\d+$') { $ignoring[$c[2]] = [int]$c[0] + [int]$c[1] }
+        }
+        foreach ($file in $plain.Keys) {
+            $without = 0
+            if ($ignoring.ContainsKey($file)) { $without = $ignoring[$file] }
+            if ($plain[$file] - $without -ge 4) { $eolFiles += $file }
+        }
+        if ($eolFiles.Count -gt 0) {
+            foreach ($file in ($eolFiles | Sort-Object)) { Write-Output "EOL       $file  line endings rewritten (diff $($plain[$file]) lines, $(if ($ignoring.ContainsKey($file)) { $ignoring[$file] } else { 0 }) without CR changes)" }
+            Write-Output "GATE      FAIL  restore the original line endings of the files above"
+            exit 1
+        }
         exit 0
     }
 

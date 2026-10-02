@@ -50,7 +50,7 @@
   1. plan    ff-planner  → 02-todo.md (D=개발, Q=QA 항목)        → ff-reviewer
   2. dev     ff-developer → 코드 + D 체크(근거 필수) → [게이트] → ff-reviewer
   3. qa      ff-qa-tester → evidence/qa/ 증거 + Q 체크 → [게이트] → ff-reviewer
-             실패 시 CAUSE: IMPL→dev / SPEC→plan / ENV→사람
+             실패 시 CAUSE: IMPL→dev / SPEC→plan / QA→QA 다시 / ENV→사람
   4. wiki    ff-wiki-writer → docs/wiki/ (index + architecture + decisions) → ff-reviewer
 ```
 
@@ -156,3 +156,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\feature-flow-fixture
 `ff.ps1`의 init/event/check-todo/status를 임시 프로젝트에서 양성·음성 경로로 검사한다
 (빈 줄 포함 줄 수, 근거 없는 체크, 없는 파일, 범위 밖 줄 번호, 산문만 있는 근거, plan 형식 게이트,
 QA 실패 항목 증거, 루프 상한·QA 반려 상한, RESUME 리셋, NEXT 안내, git diff(새 파일 포함·work 제외), 위키 링크 검사).
+줄바꿈만 바뀐 파일 감지(dev diff 게이트), 작업 폴더 밖 `evidence/` 거부, 모델 선택, 자동 재개 판정도 포함한다.
+
+**실제 데스크톱 세션 시험(2026-10-02):** 스킬과 `ff-*` 서브에이전트를 프로젝트 단위로 설치한 임시 Python
+프로젝트에서 실제 서브에이전트로 기획→개발→QA→위키를 끝까지 돌렸고(모델 선택 규칙대로 opus/sonnet 지정, 검수자
+읽기 전용 확인, CronCreate 예약 생성·삭제), 개발 중 중단시킨 작업이 **실제 CronCreate 일회성 예약 발동**으로
+`auto-check` → 자동 재개 → `done PASS`까지 진행되는 것을 확인했다. 서브에이전트 안에서 실제 모델·노력 수준이
+무엇이었는지는 관찰할 수 없었다.

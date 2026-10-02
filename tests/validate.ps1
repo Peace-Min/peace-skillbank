@@ -642,6 +642,9 @@ $ffEntryFront = Get-FrontMatter -Path (Join-Path $RepositoryRoot ".claude\skills
 $ffDescCanon = [regex]::Match($ffFrontMatter, "(?m)^description:.*$").Value
 Assert-Condition ($ffEntryFront.Contains($ffDescCanon)) "Clone-time feature-flow entrypoint description must match the canonical SKILL.md"
 Assert-Condition ($ffSkillContent -match "gate -WorkDir") "feature-flow SKILL.md must run the stage gate through ff.ps1 gate"
+Assert-Condition ($ffSkillContent -match "decision -Kind decided" -and $ffSkillContent -match "MAX_DECISIONS = \d") "feature-flow SKILL.md must record master decisions through ff.ps1 decision with a MAX_DECISIONS cap"
+$ffReviewerBody = Get-Content -Raw -Encoding UTF8 -LiteralPath (Join-Path $RepositoryRoot "agents\ff-reviewer.md")
+Assert-Condition ($ffReviewerBody -match "master-decided") "ff-reviewer must check the master's own decisions"
 # The reviewer must stay read-only: no Write/Edit/Bash in its tool list.
 $ffReviewerFront = Get-FrontMatter -Path (Join-Path $RepositoryRoot "agents\ff-reviewer.md")
 Assert-Condition ($ffReviewerFront -match "(?m)^tools:\s*Read, Grep, Glob\s*$") "ff-reviewer must be read-only (tools: Read, Grep, Glob)"

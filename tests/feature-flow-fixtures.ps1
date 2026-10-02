@@ -590,6 +590,25 @@ try {
     Set-Content -LiteralPath (Join-Path $gs "evidence\dev\group-B.md") -Value @("- [x] D2: b [group:B]", "- evidence: src/b.txt:1") -Encoding UTF8
     $r = Invoke-Ff $gp @("merge-evidence", "-WorkDir", $gs)
     Check "unindented evidence line in a group file is still merged (not blanked)" (($r.Code -eq 0) -and ([System.IO.File]::ReadAllText((Join-Path $gs "02-todo.md")) -match 'evidence: src/b\.txt:1')) $r.Out
+    # 23. decision: appends under "## Decisions" (creating it), keeps later sections intact, caps master decisions.
+    $dw = Get-WorkDirLine (Invoke-Ff $project @("init", "-Title", "decisions probe", "-MaxDecisions", "2")).Out
+    $r = Invoke-Ff $project @("decision", "-WorkDir", $dw, "-Kind", "decided", "-Stage", "plan", "-Note", "hyphenated words count as one word")
+    $specD = [System.IO.File]::ReadAllText((Join-Path $dw "01-spec.md"))
+    Check "decision creates ## Decisions with a master-decided entry" (($r.Code -eq 0) -and ($specD -match '(?m)^## Decisions\r?\n- master-decided \(\d{4}-\d{2}-\d{2}, plan\): hyphenated words count as one word')) $r.Out
+    [System.IO.File]::WriteAllText((Join-Path $dw "01-spec.md"), ($specD.TrimEnd() + "`n`n## Notes`nkeep me`n"))
+    $r = Invoke-Ff $project @("decision", "-WorkDir", $dw, "-Kind", "created", "-Stage", "dev", "-Note", "samples/.gitkeep (needed by the build)")
+    $specD = [System.IO.File]::ReadAllText((Join-Path $dw "01-spec.md"))
+    Check "created entry goes inside ## Decisions, before the next section" (($r.Code -eq 0) -and ($specD -match '(?s)## Decisions.*master-created \(.*dev\): samples/\.gitkeep.*## Notes\r?\nkeep me')) $specD
+    $r = Invoke-Ff $project @("decision", "-WorkDir", $dw, "-Kind", "decided", "-Stage", "dev", "-Note", "second")
+    Check "second decision accepted (max 2)" ($r.Code -eq 0) $r.Out
+    $r = Invoke-Ff $project @("decision", "-WorkDir", $dw, "-Kind", "decided", "-Stage", "dev", "-Note", "third")
+    Check "third decision over MaxDecisions -> exit 3, not recorded" (($r.Code -eq 3) -and ([System.IO.File]::ReadAllText((Join-Path $dw "01-spec.md")) -notmatch 'third')) $r.Out
+    $null = Invoke-Ff $project @("event", "-WorkDir", $dw, "-Stage", "intake", "-Status", "PASS")
+    $r = Invoke-Ff $project @("status", "-WorkDir", $dw)
+    Check "status shows the decision counts" ($r.Out -match 'DECISIONS 2 master-decided \(max 2\), 1 master-created') $r.Out
+    $r = Invoke-Ff $project @("decision", "-WorkDir", $dw, "-Stage", "dev", "-Note", "x")
+    Check "decision without -Kind -> exit 2" ($r.Code -eq 2) $r.Out
+
 }
 finally {
     Remove-Item -LiteralPath $project -Recurse -Force -ErrorAction SilentlyContinue

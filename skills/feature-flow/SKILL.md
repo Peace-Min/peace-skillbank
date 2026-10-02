@@ -16,6 +16,7 @@ Settings (change here, nowhere else). They are passed once to `init`, stored in
 - `MAX_GATE_FAILS = 3` mechanical gate FAILs per stage before the loop limit (a separate budget).
 - `MAX_QA_CYCLES = 2` times QA may send work back to dev/plan.
 - `MAX_FIXES = 1` master interventions per stage and kind (`block:` and `loop:` each) before escalating.
+- `MAX_DECISIONS = 3` in-scope decisions the master may take on its own per work item.
 - `MAX_MODEL = fable` strongest model `pick-model` may choose (`opus` to cap cost; `inherit` to never pass a model).
 - `PARALLEL = on` develop independent `[group:X]` work in parallel worktrees when the conditions below hold.
 - `AUTO_RESUME = on` resume by schedule after a usage-limit or API-error stop while Claude Code stays open.
@@ -26,11 +27,12 @@ skill loader reports another base directory. Run everything from the project roo
 
 ```text
 $ff = "<skill-dir>/scripts/ff.ps1"
-powershell -NoProfile -ExecutionPolicy Bypass -File $ff init -Title "<short title>" -MaxRounds 3 -MaxGateFails 3 -MaxQaCycles 2 -MaxFixes 1 -MaxModel fable
+powershell -NoProfile -ExecutionPolicy Bypass -File $ff init -Title "<short title>" -MaxRounds 3 -MaxGateFails 3 -MaxQaCycles 2 -MaxFixes 1 -MaxDecisions 3 -MaxModel fable
 powershell -NoProfile -ExecutionPolicy Bypass -File $ff status -WorkDir <dir>
 powershell -NoProfile -ExecutionPolicy Bypass -File $ff pick-model -WorkDir <dir> -Role <planner|developer|qa|wiki|reviewer> [-Stage <stage>]
 powershell -NoProfile -ExecutionPolicy Bypass -File $ff gate -WorkDir <dir> -Stage <plan|dev|qa|wiki> -Round <N>
 powershell -NoProfile -ExecutionPolicy Bypass -File $ff event -WorkDir <dir> -Stage <stage> -Status <STATUS> -Round <N> -Note "<one line>" [-SendBack IMPL|SPEC] [-Model <alias>] [-ReviewerModel <alias>]
+powershell -NoProfile -ExecutionPolicy Bypass -File $ff decision -WorkDir <dir> -Kind <decided|created> -Stage <stage> -Note "<text>"
 powershell -NoProfile -ExecutionPolicy Bypass -File $ff merge-evidence -WorkDir <dir>      (after parallel dev)
 powershell -NoProfile -ExecutionPolicy Bypass -File $ff auto-check -WorkDir <dir>         (scheduled firings)
 ```
@@ -120,9 +122,9 @@ Log `<stage> START`, then repeat rounds until PASS or a limit; take N from `stat
   already declares, stop a process this run started, create a missing folder or config from the
   spec, run the blocked command yourself when you are allowed to), fix it, log `MASTER_FIX` with note
   `block: <what you did>`, and run the round `NEXT` names. Blockers found in the same round (for
-  example two parallel groups) go into one `MASTER_FIX`. If the fix creates files, note them under
-  `## Decisions` as `master-created: <path> (<why>)` so the reviewer treats them as in scope. Never
-  change system settings, credentials or anything outside the project, and never delete user data.
+  example two parallel groups) go into one `MASTER_FIX`. If the fix creates files, record each with
+  `decision -Kind created -Note "<path> (<why>)"` so the reviewer can check it. Never change system
+  settings, credentials or anything outside the project, and never delete user data.
 - Loop limit: compare the last reviews. If they disagree with each other or the worker misread
   them, write one consolidated fix list to `reviews/<stage>-r<N>-master.md` (N = the last round),
   log `MASTER_FIX` with note `loop: <summary>`, and run the round `NEXT` names; it resets the stage's
@@ -130,10 +132,13 @@ Log `<stage> START`, then repeat rounds until PASS or a limit; take N from `stat
 - If `event` exits 3 on a `MASTER_FIX`, that kind's budget is used up: ff.ps1 has already logged the
   halt instead of the fix, so escalate. If no fix is safe, log `BLOCKED_*` / `LOOP_LIMIT` and escalate.
 
-**Master decision** (`NEEDS_DECISION`): if the choice stays inside the approved scope (an edge case,
-a naming or structure choice, behavior the spec leaves open), decide it yourself, append it to
-`01-spec.md` under `## Decisions` as `master-decided: ...`, and continue. If it changes scope,
-acceptance criteria or a public interface, log `NEEDS_DECISION` and escalate.
+**Master decision** (`NEEDS_DECISION` from a worker): if the choice stays inside the approved scope
+(an edge case, a naming or structure choice, behavior the spec leaves open), decide it and record it
+with `decision -Kind decided -Stage <stage> -Note "<decision and why>"`, then continue. If it
+changes scope, acceptance criteria or a public interface, or `decision` exits 3 (`MAX_DECISIONS`
+used up), log `NEEDS_DECISION` and escalate. Your decisions are not final: the next reviewer of the
+stage checks every `master-decided` / `master-created` entry against the approved spec. If a
+reviewer raises `NEEDS_DECISION` about one of your entries, do not decide again: escalate to the user.
 
 **QA FAIL by cause:** `CAUSE: QA` (the tester's evidence is wrong; product fine) -> plain FAIL, next
 QA round. `CAUSE: IMPL` -> `event ... -Status FAIL -SendBack IMPL`, then dev with the QA review as

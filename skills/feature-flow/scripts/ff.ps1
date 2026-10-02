@@ -18,6 +18,7 @@
       verify      Run the spec build and test commands (-Build, -Test) for a round, save the full log, exit 1 if any fails.
       gate        Run the whole mechanical gate of a stage round; on failure write the review file and log FAIL.
       merge-evidence  Fold evidence/dev/group-*.md (parallel developers) into 02-todo.md.
+      decision    Append a master-decided / master-created entry to the spec's "## Decisions" (capped by MaxDecisions).
 
     MaxRounds, MaxGateFails, MaxQaCycles, MaxFixes and MaxModel are written to <dir>/settings.txt by init and read from
     there whenever a later call does not pass them, so every call (including scheduled firings)
@@ -28,7 +29,7 @@
 #>
 param(
     [Parameter(Mandatory = $true, Position = 0)]
-    [ValidateSet("init", "event", "check-todo", "diff", "wiki-check", "status", "pick-model", "auto-check", "heartbeat", "verify", "gate", "merge-evidence")]
+    [ValidateSet("init", "event", "check-todo", "diff", "wiki-check", "status", "pick-model", "auto-check", "heartbeat", "verify", "gate", "merge-evidence", "decision")]
     [string]$Command,
     [ValidateSet("", "planner", "developer", "qa", "reviewer", "wiki")]
     [string]$Role = "",
@@ -56,7 +57,10 @@ param(
     [int]$MaxRounds = 3,
     [int]$MaxGateFails = 3,
     [int]$MaxQaCycles = 2,
-    [int]$MaxFixes = 1
+    [int]$MaxFixes = 1,
+    [int]$MaxDecisions = 3,
+    [ValidateSet("", "decided", "created")]
+    [string]$Kind = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -74,13 +78,14 @@ function Import-WorkSettings {
     $file = Join-Path $dirPath "settings.txt"
     if (-not (Test-Path -LiteralPath $file)) { return }
     foreach ($line in [System.IO.File]::ReadAllLines($file)) {
-        $m = [regex]::Match($line, '^\s*(MaxRounds|MaxGateFails|MaxQaCycles|MaxFixes|MaxModel)\s*=\s*(\S+)\s*$')
+        $m = [regex]::Match($line, '^\s*(MaxRounds|MaxGateFails|MaxQaCycles|MaxFixes|MaxDecisions|MaxModel)\s*=\s*(\S+)\s*$')
         if (-not $m.Success -or $script:BoundNames -contains $m.Groups[1].Value) { continue }
         switch ($m.Groups[1].Value) {
             "MaxRounds" { $script:MaxRounds = [int]$m.Groups[2].Value }
             "MaxQaCycles" { $script:MaxQaCycles = [int]$m.Groups[2].Value }
             "MaxGateFails" { $script:MaxGateFails = [int]$m.Groups[2].Value }
             "MaxFixes" { $script:MaxFixes = [int]$m.Groups[2].Value }
+            "MaxDecisions" { $script:MaxDecisions = [int]$m.Groups[2].Value }
             "MaxModel" { if ($m.Groups[2].Value -in @("haiku", "sonnet", "opus", "fable", "inherit")) { $script:MaxModel = $m.Groups[2].Value } }
         }
     }
@@ -161,6 +166,13 @@ function Test-StageOverLimit([object[]]$Events, [string]$ForStage) {
     if ((Get-FailCount -Events $Events -ForStage $ForStage -Kind "review") -ge $MaxRounds) { return "reviewer FAILs reached MaxRounds=$MaxRounds" }
     if ((Get-FailCount -Events $Events -ForStage $ForStage -Kind "gate") -ge $MaxGateFails) { return "gate FAILs reached MaxGateFails=$MaxGateFails" }
     return $null
+}
+
+function Get-DecisionCount([string]$Dir, [string]$Which) {
+    # 0. Entries "- master-decided ..." / "- master-created ..." anywhere in the spec.
+    $spec = Join-Path $Dir "01-spec.md"
+    if (-not (Test-Path -LiteralPath $spec)) { return 0 }
+    return @([System.IO.File]::ReadAllLines($spec) | Where-Object { $_ -match "^\s*-\s*master-$Which\b" }).Count
 }
 
 function Get-VerifyCommands([string]$Dir) {
@@ -471,9 +483,9 @@ switch ($Command) {
         [System.IO.File]::WriteAllText((Join-Path $dir "00-context.md"), $context, $utf8)
         [System.IO.File]::WriteAllText((Join-Path $dir "01-spec.md"), $spec, $utf8)
         [System.IO.File]::WriteAllText((Join-Path $dir "events.log"), "", $utf8)
-        $settings = "MaxRounds=$MaxRounds`nMaxGateFails=$MaxGateFails`nMaxQaCycles=$MaxQaCycles`nMaxFixes=$MaxFixes`nMaxModel=$MaxModel`n"
+        $settings = "MaxRounds=$MaxRounds`nMaxGateFails=$MaxGateFails`nMaxQaCycles=$MaxQaCycles`nMaxFixes=$MaxFixes`nMaxDecisions=$MaxDecisions`nMaxModel=$MaxModel`n"
         [System.IO.File]::WriteAllText((Join-Path $dir "settings.txt"), $settings, $utf8)
-        Write-Output "SETTINGS  MaxRounds=$MaxRounds MaxGateFails=$MaxGateFails MaxQaCycles=$MaxQaCycles MaxFixes=$MaxFixes MaxModel=$MaxModel"
+        Write-Output "SETTINGS  MaxRounds=$MaxRounds MaxGateFails=$MaxGateFails MaxQaCycles=$MaxQaCycles MaxFixes=$MaxFixes MaxDecisions=$MaxDecisions MaxModel=$MaxModel"
         Write-Output "WORKDIR   $dir"
         exit 0
     }
@@ -668,6 +680,7 @@ switch ($Command) {
         Write-Output "STAGE     $($last.Stage)  last=$($last.Status) $($last.Round)"
         Write-Output "FAILS     $reviewFails review (max $MaxRounds), $gateFails gate (max $MaxGateFails); master fixes block $(Get-FixCount -Events $events -ForStage $last.Stage -Kind "block"), loop $(Get-FixCount -Events $events -ForStage $last.Stage -Kind "loop") (max $MaxFixes each)"
         Write-Output "SENDBACKS $(Get-SendBackCount $events) (max $MaxQaCycles)"
+        Write-Output "DECISIONS $(Get-DecisionCount $dir "decided") master-decided (max $MaxDecisions), $(Get-DecisionCount $dir "created") master-created"
         $items = Get-TodoItems $dir
         if ($null -ne $items) {
             foreach ($p in @("D", "Q")) {
@@ -797,6 +810,48 @@ switch ($Command) {
         Write-Output "GATE      FAIL  $($failedSteps -join ', ')"
         if ($evCode -eq 3) { exit 3 }
         exit 1
+    }
+
+    "decision" {
+        $dir = Resolve-WorkDir
+        Touch-Lock $dir
+        if (-not $Kind) { Fail-Usage "-Kind decided (an in-scope choice the master made) or -Kind created (a file a MASTER_FIX created) is required." }
+        if ($Stage -notin $validStages) { Fail-Usage "-Stage must be one of: $($validStages -join ', ')" }
+        $text = (($Note -replace '[\r\n]+', ' ') -replace '\s+', ' ').Trim()
+        if (-not $text) { Fail-Usage "-Note with the decision text is required." }
+        $spec = Join-Path $dir "01-spec.md"
+        if (-not (Test-Path -LiteralPath $spec)) { Fail-Usage "01-spec.md not found in $dir" }
+
+        # 0. Cap: the master may decide only a few things on its own per work item; beyond that the user decides.
+        if ($Kind -eq "decided") {
+            $already = Get-DecisionCount $dir "decided"
+            if ($already -ge $MaxDecisions) {
+                Write-Output "LIMIT     $already master decisions already (max $MaxDecisions); not recorded. Log NEEDS_DECISION and escalate to the user."
+                exit 3
+            }
+        }
+
+        # 1. Append under "## Decisions" (created at the end of the spec if missing), before the next section.
+        $lines = New-Object System.Collections.Generic.List[string]
+        foreach ($l in [System.IO.File]::ReadAllLines($spec)) { $lines.Add($l) }
+        $entry = "- master-{0} ({1}, {2}): {3}" -f $Kind, (Get-Date -Format "yyyy-MM-dd"), $Stage, $text
+        $start = -1
+        for ($i = 0; $i -lt $lines.Count; $i++) { if ($lines[$i] -match '^\s*##\s+Decisions\s*$') { $start = $i; break } }
+        if ($start -lt 0) {
+            if ($lines.Count -gt 0 -and $lines[$lines.Count - 1].Trim()) { $lines.Add("") }
+            $lines.Add("## Decisions")
+            $lines.Add($entry)
+        }
+        else {
+            $insert = $lines.Count
+            for ($i = $start + 1; $i -lt $lines.Count; $i++) { if ($lines[$i] -match '^\s*##\s') { $insert = $i; break } }
+            while ($insert -gt $start + 1 -and -not $lines[$insert - 1].Trim()) { $insert-- }
+            $lines.Insert($insert, $entry)
+        }
+        [System.IO.File]::WriteAllText($spec, (($lines -join "`n") + "`n"), $utf8)
+        Write-Output "DECISION  $entry"
+        Write-Output ("COUNT     {0} master-decided (max {1})" -f (Get-DecisionCount $dir "decided"), $MaxDecisions)
+        exit 0
     }
 
     "merge-evidence" {

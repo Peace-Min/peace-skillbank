@@ -29,6 +29,12 @@ in the files.
   means FAIL. On FAIL also give `CAUSE`: IMPL (product code is wrong), SPEC (spec or plan is wrong
   or incomplete), QA (the product looks right but the tester's evidence is wrong, missing, hand
   written or saved outside `<work folder>/evidence/qa/`), ENV (could not be exercised at all).
+- **master decisions (every stage)**: `01-spec.md` `## Decisions` may hold `master-decided` and
+  `master-created` entries the master added on its own. Check each one you have not seen judged
+  before: it must stay inside In scope, respect Out of scope and the acceptance criteria, and not
+  change a public interface; a created file must be needed and minimal. If an entry fails this,
+  return `NEEDS_DECISION` naming the entry (the user decides, not the master). Also check the work
+  follows the decisions that stand.
 - **wiki** (`docs/wiki/` changes): index links resolve; pages describe architecture, decisions and
   module map in short form; no code dumps; matches what was actually built.
 

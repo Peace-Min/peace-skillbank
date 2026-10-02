@@ -25,7 +25,7 @@ work/<yyyyMMdd-HHmm>-<slug>/
   base.txt             git commit the round diffs are taken against (ff.ps1 init)
   schedule.txt         "<CronCreate job id> <ISO time>" of the auto-resume schedule (master), if armed
   lock                 last master heartbeat time (ff.ps1 heartbeat), read by auto-check
-  settings.txt         MaxRounds / MaxGateFails / MaxQaCycles / MaxFixes / MaxModel from init; read by every later ff.ps1 call
+  settings.txt         MaxRounds / MaxGateFails / MaxQaCycles / MaxFixes / MaxDecisions / MaxModel from init; read by every later ff.ps1 call
   events.log           one line per event, written only by ff.ps1
 ```
 
@@ -35,8 +35,10 @@ Sections: Goal, In scope, **Out of scope** (mandatory, never empty: write "none 
 only if truly none), Constraints / cautions, Acceptance criteria (testable sentences), Verify
 commands (build, test), Risk (`- level: high|normal|low`; high for security, auth, concurrency,
 data migration/persistence formats, public API; read by `ff.ps1 pick-model`), and, once the user
-answers an escalation, `## Decisions` (dated entries appended by the master; agents treat them as
-part of the spec).
+answers an escalation, `## Decisions`: the user's decisions (dated, added by the master on resume)
+and the master's own entries written only by `ff.ps1 decision`, as
+`- master-decided (<date>, <stage>): <text>` or `- master-created (<date>, <stage>): <path> (<why>)`.
+Agents treat standing decisions as part of the spec; reviewers check every master entry.
 
 ## 02-todo.md
 

@@ -15,7 +15,7 @@
       pick-model  Choose the subagent model alias for a role from stage, size, risk and failures.
       auto-check  Decide whether an unattended (scheduled) resume should run now; logs the auto RESUME itself.
       heartbeat   Touch <dir>/lock so a scheduled firing sees the run as active.
-      verify      Run the spec build and test commands (-Build, -Test; QA also ui-test) for a round, each with a
+      verify      Run the spec build, test and ui-test commands (-Build, -Test) for a round, each with a
                   timeout (VerifyTimeoutMin), save the full log, exit 1 if any fails or times out.
       manual-check  Check evidence/qa/manual-checklist.md: every "### Q<n>" item names the automation tried.
       gate        Run the whole mechanical gate of a stage round; on failure write the review file and log FAIL.
@@ -236,7 +236,7 @@ function Get-DecisionCount([string]$Dir, [string]$Which) {
 function Get-VerifyCommands([string]$Dir, [string]$ForStage = "dev") {
     # 0. "- build: <cmd>" / "- test: <cmd>" / "- ui-test: <cmd>" inside the spec's "## Verify commands"
     #    section only; empty values and "none" are skipped. [ \t] keeps an empty value from swallowing
-    #    the next line. ui-test (the project's GUI harness) runs in the QA gate only.
+    #    the next line. ui-test (the project's GUI harness) runs in the dev and QA gates.
     $spec = Join-Path $Dir "01-spec.md"
     if (-not (Test-Path -LiteralPath $spec)) { return @() }
     $inSection = $false
@@ -247,8 +247,7 @@ function Get-VerifyCommands([string]$Dir, [string]$ForStage = "dev") {
         $m = [regex]::Match($line, '^[ \t]*-[ \t]*(build|test|ui-test)[ \t]*:[ \t]*(.*?)[ \t]*$', 'IgnoreCase')
         if ($m.Success) { $found[$m.Groups[1].Value.ToLowerInvariant()] = $m.Groups[2].Value.Trim().Trim('`').Trim() }
     }
-    $kinds = @("build", "test")
-    if ($ForStage -eq "qa") { $kinds += "ui-test" }
+    $kinds = @("build", "test", "ui-test")
     $commands = @()
     foreach ($kind in $kinds) {
         if ($found.ContainsKey($kind) -and $found[$kind] -and $found[$kind] -ne "none") {
@@ -261,7 +260,8 @@ function Get-VerifyCommands([string]$Dir, [string]$ForStage = "dev") {
 function Invoke-WithTimeout([string]$CommandLine, [double]$Minutes, [string]$EvidenceDir) {
     # 0. Run one verify command through cmd.exe from the project root; on timeout kill its whole
     #    process tree (a GUI harness stuck on a modal must not hang the gate) and report exit 124.
-    #    FF_EVIDENCE_DIR tells a harness where to write screenshots (evidence/<stage>/).
+    #    FF_EVIDENCE_DIR tells a harness where to write screenshots (evidence/<stage>/gate-r<N>/, so a
+    #    gate run never overwrites the screenshots a worker saved as proof).
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = "cmd.exe"
     $psi.Arguments = '/d /c "' + $CommandLine + ' 2>&1"'
@@ -575,7 +575,7 @@ switch ($Command) {
         else { Write-Output "WARN: not a git repository; 'diff' will not work. Ask the user to git init." }
         [System.IO.File]::WriteAllText((Join-Path $dir "base.txt"), $base, $utf8)
 
-        $context = "# Project context (seed)`n`n- Build command:`n- Test command:`n- Run/launch:`n- UI technology (none / WPF / WinForms / WebView2 / Electron / web / other):`n- UI test harness command (or none):`n- Key folders:`n- Conventions (from CLAUDE.md/AGENTS.md):`n- Wiki index: docs/wiki/index.md`n"
+        $context = "# Project context (seed)`n`n- Build command:`n- Test command:`n- Run/launch:`n- UI technology (none / WPF / WinForms / WebView2 / Electron / web / other):`n- UI test harness command (none / to be built: <method> / <command>):`n- Key folders:`n- Conventions (from CLAUDE.md/AGENTS.md):`n- Wiki index: docs/wiki/index.md`n"
         $spec = "# Spec: $Title`n`n## Goal`n`n## In scope`n`n## Out of scope`n`n## Constraints / cautions`n`n## Acceptance criteria`n`n## Verify commands`n- build:`n- test:`n- ui-test: none`n`n## Risk`n- level: normal`n"
         [System.IO.File]::WriteAllText((Join-Path $dir "00-context.md"), $context, $utf8)
         [System.IO.File]::WriteAllText((Join-Path $dir "01-spec.md"), $spec, $utf8)
@@ -867,7 +867,9 @@ switch ($Command) {
         $ErrorActionPreference = "Continue"
         try {
             foreach ($c in $commands) {
-                $run = Invoke-WithTimeout $c.Cmd $VerifyTimeoutMin (Join-Path $dir ("evidence\" + $Stage))
+                $gateOut = Join-Path $dir ("evidence\{0}\gate-r{1}" -f $Stage, $Round)
+                if ($c.Kind -eq "ui-test") { New-Item -ItemType Directory -Force -Path $gateOut | Out-Null }
+                $run = Invoke-WithTimeout $c.Cmd $VerifyTimeoutMin $gateOut
                 $code = $run.Code
                 [void]$text.AppendLine("### [$($c.Kind)] $($c.Cmd)")
                 foreach ($l in ($run.Out -split "\r?\n")) { [void]$text.AppendLine($l) }

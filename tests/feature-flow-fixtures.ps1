@@ -558,7 +558,7 @@ try {
     Check "quoted build command with && runs in the gate" (($r.Code -eq 0) -and ([System.IO.File]::ReadAllText((Join-Path $qt "evidence\dev\verify-r1.log")) -match 'hello world')) $r.Out
 
     # 21c2. UI harness: ui-test runs in the QA gate only, exit 2 is "no verdict" (not a pass), the
-    #       harness gets FF_EVIDENCE_DIR, and every command is killed after VerifyTimeoutMin.
+    #       harness gets FF_EVIDENCE_DIR (a per-gate folder), and every command is killed after VerifyTimeoutMin.
     $ur = Invoke-Ff $gp @("init", "-Title", "ui harness", "-VerifyTimeoutMin", "0.05")
     $uw = Get-WorkDirLine $ur.Out
     Check "init records VerifyTimeoutMin" ([System.IO.File]::ReadAllText((Join-Path $uw "settings.txt")) -match 'VerifyTimeoutMin=0\.05') $ur.Out
@@ -567,11 +567,11 @@ try {
     $specU = [System.IO.File]::ReadAllText((Join-Path $uw "01-spec.md")) -replace '- build:', '- build: exit /b 0' -replace '- test:', '- test: exit /b 0' -replace '- ui-test: none', '- ui-test: echo dir=%FF_EVIDENCE_DIR% && exit /b 2'
     [System.IO.File]::WriteAllText((Join-Path $uw "01-spec.md"), $specU)
     $r = Invoke-Ff $gp @("verify", "-WorkDir", $uw, "-Stage", "dev", "-Round", "1", "-FromSpec")
-    Check "dev verify does not run ui-test" (($r.Code -eq 0) -and ($r.Out -notmatch 'ui-test')) $r.Out
+    Check "dev verify runs ui-test too (exit 2 -> NO-VERDICT)" (($r.Code -eq 1) -and ($r.Out -match 'NO-VERDICT\s+exit 2\s+\[ui-test\]')) $r.Out
     $r = Invoke-Ff $gp @("verify", "-WorkDir", $uw, "-Stage", "qa", "-Round", "1", "-FromSpec")
     $ul = [System.IO.File]::ReadAllText((Join-Path $uw "evidence\qa\verify-r1.log"))
     Check "qa verify runs ui-test; exit 2 -> NO-VERDICT and gate fails" (($r.Code -eq 1) -and ($r.Out -match 'VERIFY\s+NO-VERDICT\s+exit 2\s+\[ui-test\]')) $r.Out
-    Check "ui-test sees FF_EVIDENCE_DIR = <work>\evidence\qa" ($ul -match [regex]::Escape("dir=" + (Join-Path $uw "evidence\qa"))) $ul
+    Check "ui-test sees FF_EVIDENCE_DIR = <work>\evidence\qa\gate-r1 (never the tester's files)" (($ul -match [regex]::Escape("dir=" + (Join-Path $uw "evidence\qa\gate-r1"))) -and (Test-Path (Join-Path $uw "evidence\qa\gate-r1"))) $ul
     [System.IO.File]::WriteAllText((Join-Path $uw "01-spec.md"), ($specU -replace 'exit /b 2', 'exit /b 0'))
     $r = Invoke-Ff $gp @("verify", "-WorkDir", $uw, "-Stage", "qa", "-Round", "2", "-FromSpec")
     Check "ui-test exit 0 passes" (($r.Code -eq 0) -and ($r.Out -match 'VERIFY\s+PASS\s+exit 0\s+\[ui-test\]')) $r.Out

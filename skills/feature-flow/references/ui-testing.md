@@ -25,15 +25,16 @@ Record the choice in `00-context.md` (`UI technology:`, `UI test harness command
   built by the spec's build command. Never under `work/` or a temp folder.
 - One command, one scenario per run: `<command> --scenario <name> --out <folder>`. The spec's
   `- ui-test:` line is the command that runs **all** scenarios, e.g.
-  `dotnet run --project tests/UiHarness -- --scenario all --out "%FF_EVIDENCE_DIR%"`; the gate sets
-  `FF_EVIDENCE_DIR` to `<work folder>\evidence\qa`. QA may run single scenarios while testing.
+  `dotnet run --project tests/UiHarness -- --scenario all --out "%FF_EVIDENCE_DIR%"`. The dev and QA
+  gates run it and set `FF_EVIDENCE_DIR` to `<work folder>\evidence\<stage>\gate-r<N>`, so gate
+  screenshots never overwrite a worker's proof. QA runs single scenarios with its own `--out`.
 - Exit codes: `0` every assertion passed, `1` an assertion failed, `2` no verdict (could not start,
   element not found, skipped). The gate treats 2 as a failure; never return 0 for a skip.
 - Prints one line per assertion: `PASS <name>` / `FAIL <name>: expected <x>, got <y>`.
 - Drives the product through the same path a user's action takes: invoke the bound command or the
   button's click path, set the selection, type into the bound control. Do not set private fields or
   call the view-model's internals to "pretend" an action happened.
-- Writes screenshots and any dumps to `--out` (QA passes `<work folder>/evidence/qa/`).
+- Writes screenshots and any dumps to `--out` only (QA passes `<work folder>/evidence/qa/`).
 - Hidden by default: WPF windows with `ShowActivated=false`, `ShowInTaskbar=false`, off-screen or
   `Opacity=0`, so a run does not steal the user's mouse or focus. A modal is driven from a
   `DispatcherTimer` with its own timeout. The gate also kills a run after `VerifyTimeoutMin`.
@@ -70,6 +71,11 @@ static void Pump() => Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.App
 - An in-process render proves layout, bindings and commands, not real mouse/keyboard input, focus,
   DPI scaling or OS window composition. When a Q item depends on those, drive the real process with
   UI Automation, or send that item (only that one) to the manual checklist.
+- DPI: never change the user's display scaling. A harness can still give supporting evidence by
+  rendering at 144 DPI (`VisualTreeHelper.SetRootDpi(view, new DpiScale(1.5, 1.5))`, then
+  `RenderTargetBitmap` at 1.5x size and 144 DPI) and asserting no text element is clipped
+  (`DesiredSize` within `RenderSize`). Plan it as a `[ui]` scenario; the real-scaling check stays
+  manual unless the spec accepts the render as enough.
 
 ## 4. Manual checklist (last resort)
 
@@ -84,3 +90,16 @@ static void Pump() => Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.App
 
 `ff.ps1 manual-check` (and the QA gate) fails the checklist if a `### Q<n>` section has no non-empty
 `- automation tried:` line or names a Q item that is not in `02-todo.md`.
+
+When the user reports back, the master writes `evidence/qa/Q<n>-manual.log` with exactly:
+
+```text
+checked-by: <who, as the user said>
+checked-at: <date/time>
+environment: <what the step needed, e.g. display scaling 150%, build or commit>
+observed: <the user's words>
+result: PASS | FAIL
+```
+
+The user's report is the proof; the reviewer checks the fields are present and the observation
+matches the item, and fails it (`CAUSE: ENV`) if the log says nobody actually performed the step.

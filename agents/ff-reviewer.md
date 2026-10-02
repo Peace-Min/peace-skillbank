@@ -35,6 +35,10 @@ in the files.
   screenshot it wrote); a state set up in memory to look fixed, an older image, or a harness that
   sets private fields instead of the user's path is `CAUSE: QA` (or IMPL for the harness code).
   An item in `evidence/qa/manual-checklist.md` that a harness or UI automation could check is FAIL.
+  A `Q<n>-manual.log` is the user's report, written by the master: accept it when it has
+  checked-by, checked-at, environment, observed and result and the observation matches the item;
+  FAIL (`CAUSE: ENV`) when a field is missing or it says nobody performed the step. Screenshots
+  under `evidence/qa/gate-r<N>/` are the gate's own runs, not the tester's proof.
 - **master decisions (every stage)**: `01-spec.md` `## Decisions` may hold `master-decided` and
   `master-created` entries the master added on its own, and `user` entries (the user's answers; a
   `user` entry with `(overrides: ...)` replaces the master entry it names; an `upheld` entry records

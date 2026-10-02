@@ -77,11 +77,14 @@ reviewer any file change.
 
 1. `resume <dir> --auto` (a scheduled firing): run `auto-check` and do exactly what its `ACTION`
    line says; it logs the RESUME itself. Never ask the user anything in such a firing.
-   `resume <dir>` (the user resuming): record the user's decision with
+   `resume <dir>` (the user resuming): if the user made a decision, record it with
    `decision -Kind user -Stage <stage> -Note "<decision>"` (add `-Overrides "<master entry>"` when it
-   replaces one of your entries); save manual QA results as `evidence/qa/Q<n>-manual.log` and check
-   those Q items; log `RESUME` with note `user <reason>`; re-arm Auto resume; continue with `status`'s
-   `NEXT` (after manual QA results, go straight to the qa gate and reviewer).
+   replaces one of your entries); save manual QA results as `evidence/qa/Q<n>-manual.log` in the
+   format of `references/ui-testing.md` section 4 and check those Q items; log `RESUME` with note
+   `user <reason>`; re-arm Auto resume; continue with `status`'s `NEXT` (after manual QA results, go
+   straight to the qa gate and reviewer of the round `NEXT` names; the BLOCKED_ENV round counts).
+   If the last dispatch was interrupted, the worker may have left partial changes: tell the next
+   worker to inspect the current diff first and continue from it.
    Either way, skip the rest of Step 0.
 2. Run `init` with the settings above; its `WORKDIR` line is `<dir>`. If it warns that the tree is
    dirty, that `work/` is not ignored, or that this is not a git repository, get it fixed first.
@@ -89,11 +92,12 @@ reviewer any file change.
    test commands, how to launch, key folders, conventions from CLAUDE.md/AGENTS.md, wiki index. No
    test command -> `test: none`; the planner then adds a minimal test setup. Also the UI technology
    and the UI test harness command, found from the project files with `references/ui-testing.md`
-   section 1 (an existing UI test or loop runner wins); `none` when there is no UI.
+   section 1 (an existing UI test or loop runner wins): the command, `to be built: <method>`, or
+   `none` when there is no UI.
 4. Interview the user until nothing is ambiguous: scope, explicit non-goals, edge cases, acceptance
    criteria. Ask in small batches. Write `01-spec.md` (Out of scope is mandatory; Verify commands
-   `- build:` / `- test:` are what `gate` runs; `- ui-test:` is the harness command the QA gate also
-   runs: the existing one, `none` when the change has no UI behavior, or `none` for now when a
+   `- build:` / `- test:` are what `gate` runs; `- ui-test:` is the harness command the dev and QA
+   gates also run: the existing one, `none` when the change has no UI behavior, or `none` for now when a
    harness must first be built - the planner then plans it). For UI behavior, write acceptance
    criteria a harness can check (what is shown or enabled after which action), not only looks. In `## Risk` set `level: high` for security, auth,
    concurrency, data migration/persistence formats or a public API; otherwise `normal`.
@@ -209,8 +213,9 @@ What I need from you: <decision / permission / environment fix / manual QA resul
 Resume with: /feature-flow resume <dir>
 ```
 
-If the user interrupts or asks to stop, log `PAUSE` (note `user stopped`, on the stage `status`
-shows) and delete the schedule.
+If the user interrupts, refuses a dispatch or asks to stop, log `PAUSE` (note `user stopped`, on the
+stage `status` shows) and delete the schedule before anything else; a scheduled firing then stops on
+its own (`auto-check` returns STOP for a paused run).
 
 ## Auto resume (AUTO_RESUME = on)
 

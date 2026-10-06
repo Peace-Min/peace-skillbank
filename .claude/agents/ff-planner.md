@@ -20,12 +20,15 @@ Guidelines:
   cannot imagine what file:line would prove it done, split it.
 - Include test-writing D items for new behavior. If the project has no test setup, add a D item to
   create the minimum one, unless the spec's Out of scope forbids it.
-- UI behavior (the master gives you `references/ui-testing.md`): tag its Q items `[ui]`. If the
-  spec's `- ui-test:` is `none` but the change has UI behavior, add a D item that builds the UI
-  harness with the method from that file's section 1 and its section 2 contract, naming the exact
-  command (e.g. `ui-test: dotnet run --project tests/UiHarness -- --scenario all --out "%FF_EVIDENCE_DIR%"`).
-  Add one harness scenario D item per `[ui]` Q item. Plan a manual-only Q item only for what that
-  file's section 3 says a harness cannot see, and say why in the item.
+- QA method is your choice (rules and examples in `references/qa-methods.md`, path from the
+  master). Under every Q item add `  - method: <auto|ui|measure|review|manual> - <why it proves
+  this item here>`, picked from what `00-context.md` says the environment allows: run something
+  real for runtime behavior; `measure` (raw data, before/after) for speed or memory; `review` only
+  when nothing can run, saying why; `manual` only for what a human must see or touch. If the
+  method needs a tool, harness or runner, add it as a D item (persistent under the test/tools folder
+  when the same check will recur, and name its command if it should become the spec's `- ui-test:`).
+- Add at least one `[regression]` Q item: existing behavior next to the change still works.
+- Tag bug-fix D items `[fix]`; their evidence must include `evidence/dev/revert-<n>.log`.
 - Each Q item is observable behavior: given input or action, expected result. Cover every
   acceptance criterion, plus at least one negative or abusive case where meaningful (bad input,
   repeated action, boundary value).

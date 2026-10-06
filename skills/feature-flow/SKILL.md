@@ -42,9 +42,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File $ff auto-check -WorkDir <dir
 `<dir>` is the absolute work folder. `-Round`: the current round N for FAIL, PASS, MASTER_FIX and
 halts; `0` for START, PAUSE, RESUME and the intake and done events. Never hand-edit `events.log`. References:
 `references/work-folder-layout.md` (files and formats; give the planner its absolute path),
-`references/ui-testing.md` (GUI QA; give its absolute path to planner, developer and QA tester
-whenever the change has UI behavior), `references/status-codes.md`, `references/model-selection.md`,
-`references/auto-resume.md`.
+`references/qa-methods.md` (QA: the method is the model's choice, the rules are fixed; give its
+absolute path to planner, developer, QA tester and reviewer), `references/status-codes.md`,
+`references/model-selection.md`, `references/auto-resume.md`.
 
 ## Agents
 
@@ -80,7 +80,7 @@ reviewer any file change.
    `resume <dir>` (the user resuming): if the user made a decision, record it with
    `decision -Kind user -Stage <stage> -Note "<decision>"` (add `-Overrides "<master entry>"` when it
    replaces one of your entries); save manual QA results as `evidence/qa/Q<n>-manual.log` in the
-   format of `references/ui-testing.md` section 4 and check those Q items; log `RESUME` with note
+   format of `references/qa-methods.md` section 4 and check those Q items; log `RESUME` with note
    `user <reason>`; re-arm Auto resume; continue with `status`'s `NEXT` (after manual QA results, go
    straight to the qa gate and reviewer of the round `NEXT` names; the BLOCKED_ENV round counts).
    If the last dispatch was interrupted, the worker may have left partial changes: tell the next
@@ -90,16 +90,15 @@ reviewer any file change.
    dirty, that `work/` is not ignored, or that this is not a git repository, get it fixed first.
 3. Fill `00-context.md` yourself (the seed every agent reads instead of re-exploring): build and
    test commands, how to launch, key folders, conventions from CLAUDE.md/AGENTS.md, wiki index. No
-   test command -> `test: none`; the planner then adds a minimal test setup. Also the UI technology
-   and the UI test harness command, found from the project files with `references/ui-testing.md`
-   section 1 (an existing UI test or loop runner wins): the command, `to be built: <method>`, or
-   `none` when there is no UI.
+   test command -> `test: none`; the planner then adds a minimal test setup. Also what the
+   environment allows for QA, from the project files: the UI technology, any existing UI test,
+   stress, measurement or loop runner, and what cannot run here (no build environment, field-only
+   hardware). The planner picks QA methods from this.
 4. Interview the user until nothing is ambiguous: scope, explicit non-goals, edge cases, acceptance
    criteria. Ask in small batches. Write `01-spec.md` (Out of scope is mandatory; Verify commands
-   `- build:` / `- test:` are what `gate` runs; `- ui-test:` is the harness command the dev and QA
-   gates also run: the existing one, `none` when the change has no UI behavior, or `none` for now when a
-   harness must first be built - the planner then plans it). For UI behavior, write acceptance
-   criteria a harness can check (what is shown or enabled after which action), not only looks. In `## Risk` set `level: high` for security, auth,
+   `- build:` / `- test:` are what `gate` runs; `- ui-test:` is an unattended runner command the dev
+   and QA gates also run - an existing one, or `none`). Write acceptance criteria that can be
+   observed (what is shown, returned, measured after which action), not only looks. In `## Risk` set `level: high` for security, auth,
    concurrency, data migration/persistence formats or a public API; otherwise `normal`.
 5. Show the spec, get explicit approval, log `intake PASS`, then arm Auto resume if `AUTO_RESUME = on`.
    Non-interactive runs: if the request itself states scope, out of scope, acceptance criteria and
@@ -122,7 +121,7 @@ Log `<stage> START`, then repeat rounds until PASS or a limit; take N from `stat
    evidence; wiki: links), and on failure writes `reviews/<stage>-r<N>.md` and logs the FAIL itself.
    Exit 1 -> next round. Exit 3 -> loop limit (below). Do not call the reviewer on a failed gate.
    Plan stage only: if the spec said `test: none` and the plan adds a test setup, update the spec's
-   `- test:` line first; likewise set `- ui-test:` to the command a planned UI harness D item names.
+   `- test:` line first; likewise set `- ui-test:` when the plan adds a persistent unattended runner.
 3. **Review.** Dispatch a fresh `ff-reviewer` (model from `pick-model -Role reviewer -Stage <stage>`)
    with the stage name and file list. Save its reply as `reviews/<stage>-r<N>.md`, removing only
    code-fence lines.
@@ -178,8 +177,7 @@ approved spec itself, it is a Master decision. `CAUSE: ENV` -> Master fix first.
 cannot be exercised automatically, the QA tester returns `BLOCKED_ENV` with
 `evidence/qa/manual-checklist.md`. Run `manual-check` first: if it fails (an item without the
 automation it tried), send the checklist back to the tester; never hand a human an item nobody
-tried to automate. A missing harness is not an ENV block: if the plan has none, it is a
-`-SendBack SPEC` (the planner adds the harness D item). Only then give the checklist to the user.
+tried to automate. Only then give the checklist to the user.
 
 ## Parallel development (PARALLEL = on)
 

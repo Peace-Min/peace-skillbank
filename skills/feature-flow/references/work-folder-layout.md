@@ -20,7 +20,8 @@ work/<yyyyMMdd-HHmm>-<slug>/
     dev/group-A.md     parallel mode: one group's D items with checks and evidence (developer of group A)
     qa/verify-r1.log   test output per QA round (master, gate)
     qa/Q1-<short>.log  proof per Q item: steps, observed, expected (qa tester)
-    qa/Q1-sorted.png   screenshot written by the UI harness run for that item (qa tester)
+    qa/Q1-sorted.png   files the item's method produced: screenshots, traces, measurement exports (qa tester)
+    dev/revert-1.log   a [fix] item's test run with the fix reverted, failing (developer)
     qa/manual-checklist.md  only items QA tried and failed to automate; each names the attempt (qa tester)
     qa/Q1-manual.log   the user's manual QA result for an item, written by the master on resume
   raw/                 optional: raw transcripts/exports if the user wants full traceability
@@ -35,8 +36,8 @@ work/<yyyyMMdd-HHmm>-<slug>/
 
 Sections: Goal, In scope, **Out of scope** (mandatory, never empty: write "none beyond In scope"
 only if truly none), Constraints / cautions, Acceptance criteria (testable sentences), Verify
-commands (`- build:`, `- test:`, and `- ui-test:` - the UI harness command the QA gate also runs, or
-`none`; see `ui-testing.md`; each command is killed after VerifyTimeoutMin minutes), Risk (`- level: high|normal|low`; high for security, auth, concurrency,
+commands (`- build:`, `- test:`, and `- ui-test:` - an unattended runner the dev and QA gates also
+run, or `none`; see `qa-methods.md`; each command is killed after VerifyTimeoutMin minutes), Risk (`- level: high|normal|low`; high for security, auth, concurrency,
 data migration/persistence formats, public API; read by `ff.ps1 pick-model`), and, once the user
 answers an escalation, `## Decisions`, written only by `ff.ps1 decision`:
 `- master-decided (<date>, <stage>): <text>`, `- master-created (<date>, <stage>): <path> (<why>)`,
@@ -59,6 +60,10 @@ so quote the entry text in `-Overrides` / upheld notes).
 
 ## QA
 - [ ] Q1: Five wrong passwords lock the account; sixth attempt shows the lock message
+  - method: auto - integration test drives the login service with six attempts
+  - evidence:
+- [ ] Q2: Correct password still logs in after the change [regression]
+  - method: auto - existing login tests plus one run of the CLI
   - evidence:
 ```
 
@@ -79,7 +84,11 @@ Rules enforced by `ff.ps1 check-todo`:
   spaces are not supported.
 - Dev gate: every D item checked. QA gate (`-AllowOpen`): a Q item may stay unchecked only if a
   proof file `evidence/qa/Q<n>-*` exists; the reviewer then fails the stage and names the CAUSE.
-- Plan gate (`-FormatOnly`): at least one D and one Q item, unique IDs, every item has an evidence line.
+- Plan gate (`-FormatOnly`): at least one D and one Q item, unique IDs, every item has an evidence
+  line, every Q item has `  - method: <auto|ui|measure|review|manual> - <why>`, and at least one Q
+  item is tagged `[regression]`.
+- A checked D item tagged `[fix]` needs an `evidence/dev/revert-<n>.log` ref; a checked Q item with
+  method `manual` needs `evidence/qa/Q<n>-manual.log` (the user's report).
 
 Parallel groups: `[group:X]` on D items plus a `  - files:` line per item; groups never share a
 file. Parallel developers write their items to `evidence/dev/group-X.md`; `ff.ps1 merge-evidence`

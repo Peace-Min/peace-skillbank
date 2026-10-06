@@ -17,12 +17,14 @@ in the files.
 - **plan** (`02-todo.md`): every In-scope item and acceptance criterion is covered by at least one
   D item and one Q item; nothing from Out of scope is planned; items are small enough to verify one
   by one; Q items describe observable behavior (inputs, expected result), including at least one
-  negative/abusive case where it makes sense. UI behavior: its Q items are tagged `[ui]` and
-  are checked by a harness or UI automation (a D item builds the harness when the spec's
-  `- ui-test:` is `none`); a manual-only item must say what a harness cannot see.
+  negative/abusive case where it makes sense. Each Q item's `method:` must really prove it in
+  this environment (`references/qa-methods.md`): runtime behavior is run, not only read; speed or
+  memory is measured with raw data; `review` and `manual` say why nothing stronger works. At
+  least one `[regression]` item covers existing behavior a user would notice breaking.
 - **dev** (`evidence/dev/diff-r<N>.patch`, `02-todo.md`, `evidence/dev/verify-r<N>.log`): open
   each checked D item's evidence refs and confirm the code there really does what the item says;
-  diff contains nothing outside the spec (unrequested features, drive-by refactors); conventions in
+  diff contains nothing outside the spec (unrequested features, drive-by refactors); a `[fix]`
+  item's `evidence/dev/revert-<n>.log` shows the test failing without the fix; conventions in
   `00-context.md` are followed; tests exist for new behavior and actually assert it. Q items
   checked during the dev stage (before any QA round) are a FAIL: only the QA tester checks them.
 - **qa** (`02-todo.md` Q items, `evidence/qa/`): each checked Q item has evidence that shows the
@@ -31,10 +33,11 @@ in the files.
   means FAIL. On FAIL also give `CAUSE`: IMPL (product code is wrong), SPEC (spec or plan is wrong
   or incomplete), QA (the product looks right but the tester's evidence is wrong, missing, hand
   written or saved outside `<work folder>/evidence/qa/`), ENV (could not be exercised at all).
-  UI proof must come from a real run of the current build (command, output, exit code, the
-  screenshot it wrote); a state set up in memory to look fixed, an older image, or a harness that
-  sets private fields instead of the user's path is `CAUSE: QA` (or IMPL for the harness code).
-  An item in `evidence/qa/manual-checklist.md` that a harness or UI automation could check is FAIL.
+  Proof must come from a real run of the current build with its raw output and files: a state set
+  up in memory to look fixed, an older image or number, a measurement summary without the raw
+  data, or a runner that sets private fields instead of the user's path is `CAUSE: QA` (IMPL for
+  the runner code). Re-read measurements yourself from the raw files. An item in
+  `evidence/qa/manual-checklist.md` that automation could check is FAIL.
   A `Q<n>-manual.log` is the user's report, written by the master: accept it when it has
   checked-by, checked-at, environment, observed and result and the observation matches the item;
   FAIL (`CAUSE: ENV`) when a field is missing or it says nobody performed the step. Screenshots

@@ -64,7 +64,8 @@ try {
         "- [x] D2: Max attempts constant",
         "  - evidence: src/Lockout.cs:7 built fine with v1.2 of Notes.md tooling",
         "", "## QA",
-        "- [ ] Q1: Sixth attempt is rejected",
+        "- [ ] Q1: Sixth attempt is rejected [regression]",
+        "  - method: auto - the unit test suite drives the policy directly",
         "  - evidence:"
     )
     Set-Content -LiteralPath (Join-Path $work "02-todo.md") -Value $todoOk -Encoding UTF8
@@ -95,6 +96,21 @@ try {
     Set-Content -LiteralPath (Join-Path $work "02-todo.md") -Value @("## Dev", "- [ ] D1: a", "  - evidence:") -Encoding UTF8
     $r = Invoke-Ff $project @("check-todo", "-WorkDir", $work, "-FormatOnly")
     Check "format: no Q items -> exit 1" (($r.Code -eq 1) -and ($r.Out -match 'no Q items')) $r.Out
+    Set-Content -LiteralPath (Join-Path $work "02-todo.md") -Value @("## Dev", "- [ ] D1: a", "  - evidence:", "## QA", "- [ ] Q1: b", "  - method: magic - x", "  - evidence:", "- [ ] Q2: c", "  - method: ui", "  - evidence:") -Encoding UTF8
+    $r = Invoke-Ff $project @("check-todo", "-WorkDir", $work, "-FormatOnly")
+    Check "format: unknown method, method without reason, no [regression] -> exit 1" (($r.Code -eq 1) -and ($r.Out -match 'Q1 has no .*method') -and ($r.Out -match 'Q2 method .ui. gives no reason') -and ($r.Out -match 'no \[regression\] Q item')) $r.Out
+    Set-Content -LiteralPath (Join-Path $work "02-todo.md") -Value @("## Dev", "- [ ] D1: a", "  - evidence:", "## QA", "- [ ] Q1: perf stays under 50 ms", "  - method: measure - PerfView trace before/after, raw files kept", "  - evidence:", "- [ ] Q2: old export still works [regression]", "  - method: review - cannot build here; compare compile errors before/after", "  - evidence:") -Encoding UTF8
+    $r = Invoke-Ff $project @("check-todo", "-WorkDir", $work, "-FormatOnly")
+    Check "format: any method the model picks (measure, review) is accepted with a reason" ($r.Code -eq 0) $r.Out
+
+    # 4b. [fix] needs a revert log; a manual Q item is closed only by the user's report.
+    Set-Content -LiteralPath (Join-Path $work "evidence\dev\revert-1.log") -Value "FAIL with fix reverted" -Encoding ASCII
+    Set-Content -LiteralPath (Join-Path $work "evidence\qa\Q2-manual.log") -Value "checked-by: user" -Encoding ASCII
+    Set-Content -LiteralPath (Join-Path $work "02-todo.md") -Value @("## Dev", "- [x] D1: null check [fix]", "  - evidence: src/Lockout.cs:7", "- [x] D2: other [fix]", "  - evidence: src/Lockout.cs:7 | evidence/dev/revert-1.log", "## QA", "- [x] Q1: dpi", "  - method: manual - real 150% scaling", "  - evidence: src/Lockout.cs:7", "- [x] Q2: dpi again", "  - method: manual - real 150% scaling", "  - evidence: evidence/qa/Q2-manual.log") -Encoding UTF8
+    $r = Invoke-Ff $project @("check-todo", "-WorkDir", $work)
+    Check "[fix] without revert log -> NO-REVERT; with it -> OK" (($r.Out -match '(?m)^NO-REVERT\s+D1') -and ($r.Out -match '(?m)^OK\s+D2')) $r.Out
+    Check "manual Q without Q<n>-manual.log -> NO-MANUAL; with it -> OK" (($r.Out -match '(?m)^NO-MANUAL\s+Q1') -and ($r.Out -match '(?m)^OK\s+Q2')) $r.Out
+    Remove-Item -LiteralPath (Join-Path $work "evidence\dev\revert-1.log"), (Join-Path $work "evidence\qa\Q2-manual.log") -Force
 
     # 5. -AllowOpen (qa gate): open Q without proof fails; with a proof file it passes as OPEN-OK.
     Set-Content -LiteralPath (Join-Path $work "02-todo.md") -Value $todoOk -Encoding UTF8
@@ -529,7 +545,7 @@ try {
     $gs = Get-WorkDirLine (Invoke-Ff $gp @("init", "-Title", "gate probe")).Out
     $specG = [System.IO.File]::ReadAllText((Join-Path $gs "01-spec.md")) -replace '- build:', '- build: echo build-ok' -replace '- test:', '- test: exit /b 0'
     [System.IO.File]::WriteAllText((Join-Path $gs "01-spec.md"), $specG)
-    Set-Content -LiteralPath (Join-Path $gs "02-todo.md") -Value @("## Dev", "- [x] D1: a.txt changed", "  - evidence: src/a.txt:1", "## QA", "- [ ] Q1: q", "  - evidence:") -Encoding UTF8
+    Set-Content -LiteralPath (Join-Path $gs "02-todo.md") -Value @("## Dev", "- [x] D1: a.txt changed", "  - evidence: src/a.txt:1", "## QA", "- [ ] Q1: q [regression]", "  - method: auto - test suite", "  - evidence:") -Encoding UTF8
     $r = Invoke-Ff $gp @("gate", "-WorkDir", $gs, "-Stage", "plan", "-Round", "1")
     Check "plan gate passes on a well-formed TODO" (($r.Code -eq 0) -and ($r.Out -match 'GATE\s+PASS')) $r.Out
     $r = Invoke-Ff $gp @("gate", "-WorkDir", $gs, "-Stage", "dev", "-Round", "1")

@@ -8,7 +8,7 @@
     Commands:
       init        Create work/<stamp>-<slug>/ with the standard layout; record the git base and settings.
       event       Append one line to events.log. Exit 3 on loop limit or send-back limit.
-      check-todo  Gate for TODO items (see -Prefix, -AllowOpen, -FormatOnly).
+      check-todo  Gate for TODO items (see -Prefix, -AllowOpen, -FormatOnly; Q method lines, [regression], [fix]).
       diff        Save the round diff vs the recorded base (tracked + untracked, work/ excluded).
       wiki-check  Verify docs/wiki/index.md exists and every relative .md link in docs/wiki resolves.
       status      Print stage, round/send-back counts, TODO progress and the next action.
@@ -72,6 +72,7 @@ $validStages = @("intake", "plan", "dev", "qa", "wiki", "done")
 $validStatus = @("START", "PASS", "FAIL", "MASTER_FIX", "DECIDED", "BLOCKED_ENV", "BLOCKED_PERMISSION", "NEEDS_DECISION", "LOOP_LIMIT", "PAUSE", "RESUME")
 $haltStatus = @("BLOCKED_ENV", "BLOCKED_PERMISSION", "NEEDS_DECISION", "LOOP_LIMIT", "PAUSE")
 $utf8 = New-Object System.Text.UTF8Encoding($false)
+$qaMethods = @("auto", "ui", "measure", "review", "manual")
 $BoundNames = @($PSBoundParameters.Keys)
 
 function Import-WorkSettings {
@@ -340,13 +341,15 @@ function Read-TodoFile([string]$todo) {
     foreach ($line in [System.IO.File]::ReadAllLines($todo)) {
         $m = [regex]::Match($line, '^\s*-\s*\[( |x|X)\]\s*([A-Za-z]+\d+)\s*[:.)-]?\s*(.*)$')
         if ($m.Success) {
-            $current = [pscustomobject]@{ Id = $m.Groups[2].Value; Checked = ($m.Groups[1].Value -ne " "); Text = $m.Groups[3].Value; HasEvidenceLine = $false; Evidence = "" }
+            $current = [pscustomobject]@{ Id = $m.Groups[2].Value; Checked = ($m.Groups[1].Value -ne " "); Text = $m.Groups[3].Value; HasEvidenceLine = $false; Evidence = ""; Method = ""; MethodWhy = "" }
             $items += $current
             continue
         }
         if ($null -ne $current) {
             $ev = [regex]::Match($line, '^\s*-?\s*evidence[ \t]*:[ \t]*(.*)$', 'IgnoreCase')
             if ($ev.Success) { $current.HasEvidenceLine = $true; $current.Evidence = $ev.Groups[1].Value.Trim() }
+            $mt = [regex]::Match($line, '^\s*-?\s*method[ \t]*:[ \t]*([A-Za-z]+)[ \t]*(?:-[ \t]*(.*))?$', 'IgnoreCase')
+            if ($mt.Success) { $current.Method = $mt.Groups[1].Value.ToLowerInvariant(); $current.MethodWhy = $mt.Groups[2].Value.Trim() }
         }
     }
     return $items
@@ -659,13 +662,21 @@ switch ($Command) {
         $items = Get-TodoItems $dir
         if ($null -eq $items) { Fail-Usage "02-todo.md not found in $dir" }
 
-        # 0. -FormatOnly: plan-stage gate. Needs D and Q items, unique IDs, an evidence line each.
+        # 0. -FormatOnly: plan-stage gate. Needs D and Q items, unique IDs, an evidence line each; every Q
+        #    item names how it will be verified (the method is the model's choice, the reviewer judges it),
+        #    and at least one Q item checks that existing behavior still works ([regression]).
         if ($FormatOnly) {
             $bad = 0
+            $qItems = @($items | Where-Object { $_.Id -like "Q*" })
             if (@($items | Where-Object { $_.Id -like "D*" }).Count -eq 0) { Write-Output "FORMAT    no D items"; $bad++ }
-            if (@($items | Where-Object { $_.Id -like "Q*" }).Count -eq 0) { Write-Output "FORMAT    no Q items"; $bad++ }
+            if ($qItems.Count -eq 0) { Write-Output "FORMAT    no Q items"; $bad++ }
             foreach ($dup in ($items | Group-Object Id | Where-Object { $_.Count -gt 1 })) { Write-Output "FORMAT    duplicate id $($dup.Name)"; $bad++ }
             foreach ($item in $items) { if (-not $item.HasEvidenceLine) { Write-Output "FORMAT    $($item.Id) has no '  - evidence:' line"; $bad++ } }
+            foreach ($item in $qItems) {
+                if ($item.Method -notin $qaMethods) { Write-Output "FORMAT    $($item.Id) has no '  - method: <$($qaMethods -join '|')> - <why>' line"; $bad++ }
+                elseif (-not $item.MethodWhy) { Write-Output "FORMAT    $($item.Id) method '$($item.Method)' gives no reason ('- <why>')"; $bad++ }
+            }
+            if ($qItems.Count -gt 0 -and @($qItems | Where-Object { $_.Text -match '\[regression\]' }).Count -eq 0) { Write-Output "FORMAT    no [regression] Q item (existing behavior that must keep working)"; $bad++ }
             Write-Output ("SUMMARY   {0} item(s), {1} problem(s)" -f $items.Count, $bad)
             if ($bad -gt 0) { exit 1 }
             exit 0
@@ -700,6 +711,10 @@ switch ($Command) {
             }
             if ($problems.Count -gt 0) { Write-Output "BAD-REF   $($item.Id)  $($problems -join '; ')"; $bad++ }
             elseif ($refs -eq 0) { Write-Output "NO-REF    $($item.Id)  evidence has no file ref (path or path:line)"; $bad++ }
+            # 3. A bug fix is proven by its test failing without the fix; a manual item is closed only by
+            #    the user's report the master saved.
+            elseif ($item.Id -like "D*" -and $item.Text -match '\[fix\]' -and $item.Evidence -notmatch 'evidence/dev/revert-\S+') { Write-Output "NO-REVERT $($item.Id)  [fix] item needs evidence/dev/revert-<n>.log (the test fails with the fix reverted)"; $bad++ }
+            elseif ($item.Id -like "Q*" -and $item.Method -eq "manual" -and $item.Evidence -notmatch ('evidence/qa/' + [regex]::Escape($item.Id) + '-manual\.log')) { Write-Output "NO-MANUAL $($item.Id)  manual item is closed only by evidence/qa/$($item.Id)-manual.log (the user's report)"; $bad++ }
             else { Write-Output "OK        $($item.Id)" }
         }
         Write-Output ("SUMMARY   {0} item(s), {1} problem(s)" -f $items.Count, $bad)

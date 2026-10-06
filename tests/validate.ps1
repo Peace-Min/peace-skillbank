@@ -645,10 +645,11 @@ Assert-Condition ($ffSkillContent -match "gate -WorkDir") "feature-flow SKILL.md
 Assert-Condition ($ffSkillContent -match "decision -Kind decided" -and $ffSkillContent -match "MAX_DECISIONS = \d") "feature-flow SKILL.md must record master decisions through ff.ps1 decision with a MAX_DECISIONS cap"
 $ffReviewerBody = Get-Content -Raw -Encoding UTF8 -LiteralPath (Join-Path $RepositoryRoot "agents\ff-reviewer.md")
 Assert-Condition ($ffReviewerBody -match "master-decided") "ff-reviewer must check the master's own decisions"
-Assert-Condition (Test-Path -LiteralPath (Join-Path $ffRoot "references\ui-testing.md")) "feature-flow must ship references/ui-testing.md (GUI QA procedure)"
-Assert-Condition ($ffSkillContent -match "references/ui-testing.md" -and $ffSkillContent -match "manual-check") "feature-flow SKILL.md must route GUI QA through references/ui-testing.md and ff.ps1 manual-check"
+Assert-Condition (Test-Path -LiteralPath (Join-Path $ffRoot "references\qa-methods.md")) "feature-flow must ship references/qa-methods.md (QA methods and fixed rules)"
+Assert-Condition ($ffSkillContent -match "references/qa-methods.md" -and $ffSkillContent -match "manual-check") "feature-flow SKILL.md must route QA through references/qa-methods.md and ff.ps1 manual-check"
 Assert-Condition ((Get-Content -Raw -Encoding UTF8 -LiteralPath (Join-Path $RepositoryRoot "agents\ff-qa-tester.md")) -match "automation tried") "ff-qa-tester must record the automation it tried before handing an item to a human"
-Assert-Condition ($ffReviewerBody -match "ui-test") "ff-reviewer must check that UI behavior is covered by a harness"
+Assert-Condition ((Get-Content -Raw -Encoding UTF8 -LiteralPath (Join-Path $RepositoryRoot "agents\ff-planner.md")) -match "method:" -and (Get-Content -Raw -Encoding UTF8 -LiteralPath (Join-Path $RepositoryRoot "agents\ff-planner.md")) -match "\[regression\]") "ff-planner must give every Q item a method line and plan a [regression] item"
+Assert-Condition ($ffReviewerBody -match "method:" -and $ffReviewerBody -match "revert") "ff-reviewer must judge each Q item's method and [fix] revert logs"
 # The reviewer must stay read-only: no Write/Edit/Bash in its tool list.
 $ffReviewerFront = Get-FrontMatter -Path (Join-Path $RepositoryRoot "agents\ff-reviewer.md")
 Assert-Condition ($ffReviewerFront -match "(?m)^tools:\s*Read, Grep, Glob\s*$") "ff-reviewer must be read-only (tools: Read, Grep, Glob)"

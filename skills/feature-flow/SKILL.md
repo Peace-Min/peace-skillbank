@@ -10,14 +10,21 @@ interview, write the spec, dispatch subagents, run the gates, fix what blocks th
 safely can, record state, and escalate only what needs the user.
 
 **Talking to the user.** Write every message to the user in the user's language (the language of
-their request; Korean request -> Korean), including interview questions, the spec summary,
-escalations and the final report; keep commands, paths, IDs and status codes as they are. Files in
-the work folder may stay in English. **Every question with choices goes through the
+their request; Korean request -> Korean). That means **every** line the user sees, including one-line
+progress notes between tool calls ("Plan written: 21 D items, running the gate" ->
+"기획 작성 완료: 개발 21개, QA 15개. 게이트를 돌립니다."), interview questions, the spec summary,
+escalations and the final report, even though this skill and the work files are in English. Keep
+commands, paths, IDs and status codes as they are. Files in the work folder may stay in English. **Every question with choices goes through the
 `AskUserQuestion` tool** (load it with ToolSearch `select:AskUserQuestion` if it is deferred): at
 most 4 questions per call, 2-4 options each, your recommendation first with "(Recommended)" in its
 label (in the user's language), a one-line trade-off per option; the user can always type another
 answer. Use plain chat only for an open question with no sensible options, or when the tool is not
 available (a scheduled `--auto` firing never asks anything).
+
+**Secrets.** Never put a password, token or key in a command line, a file, a commit, a message or a
+subagent brief, yourself included. Pass it through an environment variable the user sets, or stdin
+from a prompt the user fills; write only the variable names to `00-context.md` (`Secrets:` line). If a
+project file already contains a secret in plain text, do not copy it anywhere and tell the user once.
 
 **Windows only:** `ff.ps1` needs Windows PowerShell 5.1+ and runs gate commands through `cmd.exe`.
 On macOS or Linux, stop and tell the user this skill does not run there.
@@ -34,7 +41,7 @@ be edited. `init` prints the effective values on its `SETTINGS` line and stores 
 - `MAX_GATE_FAILS = 3` mechanical gate FAILs per stage before the loop limit (a separate budget).
 - `MAX_QA_CYCLES = 2` times QA may send work back to dev/plan.
 - `MAX_FIXES = 1` master interventions per stage and kind (`block:` and `loop:` each) before escalating.
-- `MAX_DECISIONS = 3` in-scope decisions the master may take on its own per work item.
+- `MAX_DECISIONS = 5` in-scope decisions the master may take on its own per work item (one per proposal or choice; never merge several into one entry).
 - `MAX_MODEL = fable` strongest model `pick-model` may choose (`opus` to cap cost; `inherit` to never pass a model).
 - `VERIFY_TIMEOUT_MIN = 20` minutes each build/test/ui-test command may run in a gate before it is killed (FAIL).
 - `PARALLEL = on` (`Parallel`) develop independent `[group:X]` work in parallel worktrees when the conditions below hold.
@@ -42,11 +49,12 @@ be edited. `init` prints the effective values on its `SETTINGS` line and stores 
 
 `<skill-dir>` is the copy of this skill that contains `scripts/ff.ps1`. If
 `<project root>/.claude/skills/feature-flow/scripts/ff.ps1` exists, use that copy even when the
-skill loader reports another base directory. Run everything from the project root:
+skill loader reports another base directory. Run everything from the project root (`ff.ps1` refuses a work folder outside `-Root`, which defaults
+to the current folder; never run it from inside the work folder):
 
 ```text
 $ff = "<skill-dir>/scripts/ff.ps1"
-powershell -NoProfile -ExecutionPolicy Bypass -File $ff init -Title "<short title>" -MaxRounds 3 -MaxGateFails 3 -MaxQaCycles 2 -MaxFixes 1 -MaxDecisions 3 -MaxModel fable -VerifyTimeoutMin 20
+powershell -NoProfile -ExecutionPolicy Bypass -File $ff init -Title "<short title>" -MaxRounds 3 -MaxGateFails 3 -MaxQaCycles 2 -MaxFixes 1 -MaxDecisions 5 -MaxModel fable -VerifyTimeoutMin 20
 powershell -NoProfile -ExecutionPolicy Bypass -File $ff status -WorkDir <dir>
 powershell -NoProfile -ExecutionPolicy Bypass -File $ff pick-model -WorkDir <dir> -Role <planner|developer|qa|wiki|reviewer> [-Stage <stage>]
 powershell -NoProfile -ExecutionPolicy Bypass -File $ff gate -WorkDir <dir> -Stage <plan|dev|qa|wiki> -Round <N>
@@ -76,7 +84,7 @@ absolute path to planner, developer, QA tester and reviewer), `references/status
 
 **Every dispatch:** run `pick-model` for the role (reviewer: `-Stage <stage>`) and pass the printed
 `MODEL` as the Agent call's `model` (`MODEL inherit` = pass none). Give workers absolute file paths
-(including the absolute path of `ff.ps1`, so developer and QA tester can self-check with
+(including, for developer and QA tester only, the absolute path of `ff.ps1`, so they can self-check with
 `powershell -NoProfile -ExecutionPolicy Bypass -File <ff.ps1> check-todo ...`) plus, if useful, a short brief of your own (what matters, what to watch for). Give the reviewer file
 paths only, never your reasoning or a worker's transcript.
 
@@ -94,8 +102,9 @@ reviewer any file change.
 
 ## Step 0 - Intake (only stage with mandatory human approval)
 
-1. `resume <dir> --auto` (a scheduled firing): run `auto-check` and do exactly what its `ACTION`
-   line says; it logs the RESUME itself. Never ask the user anything in such a firing.
+1. `resume <dir> --auto` (a scheduled firing): if a subagent you dispatched in this session is still
+   running, ignore the firing (do nothing, log nothing). Otherwise run `auto-check` and do exactly what
+   its `ACTION` line says; it logs the RESUME itself. Never ask the user anything in such a firing.
    `resume <dir>` (the user resuming): if the user made a decision, record it with
    `decision -Kind user -Stage <stage> -Note "<decision>"` (add `-Overrides "<master entry>"` when it
    replaces one of your entries); save manual QA results as `evidence/qa/Q<n>-manual.log` in the
@@ -105,8 +114,11 @@ reviewer any file change.
    If the last dispatch was interrupted, the worker may have left partial changes: tell the next
    worker to inspect the current diff first and continue from it.
    Either way, skip the rest of Step 0.
-2. Run `init` with the settings above; its `WORKDIR` line is `<dir>`. If it warns that the tree is
-   dirty, that `work/` is not ignored, or that this is not a git repository, get it fixed first.
+2. A new request always gets a new work folder: run `init` with the settings above; its `WORKDIR` line
+   is `<dir>` and its `SETTINGS` line gives the effective settings. Never reuse an existing folder for a
+   new request, even for the same topic; `init` lists unfinished ones (`INFO:`), which continue only
+   through `resume <dir>` (mention them to the user once). If it warns that the tree is dirty, that
+   `work/` is not ignored, or that this is not a git repository, get it fixed first (ask the user).
 3. Fill `00-context.md` yourself (the seed every agent reads instead of re-exploring): build and
    test commands, how to launch, key folders, conventions from CLAUDE.md/AGENTS.md, wiki index. No
    test command -> `test: none`; the planner then adds a minimal test setup. Also what the
@@ -119,10 +131,14 @@ reviewer any file change.
    `- build:` / `- test:` are what `gate` runs; `- ui-test:` is an unattended runner command the dev
    and QA gates also run - an existing one, or `none`). Write acceptance criteria that can be
    observed (what is shown, returned, measured after which action), not only looks. In `## Risk` set `level: high` for security, auth,
-   concurrency, data migration/persistence formats or a public API; otherwise `normal`.
-5. Show the spec (a short summary in the user's language plus the path of `01-spec.md`), ask for
-   approval with `AskUserQuestion` (options: approve / change something), log `intake PASS` only
-   after an explicit approve, then arm Auto resume if `init` printed `AutoResume=on`.
+   concurrency, data migration/persistence formats or a public API (functions, endpoints or formats
+   other code or users depend on); otherwise `normal`.
+5. Before asking for approval, send one message in the user's language with the spec summary: goal,
+   In scope, Out of scope, acceptance criteria (one line each), verify commands, risk level, and the
+   absolute path of `01-spec.md`. Then ask with `AskUserQuestion` (options: approve / change
+   something; put the `01-spec.md` path in the question). After a requested change, edit the spec and
+   send the **full** summary again (mark what changed), then ask again. Log `intake PASS` only after
+   an explicit approve, then arm Auto resume if `init` printed `AutoResume=on`.
    Non-interactive runs: if the request itself states scope, out of scope, acceptance criteria and
    verify commands and says the spec is pre-approved, write the spec from it and log `intake PASS`
    with note `pre-approved by request`.
@@ -135,6 +151,14 @@ Log `<stage> START`, then repeat rounds until PASS or a limit; take N from `stat
 1. **Worker.** Dispatch (or continue) the stage agent with `00-context.md`, `01-spec.md`,
    `02-todo.md` (from dev on), and the fix list: the review file of the highest round number of this
    stage (a `-master.md` file wins for its round; after a QA send-back: the latest `reviews/qa-r<N>.md`). Its last line decides:
+   Save every worker reply verbatim as `evidence/<stage>/worker-r<N>.md` (parallel groups:
+   `worker-r<N>-<X>.md`; a skipped worker: one line `worker skipped: <why>`); the gate checks it.
+   If the reply lists `DECISIONS-PROPOSED:` (open choices the worker made itself that a user could
+   notice: behavior, public interface, data formats, what acceptance criteria check; internal names,
+   structure and comments are not listed and are not decisions), treat each as a
+   **Master decision** before the gate: record it with `decision -Kind decided` quoting the proposal,
+   or escalate it if it changes scope, acceptance criteria or a public interface; the gate fails
+   while one is unrecorded.
    `RESULT: DONE...` -> gate. `BLOCKED_*` -> **Master fix** below. `NEEDS_DECISION` -> save the
    worker's reply as `reviews/<stage>-r<N>.md` (`event` checks it), then **Master decision** below. No `RESULT:` line -> treat as a failed gate (write `VERDICT: FAIL (no RESULT
    line)` as the round's review, log FAIL with note `gate: no RESULT line`).
@@ -175,7 +199,12 @@ Log `<stage> START`, then repeat rounds until PASS or a limit; take N from `stat
 (an edge case, a naming or structure choice, behavior the spec leaves open), decide it and record it
 with `decision -Kind decided -Stage <stage> -Note "<decision and why>"`, then continue. If it
 changes scope, acceptance criteria or a public interface, or `decision` exits 3 (`MAX_DECISIONS`
-used up), log `NEEDS_DECISION` and escalate. `decision` also writes a `DECIDED` line to events.log.
+used up), log `NEEDS_DECISION` and escalate.
+When no reviewer ran in that round (a worker's `NEEDS_DECISION` or its `DECISIONS-PROPOSED` over
+the cap), write `reviews/<stage>-r<N>.md` yourself as `RESULT: NEEDS_DECISION - <what needs the user,
+one line per item>` before logging. After the user answers, record each answer with `decision -Kind
+user`, log `RESUME` with note `user ...`, and run the round `NEXT` names: the worker applies the answers,
+or, if nothing in the work changes, write `worker skipped: <why>` and go straight to the gate. `decision` also writes a `DECIDED` line to events.log.
 Your decisions are not final: every reviewer judges each standing `master-decided` /
 `master-created` entry against the approved spec and lists it under `DECISIONS:`. Entries the user
 later overrides still count toward `MAX_DECISIONS`.
@@ -189,8 +218,8 @@ the first review, and asking only for `[ok|NEEDS_DECISION] <entry> - <reason>`; 
 - `ok` -> record `decision -Kind upheld -Note "<entry text> (second opinion <model>: <reason>)"`,
   log FAIL with note `review: master entry upheld by second opinion` (it does not count toward the
   FAIL budget or model escalation), and run the next round as usual: the worker fixes any other
-  issues of the first review (skip the worker if there were none, and log the round with the previous
-  worker's model), then `gate`, then a fresh reviewer, which no longer judges the upheld entry. An
+  issues of the first review (skip the worker if there were none: write `worker skipped: <why>` to
+  `evidence/<stage>/worker-r<N>.md` and log the round with the previous worker's model), then `gate`, then a fresh reviewer, which no longer judges the upheld entry. An
   upheld entry can only be changed by the user.
 
 **QA FAIL by cause:** `CAUSE: QA` (the tester's evidence is wrong; product fine) -> plain FAIL, next
@@ -206,7 +235,9 @@ tried to automate. Only then give the checklist to the user.
 
 Use it only when all hold at the start of the dev stage: this is the first dev round of the work
 item; `git status` shows no changes outside `work/`; `02-todo.md` tags D items with at least two
-`[group:X]` groups whose `files:` lists do not overlap. Then, in one message, dispatch one
+`[group:X]` groups whose `files:` lists do not overlap; and nothing a group needs is git-ignored (a
+fresh worktree has no `node_modules`, `dist/`, build outputs or local config, so a group that must
+build, test or touch such paths runs sequentially; if unsure, develop sequentially). Then, in one message, dispatch one
 `ff-developer` per group with `isolation: "worktree"`, telling each its group letter and the work
 folder as a path relative to the project root (`work/<id>`). An isolated agent cannot write to the
 main work folder, so each writes its checks to `work/<id>/evidence/dev/group-<X>.md` inside its own
@@ -216,8 +247,8 @@ also reports the worktree path and branch. When all return, for each group:
    if not, do not apply it (develop that group sequentially).
 2. Copy `<worktree>/work/<id>/evidence/dev/group-<X>.md` (and `worker-run-<X>.log`) into `<dir>/evidence/dev/`.
 3. Apply it to the main working tree without committing: `git merge --squash <branch>`.
-If any squash conflicts, run `git reset --hard HEAD` (the tree was clean before, and `work/` is
-ignored) and develop all groups sequentially instead. Then remove the agent worktrees and branches
+If any squash conflicts, undo only the merge with `git reset --merge` (never `--hard`), check
+`git status` shows no changes outside `work/` again, and develop all groups sequentially instead. Then remove the agent worktrees and branches
 (`git worktree remove --force <path>`, `git branch -D <branch>`), run `merge-evidence`, and the normal
 dev gate and review on the combined change. In every other case develop sequentially.
 

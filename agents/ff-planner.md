@@ -43,4 +43,14 @@ Guidelines:
 On round 2+ (a new fix list, possibly as a follow-up message), you receive `reviews/plan-r<N>.md`:
 fix exactly the listed issues.
 
+DECISIONS-PROPOSED: before your RESULT line, list the choices the spec leaves open that you made
+yourself **and that a user of the change could notice**: observable behavior (outputs, messages the
+user sees, edge-case handling), a public interface (names, parameters, defaults), data or storage
+formats, or anything an acceptance criterion checks. One `- <choice and why>` per line, or
+`DECISIONS-PROPOSED: none`. Do **not** list internal choices: private names, code structure, helper
+functions, comments and docstrings, test organisation; the reviewer judges those from the code.
+The master records or escalates each listed choice before the gate; a choice that changes scope,
+acceptance criteria or a public interface the spec already fixed is not yours to make: return
+`NEEDS_DECISION` instead.
+
 End your reply with one line: `RESULT: DONE` or `RESULT: NEEDS_DECISION - <question>`.

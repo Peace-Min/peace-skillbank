@@ -19,6 +19,8 @@
       verify      Run the spec build, test and ui-test commands (-Build, -Test) for a round, each with a
                   timeout (VerifyTimeoutMin), save the full log, exit 1 if any fails or times out.
       manual-check  Check evidence/qa/manual-checklist.md: every "### Q<n>" item names the automation tried.
+      proposed-check  Gate step: the round's saved worker reply exists, and every DECISIONS-PROPOSED entry
+                  in it is recorded in the spec's "## Decisions" (so open choices a worker made get reviewed).
       gate        Run the whole mechanical gate of a stage round; on failure write the review file and log FAIL.
       merge-evidence  Fold evidence/dev/group-*.md (parallel developers) into 02-todo.md.
       decision    Append a master-decided / master-created / user entry to the spec's "## Decisions" and log DECIDED.
@@ -32,7 +34,7 @@
 #>
 param(
     [Parameter(Mandatory = $true, Position = 0)]
-    [ValidateSet("init", "event", "check-todo", "diff", "wiki-check", "status", "pick-model", "auto-check", "heartbeat", "verify", "gate", "merge-evidence", "decision", "manual-check")]
+    [ValidateSet("init", "event", "check-todo", "diff", "wiki-check", "status", "pick-model", "auto-check", "heartbeat", "verify", "gate", "merge-evidence", "decision", "manual-check", "proposed-check")]
     [string]$Command,
     [ValidateSet("", "planner", "developer", "qa", "reviewer", "second", "wiki")]
     [string]$Role = "",
@@ -61,7 +63,7 @@ param(
     [int]$MaxGateFails = 3,
     [int]$MaxQaCycles = 2,
     [int]$MaxFixes = 1,
-    [int]$MaxDecisions = 3,
+    [int]$MaxDecisions = 5,
     [double]$VerifyTimeoutMin = 20,
     [ValidateSet("", "decided", "created", "user", "upheld")]
     [string]$Kind = "",
@@ -108,7 +110,15 @@ function Resolve-WorkDir {
     $candidate = $WorkDir
     if (-not [System.IO.Path]::IsPathRooted($candidate)) { $candidate = Join-Path $Root $candidate }
     if (-not (Test-Path -LiteralPath $candidate -PathType Container)) { Fail-Usage "Work folder not found: $candidate" }
-    return (Resolve-Path -LiteralPath $candidate).Path
+    $resolved = (Resolve-Path -LiteralPath $candidate).Path
+    # 0. The work folder must sit under the project root; a call from another folder would run builds,
+    #    diffs and evidence checks against the wrong tree and record a bogus FAIL. Refuse it as a usage
+    #    error instead (exit 2, nothing logged).
+    $rootFull = [System.IO.Path]::GetFullPath($Root).TrimEnd('\', '/') + '\'
+    if (-not $resolved.StartsWith($rootFull, [System.StringComparison]::OrdinalIgnoreCase)) {
+        Fail-Usage "Work folder $resolved is not under the project root $Root. Run ff.ps1 from the project root (or pass -Root <project root>)."
+    }
+    return $resolved
 }
 
 function Invoke-Git([string[]]$GitArgs) {
@@ -214,7 +224,9 @@ function Test-ReviewMatches([string]$Dir, [string]$ForStage, [int]$ForRound, [st
     $verdict = $(if ($mv.Success) { $mv.Groups[1].Value } else { "" })
     if ($ForStatus -eq "PASS" -and $verdict -ne "PASS") { return "reviews/$ForStage-r$ForRound.md says VERDICT: $(if ($verdict) { $verdict } else { '(none)' }), not PASS" }
     if ($ForStatus -eq "NEEDS_DECISION" -and $verdict -ne "NEEDS_DECISION" -and $text -notmatch '(?m)^\s*RESULT:\s*NEEDS_DECISION') { return "reviews/$ForStage-r$ForRound.md does not say NEEDS_DECISION" }
-    if (-not $verdict) { return $null }
+    # A worker's (or the master's decision-cap) RESULT: NEEDS_DECISION is not a reviewer verdict: no
+    # reviewer ran, so there is no DECISIONS: list to check.
+    if (-not $verdict -or ($ForStatus -eq "NEEDS_DECISION" -and $text -match '(?m)^\s*RESULT:\s*NEEDS_DECISION')) { return $null }
 
     # 1. A reviewer's file must judge every standing master entry under DECISIONS:, and a PASS must not
     #    carry a NEEDS_DECISION verdict on one of them.
@@ -601,6 +613,13 @@ switch ($Command) {
         $slug = ([regex]::Replace($Title.ToLowerInvariant(), '[^\p{L}\p{Nd}]+', '-')).Trim('-')
         if ($slug.Length -gt 40) { $slug = $slug.Substring(0, 40).Trim('-') }
         if ([string]::IsNullOrWhiteSpace($slug)) { $slug = "task" }
+        $openDirs = @()
+        foreach ($wd in @(Get-ChildItem -LiteralPath (Join-Path $Root "work") -Directory -ErrorAction SilentlyContinue)) {
+            $evf = Join-Path $wd.FullName "events.log"
+            if (-not (Test-Path -LiteralPath $evf)) { continue }
+            if ([System.IO.File]::ReadAllText($evf) -notmatch '\| done \| PASS \|') { $openDirs += $wd.Name }
+        }
+        foreach ($od in $openDirs) { Write-Output "INFO: unfinished work folder work/$od (continue it only with 'resume work/$od'; never reuse it for a new request)" }
         $dir = Join-Path $Root ("work\" + (Get-Date -Format "yyyyMMdd-HHmm") + "-" + $slug)
         if (Test-Path -LiteralPath $dir) { Fail-Usage "Work folder already exists: $dir" }
 
@@ -623,7 +642,7 @@ switch ($Command) {
         else { Write-Output "WARN: not a git repository; 'diff' will not work. Ask the user to git init." }
         [System.IO.File]::WriteAllText((Join-Path $dir "base.txt"), $base, $utf8)
 
-        $context = "# Project context (seed)`n`n- Build command:`n- Test command:`n- Run/launch:`n- UI technology (none / WPF / WinForms / WebView2 / Electron / web / other):`n- UI test harness command (none / to be built: <method> / <command>):`n- Key folders:`n- Conventions (from CLAUDE.md/AGENTS.md):`n- Wiki index: docs/wiki/index.md`n"
+        $context = "# Project context (seed)`n`n- Build command:`n- Test command:`n- Run/launch:`n- UI technology (none / WPF / WinForms / WebView2 / Electron / web / other):`n- UI test harness command (none / to be built: <method> / <command>):`n- Key folders:`n- Conventions (from CLAUDE.md/AGENTS.md):`n- Secrets (how credentials are provided: env var names or a prompt; never the values):`n- Wiki index: docs/wiki/index.md`n"
         $spec = "# Spec: $Title`n`n## Goal`n`n## In scope`n`n## Out of scope`n`n## Constraints / cautions`n`n## Acceptance criteria`n`n## Verify commands`n- build:`n- test:`n- ui-test: none`n`n## Risk`n- level: normal`n"
         [System.IO.File]::WriteAllText((Join-Path $dir "00-context.md"), $context, $utf8)
         [System.IO.File]::WriteAllText((Join-Path $dir "01-spec.md"), $spec, $utf8)
@@ -962,6 +981,7 @@ switch ($Command) {
         #    command text ever passes through a command line.
         $hasVerify = (@(Get-VerifyCommands $dir $Stage).Count -gt 0)
         $steps = @()
+        if ($Stage -in @("plan", "dev", "qa")) { $steps += , @("proposed-check", "-Stage", $Stage, "-Round", "$Round") }
         switch ($Stage) {
             "plan" { $steps += , @("check-todo", "-FormatOnly") }
             "dev" {
@@ -1002,6 +1022,45 @@ switch ($Command) {
         Write-Output "GATE      FAIL  $($failedSteps -join ', ')"
         if ($evCode -eq 3) { exit 3 }
         exit 1
+    }
+
+    "proposed-check" {
+        $dir = Resolve-WorkDir
+        Touch-Lock $dir
+        if ($Stage -notin @("plan", "dev", "qa")) { Fail-Usage "-Stage plan, dev or qa is required for proposed-check." }
+        if ($Round -lt 1) { Fail-Usage "-Round <N> is required for proposed-check." }
+        # 0. The master saves each worker reply as evidence/<stage>/worker-r<N>[-X].md. A choice the spec
+        #    left open that a worker made on its own (DECISIONS-PROPOSED) must be recorded with
+        #    "decision -Kind decided" (or answered by the user) before the gate passes, so it counts toward
+        #    MaxDecisions and the reviewer judges it. Matching: first 20 characters, case-insensitive.
+        $replies = @(Get-ChildItem -LiteralPath (Join-Path $dir ("evidence\" + $Stage)) -Filter ("worker-r{0}*.md" -f $Round) -File -ErrorAction SilentlyContinue)
+        if ($replies.Count -eq 0) { Write-Output ("PROPOSED  FAIL  no evidence/{0}/worker-r{1}.md: save the worker's reply verbatim (or 'worker skipped: <why>')" -f $Stage, $Round); exit 1 }
+        $recorded = @()
+        $spec = Join-Path $dir "01-spec.md"
+        if (Test-Path -LiteralPath $spec) {
+            foreach ($l in [System.IO.File]::ReadAllLines($spec)) {
+                $md = [regex]::Match($l, '^\s*-\s*(master-decided|user|upheld)\s*\([^)]*\):\s*(.+)$')
+                if ($md.Success) { $recorded += $md.Groups[2].Value.ToLowerInvariant() }
+            }
+        }
+        $missing = @(); $count = 0
+        foreach ($f in $replies) {
+            $inList = $false
+            foreach ($l in [System.IO.File]::ReadAllLines($f.FullName)) {
+                if ($l -match '^\s*DECISIONS-PROPOSED:\s*(none)?\s*$') { $inList = -not $Matches[1]; continue }
+                if (-not $inList) { continue }
+                $mi = [regex]::Match($l, '^\s*-\s*(.+?)\s*$')
+                if (-not $mi.Success) { $inList = $false; continue }
+                $count++
+                $key = $mi.Groups[1].Value.ToLowerInvariant()
+                if ($key.Length -gt 20) { $key = $key.Substring(0, 20) }
+                if (@($recorded | Where-Object { $_.Contains($key) }).Count -eq 0) { $missing += ("{0}: {1}" -f $f.Name, $mi.Groups[1].Value) }
+            }
+        }
+        foreach ($m in $missing) { Write-Output "PROPOSED  NOT RECORDED  $m" }
+        if ($missing.Count -gt 0) { Write-Output "PROPOSED  FAIL  record each with: decision -Kind decided -Note `"<the proposal, quoted>`" (or escalate if it changes scope)"; exit 1 }
+        Write-Output ("PROPOSED  PASS  {0} worker reply file(s), {1} proposed decision(s), all recorded" -f $replies.Count, $count)
+        exit 0
     }
 
     "manual-check" {

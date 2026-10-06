@@ -658,6 +658,8 @@ Assert-Condition ($ffReviewerFront -match "(?m)^tools:\s*Read, Grep, Glob\s*$") 
 $ffCommandContent = Get-Content -Raw -LiteralPath (Join-Path $RepositoryRoot "commands\feature-flow.md")
 Assert-Condition ($ffCommandContent -match [regex]::Escape('$ARGUMENTS')) "commands/feature-flow.md must pass `$ARGUMENTS to the skill"
 Assert-Condition ($ffSkillContent -match "AskUserQuestion" -and $ffSkillContent -match "user's language") "feature-flow SKILL.md must ask choices through AskUserQuestion and talk in the user's language"
+Assert-Condition ($ffSkillContent -match "DECISIONS-PROPOSED" -and $ffSkillContent -match "Never reuse an existing folder" -and $ffSkillContent -match "\*\*Secrets\.\*\*" -and $ffSkillContent -match "git reset --merge") "feature-flow SKILL.md must route worker proposals, forbid folder reuse, guard secrets and abort squash with reset --merge"
+foreach ($ffA in @("ff-planner", "ff-developer", "ff-qa-tester")) { Assert-Condition ((Get-Content -Raw -Encoding UTF8 -LiteralPath (Join-Path $RepositoryRoot "agents\$ffA.md")) -match "DECISIONS-PROPOSED") "$ffA must report DECISIONS-PROPOSED" }
 # A plugin command can shadow its skill (the Skill tool then returns only the command text), so every
 # command must tell the model to Read the real SKILL.md first.
 foreach ($cmdFile in Get-ChildItem -LiteralPath (Join-Path $RepositoryRoot "commands") -Filter "*.md") {

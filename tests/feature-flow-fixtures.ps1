@@ -30,6 +30,14 @@ function Get-WorkDirLine([string]$Text) {
     return ""
 }
 
+function Add-WorkerReplies([string]$Dir) {
+    # The gate needs the saved worker reply of the round (proposed-check); seed plain ones.
+    foreach ($st in @("plan", "dev", "qa")) {
+        New-Item -ItemType Directory -Path (Join-Path $Dir "evidence\$st") -Force | Out-Null
+        foreach ($n in 1..4) { Set-Content -LiteralPath (Join-Path $Dir "evidence\$st\worker-r$n.md") -Value @("did the work", "DECISIONS-PROPOSED: none", "RESULT: DONE") -Encoding UTF8 }
+    }
+}
+
 # Korean sample text built from code points so this file stays ASCII.
 $ko = -join ([char[]]@(0xD55C, 0xAE00, 0x20, 0xB0B4, 0xC6A9))
 
@@ -562,6 +570,7 @@ try {
 
     # 21. gate: runs the stage checks with commands from the spec; writes the review file and logs FAIL on failure.
     $gs = Get-WorkDirLine (Invoke-Ff $gp @("init", "-Title", "gate probe")).Out
+    Add-WorkerReplies $gs
     $specG = [System.IO.File]::ReadAllText((Join-Path $gs "01-spec.md")) -replace '- build:', '- build: echo build-ok' -replace '- test:', '- test: exit /b 0'
     [System.IO.File]::WriteAllText((Join-Path $gs "01-spec.md"), $specG)
     Set-Content -LiteralPath (Join-Path $gs "02-todo.md") -Value @("## Dev", "- [x] D1: a.txt changed", "  - evidence: src/a.txt:1", "## QA", "- [ ] Q1: q [regression]", "  - method: auto - test suite", "  - evidence:") -Encoding UTF8
@@ -578,14 +587,40 @@ try {
     $r = Invoke-Ff $gp @("gate", "-WorkDir", $gs, "-Stage", "qa", "-Round", "1")
     Check "qa gate with no spec commands skips verify" (($r.Out -match 'SKIP\s+verify') -and ($r.Code -eq 1) -and ($r.Out -match 'check-todo')) $r.Out
 
+    # 21a2. proposed-check: the worker reply must be saved; DECISIONS-PROPOSED entries must be recorded.
+    $pc = Get-WorkDirLine (Invoke-Ff $gp @("init", "-Title", "proposed probe")).Out
+    Set-Content -LiteralPath (Join-Path $pc "02-todo.md") -Value @("## Dev", "- [ ] D1: a", "  - evidence:", "## QA", "- [ ] Q1: q [regression]", "  - method: auto - tests", "  - evidence:") -Encoding UTF8
+    $r = Invoke-Ff $gp @("gate", "-WorkDir", $pc, "-Stage", "plan", "-Round", "1")
+    Check "plan gate without a saved worker reply -> FAIL proposed-check" (($r.Code -eq 1) -and ($r.Out -match 'STEP\s+proposed-check\s+exit 1')) $r.Out
+    New-Item -ItemType Directory -Path (Join-Path $pc "evidence\plan") -Force | Out-Null
+    Set-Content -LiteralPath (Join-Path $pc "evidence\plan\worker-r2.md") -Value @("Wrote the plan.", "DECISIONS-PROPOSED:", "- exclusions live until the report window closes", "- daily hours input stays bound to the real task", "", "RESULT: DONE") -Encoding UTF8
+    $r = Invoke-Ff $gp @("proposed-check", "-WorkDir", $pc, "-Stage", "plan", "-Round", "2")
+    Check "unrecorded DECISIONS-PROPOSED entries -> exit 1, each named" (($r.Code -eq 1) -and ($r.Out -match 'NOT RECORDED.*exclusions live') -and ($r.Out -match 'NOT RECORDED.*daily hours')) $r.Out
+    $null = Invoke-Ff $gp @("decision", "-WorkDir", $pc, "-Kind", "decided", "-Stage", "plan", "-Note", "exclusions live until the report window closes (planner proposal; spec leaves it open)")
+    $null = Invoke-Ff $gp @("decision", "-WorkDir", $pc, "-Kind", "decided", "-Stage", "plan", "-Note", "daily hours input stays bound to the real task (planner proposal)")
+    $r = Invoke-Ff $gp @("proposed-check", "-WorkDir", $pc, "-Stage", "plan", "-Round", "2")
+    Check "recorded proposals -> exit 0" (($r.Code -eq 0) -and ($r.Out -match '2 proposed decision')) $r.Out
+    Set-Content -LiteralPath (Join-Path $pc "evidence\plan\worker-r3-A.md") -Value @("group A", "DECISIONS-PROPOSED: none", "RESULT: DONE") -Encoding UTF8
+    $r = Invoke-Ff $gp @("proposed-check", "-WorkDir", $pc, "-Stage", "plan", "-Round", "3")
+    Check "group reply files (worker-r<N>-X.md) count; 'none' passes" ($r.Code -eq 0) $r.Out
+    $wrongRoot = Join-Path $gp "src"
+    New-Item -ItemType Directory -Path $wrongRoot -Force | Out-Null
+    $evBefore = [System.IO.File]::ReadAllText((Join-Path $pc "events.log"))
+    $r = Invoke-Ff $wrongRoot @("gate", "-WorkDir", $pc, "-Stage", "plan", "-Round", "4")
+    Check "gate run with a root that does not contain the work folder -> exit 2, nothing logged" (($r.Code -eq 2) -and ($r.Out -match 'not under the project root') -and ([System.IO.File]::ReadAllText((Join-Path $pc "events.log")) -eq $evBefore)) $r.Out
+    $r = Invoke-Ff $gp @("init", "-Title", "second request")
+    Check "init lists unfinished work folders and says to resume, not reuse" ($r.Out -match "INFO: unfinished work folder work/.*proposed-probe.*resume") $r.Out
+
     # 21b. Empty Verify lines from the init template never turn the next line into a command.
     $et = Get-WorkDirLine (Invoke-Ff $gp @("init", "-Title", "empty verify")).Out
+    Add-WorkerReplies $et
     Set-Content -LiteralPath (Join-Path $et "02-todo.md") -Value @("## Dev", "- [x] D1: a", "  - evidence: src/a.txt:1", "## QA", "- [ ] Q1: q", "  - evidence:") -Encoding UTF8
     $r = Invoke-Ff $gp @("gate", "-WorkDir", $et, "-Stage", "dev", "-Round", "1")
     Check "template spec with empty build/test -> verify skipped, not '- test:' run" (($r.Out -match 'SKIP\s+verify') -and ($r.Out -notmatch 'STEP\s+verify')) $r.Out
 
     # 21c. Quoted commands and && survive the gate (verify reads the spec itself).
     $qt = Get-WorkDirLine (Invoke-Ff $gp @("init", "-Title", "quoted cmd")).Out
+    Add-WorkerReplies $qt
     $specQ = [System.IO.File]::ReadAllText((Join-Path $qt "01-spec.md")) -replace '- build:', '- build: echo "hello world" && exit 0' -replace '- test:', '- test: exit /b 0'
     [System.IO.File]::WriteAllText((Join-Path $qt "01-spec.md"), $specQ)
     Set-Content -LiteralPath (Join-Path $qt "02-todo.md") -Value @("## Dev", "- [x] D1: a", "  - evidence: src/a.txt:1", "## QA", "- [ ] Q1: q", "  - evidence:") -Encoding UTF8
@@ -596,6 +631,7 @@ try {
     #       harness gets FF_EVIDENCE_DIR (a per-gate folder), and every command is killed after VerifyTimeoutMin.
     $ur = Invoke-Ff $gp @("init", "-Title", "ui harness", "-VerifyTimeoutMin", "0.05")
     $uw = Get-WorkDirLine $ur.Out
+    Add-WorkerReplies $uw
     Check "init records VerifyTimeoutMin" ([System.IO.File]::ReadAllText((Join-Path $uw "settings.txt")) -match 'VerifyTimeoutMin=0\.05') $ur.Out
     Check "init spec template has '- ui-test: none'" ([System.IO.File]::ReadAllText((Join-Path $uw "01-spec.md")) -match '(?m)^- ui-test: none\s*$') ""
     Check "init context asks for UI technology and harness command" ([System.IO.File]::ReadAllText((Join-Path $uw "00-context.md")) -match 'UI technology' -and [System.IO.File]::ReadAllText((Join-Path $uw "00-context.md")) -match 'UI test harness command') ""
@@ -738,6 +774,9 @@ try {
     Set-Content -LiteralPath (Join-Path $vw "reviews\dev-r1.md") -Value @("Worker reply", "RESULT: NEEDS_DECISION - which encoding?") -Encoding UTF8
     $r = Invoke-Ff $project @("event", "-WorkDir", $vw, "-Stage", "dev", "-Status", "NEEDS_DECISION", "-Round", "1", "-Note", "worker asks")
     Check "worker NEEDS_DECISION (RESULT line saved as the round file) is accepted" ($r.Code -eq 0) $r.Out
+    Set-Content -LiteralPath (Join-Path $vw "reviews\dev-r2.md") -Value @("VERDICT: NEEDS_DECISION", "RESULT: NEEDS_DECISION - decision cap reached: 3 developer proposals need the user") -Encoding UTF8
+    $r = Invoke-Ff $project @("event", "-WorkDir", $vw, "-Stage", "dev", "-Status", "NEEDS_DECISION", "-Round", "2", "-Note", "decision cap")
+    Check "master-written decision-cap NEEDS_DECISION (no reviewer ran) is accepted without a DECISIONS list" ($r.Code -eq 0) $r.Out
 
 }
 finally {

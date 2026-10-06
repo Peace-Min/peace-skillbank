@@ -22,6 +22,7 @@ work/<yyyyMMdd-HHmm>-<slug>/
     qa/Q1-<short>.log  proof per Q item: steps, observed, expected (qa tester)
     qa/Q1-sorted.png   files the item's method produced: screenshots, traces, measurement exports (qa tester)
     dev/revert-1.log   a [fix] item's test run with the fix reverted, failing (developer)
+    <stage>/worker-r1.md  the worker's reply for that round, saved verbatim (master; checked by the gate)
     qa/manual-checklist.md  only items QA tried and failed to automate; each names the attempt (qa tester)
     qa/Q1-manual.log   the user's manual QA result for an item, written by the master on resume
   raw/                 optional: raw transcripts/exports if the user wants full traceability

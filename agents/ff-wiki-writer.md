@@ -17,7 +17,9 @@ Wiki shape (create what is missing, keep what exists):
 - `docs/wiki/architecture.md`: components and how they talk, at the level of folders and classes.
 - `docs/wiki/decisions.md`: append one dated entry per work item: what was decided and why,
   including what was explicitly left out of scope.
-- Module pages (`docs/wiki/modules/<name>.md`) only when a module is new or its role changed.
+- Module pages (`docs/wiki/modules/<name>.md`, or `docs/wiki/module-<name>.md` if a new subfolder
+  cannot be created) only when a module is new or its role changed. Never silently fold a planned page
+  into another; say so in your reply.
 
 Rules:
 

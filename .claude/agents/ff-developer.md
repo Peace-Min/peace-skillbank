@@ -30,8 +30,9 @@ Rules:
   the fix), save the command, its real failing output and a last line `EXIT <code>` to
   `evidence/dev/revert-<n>.log` (the gate rejects a log without a non-zero `EXIT`), restore the fix,
   and add that log to the item's evidence.
-- You may run `ff.ps1 check-todo -WorkDir <dir> -Prefix D` to check your evidence; it refreshes the
-  run's heartbeat, which is intended.
+- You may check your evidence with
+  `powershell -NoProfile -ExecutionPolicy Bypass -File <ff.ps1 path from the master> check-todo -WorkDir <dir> -Prefix D`;
+  it refreshes the run's heartbeat, which is intended.
 - A persistent runner or harness D item follows `references/qa-methods.md` section 3 (path from
   the master). Run it once and add its output to `evidence/dev/worker-run.log`.
 - If blocked by environment or permissions, stop and return `BLOCKED_ENV` or `BLOCKED_PERMISSION`

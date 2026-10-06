@@ -33,7 +33,8 @@ never the project root), plus the files the method produced next to it:
   yourself; the observed output must show it. Exit 2 from a runner means no verdict.
 
 Check an item (`[x]`) only when the observed result matches, and set its evidence line to the proof
-file. You may run `ff.ps1 check-todo -WorkDir <dir> -Prefix Q -AllowOpen` to check your evidence;
+file. You may check your evidence with
+`powershell -NoProfile -ExecutionPolicy Bypass -File <ff.ps1 path from the master> check-todo -WorkDir <dir> -Prefix Q -AllowOpen`;
 it refreshes the run's heartbeat, which is intended. Leave failing items unchecked and describe the failure in the proof file. Never retry until
 green, never edit the expected result, never mark an item you could not run.
 

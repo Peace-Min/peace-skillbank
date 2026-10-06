@@ -625,7 +625,7 @@ Assert-Condition ($ffSkillContent -match "pick-model") "feature-flow SKILL.md mu
 Assert-Condition ($ffSkillContent -match "auto-check" -and $ffSkillContent -match "--auto") "feature-flow SKILL.md must route scheduled resumes through ff.ps1 auto-check"
 Assert-Condition ($ffSkillContent -match "MAX_MODEL = \w+" -and $ffSkillContent -match "AUTO_RESUME = \w+") "feature-flow SKILL.md must declare MAX_MODEL and AUTO_RESUME settings"
 Assert-Condition ($ffSkillContent -match "Windows only" -and $ffSkillContent -match "feature-flow-settings.txt") "feature-flow SKILL.md must state Windows only and the project settings override"
-Assert-Condition ($ffSkillContent -match "/peace-skillbank:feature-flow resume") "feature-flow escalation must give the plugin-namespaced resume command"
+Assert-Condition ($ffSkillContent -match "Resume with: <command> resume <dir>" -and $ffSkillContent -match "/peace-skillbank:feature-flow\x60 \(plugin\)") "feature-flow escalation must resolve the resume command for plugin and project installs"
 foreach ($ffAgent in $ffAgents) {
     $ffAgentPath = Join-Path $RepositoryRoot "agents\$ffAgent.md"
     Assert-Condition (Test-Path -LiteralPath $ffAgentPath) "Missing feature-flow subagent: agents/$ffAgent.md"

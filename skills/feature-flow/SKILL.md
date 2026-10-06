@@ -66,7 +66,8 @@ absolute path to planner, developer, QA tester and reviewer), `references/status
 
 **Every dispatch:** run `pick-model` for the role (reviewer: `-Stage <stage>`) and pass the printed
 `MODEL` as the Agent call's `model` (`MODEL inherit` = pass none). Give workers absolute file paths
-plus, if useful, a short brief of your own (what matters, what to watch for). Give the reviewer file
+(including the absolute path of `ff.ps1`, so developer and QA tester can self-check with
+`powershell -NoProfile -ExecutionPolicy Bypass -File <ff.ps1> check-todo ...`) plus, if useful, a short brief of your own (what matters, what to watch for). Give the reviewer file
 paths only, never your reasoning or a worker's transcript.
 
 **Continue the same worker** in later rounds after the same `<stage> START`: send the new fix list
@@ -121,8 +122,8 @@ Log `<stage> START`, then repeat rounds until PASS or a limit; take N from `stat
 1. **Worker.** Dispatch (or continue) the stage agent with `00-context.md`, `01-spec.md`,
    `02-todo.md` (from dev on), and the fix list: the review file of the highest round number of this
    stage (a `-master.md` file wins for its round; after a QA send-back: the latest `reviews/qa-r<N>.md`). Its last line decides:
-   `RESULT: DONE...` -> gate. `BLOCKED_*` -> **Master fix** below. `NEEDS_DECISION` -> **Master
-   decision** below. No `RESULT:` line -> treat as a failed gate (write `VERDICT: FAIL (no RESULT
+   `RESULT: DONE...` -> gate. `BLOCKED_*` -> **Master fix** below. `NEEDS_DECISION` -> save the
+   worker's reply as `reviews/<stage>-r<N>.md` (`event` checks it), then **Master decision** below. No `RESULT:` line -> treat as a failed gate (write `VERDICT: FAIL (no RESULT
    line)` as the round's review, log FAIL with note `gate: no RESULT line`).
 2. **Gate.** Run `gate -Stage <stage> -Round <N>`. It runs the stage's checks (plan: TODO format;
    dev: spec build/test, evidence refs, diff incl. line-ending rewrites; qa: build/test and Q
@@ -217,9 +218,12 @@ What happened: <one line>
 What I already tried: <MASTER_FIX taken, or why none was safe>
 Evidence: <file paths>
 What I need from you: <decision / permission / environment fix / manual QA results>
-Resume with: <the command you were invoked with> resume <dir>
-              (plugin: /peace-skillbank:feature-flow resume <dir>; project or clone: /feature-flow resume <dir>)
+Resume with: <command> resume <dir>
 ```
+
+`<command>` is the slash command you were invoked with; if you were started from a plain prompt,
+`/feature-flow` when `<project root>/.claude/skills/feature-flow/` exists (project or clone install),
+otherwise `/peace-skillbank:feature-flow` (plugin).
 
 If the user interrupts, refuses a dispatch or asks to stop, log `PAUSE` (note `user stopped`, on the
 stage `status` shows) and delete the schedule before anything else; a scheduled firing then stops on

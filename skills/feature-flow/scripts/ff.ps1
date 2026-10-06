@@ -6,7 +6,8 @@
 
 .DESCRIPTION
     Commands:
-      init        Create work/<stamp>-<slug>/ with the standard layout; record the git base and settings.
+      init        Create work/<stamp>-<slug>/ with the standard layout; record the git base and settings
+                  (<Root>/.claude/feature-flow-settings.txt, if present, overrides the passed values).
       event       Append one line to events.log. Exit 3 on loop limit or send-back limit.
       check-todo  Gate for TODO items (see -Prefix, -AllowOpen, -FormatOnly; Q method lines, [regression], [fix]).
       diff        Save the round diff vs the recorded base (tracked + untracked, work/ excluded).
@@ -563,6 +564,40 @@ Import-WorkSettings
 switch ($Command) {
     "init" {
         if ([string]::IsNullOrWhiteSpace($Title)) { Fail-Usage "-Title is required for init." }
+        # 0. Project override: a plugin install cannot edit the skill's own defaults, so
+        #    .claude/feature-flow-settings.txt (key=value) wins over the values the master passes.
+        $Parallel = "on"
+        $AutoResume = "on"
+        $settingsSource = "skill defaults"
+        $projectSettings = Join-Path $Root ".claude\feature-flow-settings.txt"
+        if (Test-Path -LiteralPath $projectSettings) {
+            $settingsSource = ".claude/feature-flow-settings.txt"
+            foreach ($line in [System.IO.File]::ReadAllLines($projectSettings)) {
+                if ($line -match '^\s*(#|$)') { continue }
+                $m = [regex]::Match($line, '^\s*([A-Za-z]+)\s*=\s*(\S+)\s*$')
+                if (-not $m.Success) { Fail-Usage "Bad line in .claude/feature-flow-settings.txt: '$line' (expected Key=value)" }
+                $key = $m.Groups[1].Value; $val = $m.Groups[2].Value
+                $intKeys = @("MaxRounds", "MaxGateFails", "MaxQaCycles", "MaxFixes", "MaxDecisions")
+                if ($key -in $intKeys) {
+                    if ($val -notmatch '^[1-9]\d*$') { Fail-Usage "$key must be a positive integer in .claude/feature-flow-settings.txt (got '$val')" }
+                    Set-Variable -Scope Script -Name $key -Value ([int]$val)
+                }
+                elseif ($key -eq "VerifyTimeoutMin") {
+                    $d = 0.0
+                    if (-not [double]::TryParse($val, [System.Globalization.NumberStyles]::Float, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$d) -or $d -le 0) { Fail-Usage "VerifyTimeoutMin must be a positive number (got '$val')" }
+                    $script:VerifyTimeoutMin = $d
+                }
+                elseif ($key -eq "MaxModel") {
+                    if ($val -notin @("haiku", "sonnet", "opus", "fable", "inherit")) { Fail-Usage "MaxModel must be haiku, sonnet, opus, fable or inherit (got '$val')" }
+                    $script:MaxModel = $val
+                }
+                elseif ($key -in @("Parallel", "AutoResume")) {
+                    if ($val -notin @("on", "off")) { Fail-Usage "$key must be on or off (got '$val')" }
+                    Set-Variable -Name $key -Value $val
+                }
+                else { Fail-Usage "Unknown key '$key' in .claude/feature-flow-settings.txt (MaxRounds, MaxGateFails, MaxQaCycles, MaxFixes, MaxDecisions, MaxModel, VerifyTimeoutMin, Parallel, AutoResume)" }
+            }
+        }
         $slug = ([regex]::Replace($Title.ToLowerInvariant(), '[^\p{L}\p{Nd}]+', '-')).Trim('-')
         if ($slug.Length -gt 40) { $slug = $slug.Substring(0, 40).Trim('-') }
         if ([string]::IsNullOrWhiteSpace($slug)) { $slug = "task" }
@@ -593,9 +628,9 @@ switch ($Command) {
         [System.IO.File]::WriteAllText((Join-Path $dir "00-context.md"), $context, $utf8)
         [System.IO.File]::WriteAllText((Join-Path $dir "01-spec.md"), $spec, $utf8)
         [System.IO.File]::WriteAllText((Join-Path $dir "events.log"), "", $utf8)
-        $settings = "MaxRounds=$MaxRounds`nMaxGateFails=$MaxGateFails`nMaxQaCycles=$MaxQaCycles`nMaxFixes=$MaxFixes`nMaxDecisions=$MaxDecisions`nMaxModel=$MaxModel`nVerifyTimeoutMin=$VerifyTimeoutMin`n"
+        $settings = "MaxRounds=$MaxRounds`nMaxGateFails=$MaxGateFails`nMaxQaCycles=$MaxQaCycles`nMaxFixes=$MaxFixes`nMaxDecisions=$MaxDecisions`nMaxModel=$MaxModel`nVerifyTimeoutMin=$VerifyTimeoutMin`nParallel=$Parallel`nAutoResume=$AutoResume`n"
         [System.IO.File]::WriteAllText((Join-Path $dir "settings.txt"), $settings, $utf8)
-        Write-Output "SETTINGS  MaxRounds=$MaxRounds MaxGateFails=$MaxGateFails MaxQaCycles=$MaxQaCycles MaxFixes=$MaxFixes MaxDecisions=$MaxDecisions MaxModel=$MaxModel VerifyTimeoutMin=$VerifyTimeoutMin"
+        Write-Output "SETTINGS  MaxRounds=$MaxRounds MaxGateFails=$MaxGateFails MaxQaCycles=$MaxQaCycles MaxFixes=$MaxFixes MaxDecisions=$MaxDecisions MaxModel=$MaxModel VerifyTimeoutMin=$VerifyTimeoutMin Parallel=$Parallel AutoResume=$AutoResume (from $settingsSource)"
         Write-Output "WORKDIR   $dir"
         exit 0
     }

@@ -443,6 +443,24 @@ try {
     $r = Invoke-Ff $project @("status", "-WorkDir", $ac)
     Check "PAUSE logged on another stage after dev PASS -> NEXT qa START" ($r.Out -match 'NEXT\s+qa START') $r.Out
 
+    # 16c2. Project settings file (.claude/feature-flow-settings.txt) wins over the values passed to init.
+    $psProj = Join-Path $project "psettings"
+    New-Item -ItemType Directory -Path (Join-Path $psProj ".claude") -Force | Out-Null
+    Set-Content -LiteralPath (Join-Path $psProj ".claude\feature-flow-settings.txt") -Value @("# plugin install overrides", "MaxRounds=2", "MaxModel=opus", "VerifyTimeoutMin=30", "Parallel=off", "AutoResume=off") -Encoding ASCII
+    $r = Invoke-Ff $psProj @("init", "-Title", "project settings", "-MaxRounds", "3", "-MaxModel", "fable")
+    $psw = Get-WorkDirLine $r.Out
+    $pst = [System.IO.File]::ReadAllText((Join-Path $psw "settings.txt"))
+    Check "project settings file overrides init values and is named as the source" (($r.Out -match 'MaxRounds=2') -and ($r.Out -match 'MaxModel=opus') -and ($r.Out -match 'Parallel=off AutoResume=off \(from \.claude/feature-flow-settings\.txt\)')) $r.Out
+    Check "settings.txt stores the effective values incl. Parallel/AutoResume" (($pst -match 'MaxRounds=2') -and ($pst -match 'VerifyTimeoutMin=30') -and ($pst -match 'AutoResume=off')) $pst
+    Set-Content -LiteralPath (Join-Path $psProj ".claude\feature-flow-settings.txt") -Value @("MaxRounds=zero") -Encoding ASCII
+    $r = Invoke-Ff $psProj @("init", "-Title", "bad settings")
+    Check "bad value in the settings file -> init exit 2" (($r.Code -eq 2) -and ($r.Out -match 'MaxRounds must be a positive integer')) $r.Out
+    Set-Content -LiteralPath (Join-Path $psProj ".claude\feature-flow-settings.txt") -Value @("MaxRoundz=2") -Encoding ASCII
+    $r = Invoke-Ff $psProj @("init", "-Title", "typo settings")
+    Check "unknown key in the settings file -> init exit 2" (($r.Code -eq 2) -and ($r.Out -match "Unknown key 'MaxRoundz'")) $r.Out
+    $r = Invoke-Ff $project @("init", "-Title", "default source")
+    Check "without a settings file the source is the skill defaults" ($r.Out -match 'Parallel=on AutoResume=on \(from skill defaults\)') $r.Out
+
     # 16d. Settings: init writes settings.txt; later calls without -MaxRounds use it (scheduled firings too).
     $r = Invoke-Ff $project @("init", "-Title", "settings probe", "-MaxRounds", "2", "-MaxQaCycles", "1", "-MaxModel", "opus")
     $sw = Get-WorkDirLine $r.Out

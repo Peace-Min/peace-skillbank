@@ -3,7 +3,8 @@
 **What it covers:** a turn that ended because of a usage limit or an API error, while Claude Code
 stays open. It does not survive closing or crashing Claude Code: `CronCreate` jobs live only in the
 session, fire only while the session is idle (never mid-turn), and recurring jobs expire after 7
-days. After any of those, the user runs `/feature-flow resume <dir>`, which re-arms the schedule.
+days. After any of those, the user runs `/peace-skillbank:feature-flow resume <dir>` (plugin) or
+`/feature-flow resume <dir>` (project or clone install), which re-arms the schedule.
 
 ## Arm (after `intake PASS`, and on every user `resume`)
 

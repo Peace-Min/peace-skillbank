@@ -1,7 +1,8 @@
 # feature-flow 사용 가이드
 
 요청 하나를 **인터뷰 → 명세 → 기획 → 개발 → QA → 위키**까지 에이전트 워크플로로 끝까지 진행하는 스킬이다.
-외부망 Claude Code에서 **Claude 모델만으로** 돌아간다(다른 회사 모델 없음). 교차 모델 검수 대신 아래 네 겹의 견제를 쓴다.
+외부망 Claude Code에서 **Claude 모델만으로** 돌아간다(다른 회사 모델 없음). **Windows 전용**(Windows PowerShell 5.1 이상,
+게이트 명령을 `cmd.exe`로 실행)이라 macOS·Linux에서는 마스터가 시작하지 않고 알린다. 교차 모델 검수 대신 아래 네 겹의 견제를 쓴다.
 
 1. **기계적 게이트**: 검수자를 부르기 전에 `ff.ps1 gate`가 단계별 검사를 한 번에 돌린다. 실패하면 검수자까지
    가지 않고, 게이트가 직접 반려 파일을 쓰고 FAIL을 기록한다.
@@ -166,10 +167,24 @@
 
 ## 설정 바꾸기
 
-- SKILL.md 상단: `MAX_ROUNDS`, `MAX_GATE_FAILS`, `MAX_QA_CYCLES`, `MAX_FIXES`, `MAX_DECISIONS`, `MAX_MODEL`, `VERIFY_TIMEOUT_MIN`, `PARALLEL`, `AUTO_RESUME`.
+**플러그인 설치에서는 SKILL.md를 고치지 않는다**(업데이트 때 덮어써진다). 대상 프로젝트에
+`.claude/feature-flow-settings.txt`를 만들면 `init`이 기본값 위에 적용하고, 적용된 값을 `SETTINGS` 줄에 출처와 함께
+출력한다. 잘못된 키나 값이면 `init`이 거부한다.
+
+```text
+# .claude/feature-flow-settings.txt
+MaxModel=opus
+MaxRounds=2
+VerifyTimeoutMin=30
+Parallel=off
+AutoResume=off
+```
+
+
+- 기본값은 SKILL.md 상단(`MAX_ROUNDS`, `MAX_GATE_FAILS`, `MAX_QA_CYCLES`, `MAX_FIXES`, `MAX_DECISIONS`, `MAX_MODEL`, `VERIFY_TIMEOUT_MIN`, `PARALLEL`, `AUTO_RESUME`)에 있다. 클론해서 쓸 때만 직접 고친다.
   상한 값은 마스터가 `init`에 한 번 넘기면 `work/<id>/settings.txt`에 저장되고 이후 모든 호출이 쓴다.
   이미 시작한 작업은 `settings.txt`를 고친다.
-- `MAX_MODEL = inherit`: 모델 자동 선택을 끈다. `PARALLEL = off`: 항상 순차 개발. `AUTO_RESUME = off`: 예약 안 함.
+- `MaxModel=inherit`: 모델 자동 선택을 끈다. `Parallel=off`: 항상 순차 개발. `AutoResume=off`: 예약 안 함.
 
 ## 에스컬레이션에 답할 때
 

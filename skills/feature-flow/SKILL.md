@@ -1,6 +1,6 @@
 ---
 name: feature-flow
-description: Takes a feature or change end to end in the current project - interview, approved spec, plan, develop, QA, wiki - with Claude subagents, a read-only reviewer on a different model, mechanical build/test/evidence gates, records under work/<id>/ and automatic resume. Use when the user asks to build something end to end with planning, review, tests and docs, or invokes /feature-flow. Not for small one-file fixes. Korean triggers - 기획부터 위키까지, 워크플로로 개발해줘, 기획 개발 QA 위키, 에이전트 워크플로.
+description: Takes a feature or change end to end in the current project - interview, approved spec, plan, develop, QA, wiki - with Claude subagents, a read-only reviewer on a different model, mechanical build/test/evidence gates, records under work/<id>/ and automatic resume. Windows only (PowerShell 5.1+). Use when the user asks to build something end to end with planning, review, tests and docs, or invokes /feature-flow. Not for small one-file fixes. Korean triggers - 기획부터 위키까지, 워크플로로 개발해줘, 기획 개발 QA 위키, 에이전트 워크플로.
 ---
 
 # Feature Flow (master procedure)
@@ -9,8 +9,16 @@ You are the **master**. The user talks only to you. You never write feature code
 interview, write the spec, dispatch subagents, run the gates, fix what blocks the run when you
 safely can, record state, and escalate only what needs the user.
 
-Settings (change here, nowhere else). They are passed once to `init`, stored in
-`<dir>/settings.txt`, and every later ff.ps1 call (also scheduled firings) reads them from there:
+**Windows only:** `ff.ps1` needs Windows PowerShell 5.1+ and runs gate commands through `cmd.exe`.
+On macOS or Linux, stop and tell the user this skill does not run there.
+
+Settings (defaults; pass them to `init` exactly as below). A project changes them with
+`.claude/feature-flow-settings.txt` (`Key=value` lines: MaxRounds, MaxGateFails, MaxQaCycles,
+MaxFixes, MaxDecisions, MaxModel, VerifyTimeoutMin, Parallel=on|off, AutoResume=on|off); `init`
+applies it over these defaults. That is the only way for a plugin install, whose SKILL.md must not
+be edited. `init` prints the effective values on its `SETTINGS` line and stores them in
+`<dir>/settings.txt`; every later ff.ps1 call (also scheduled firings) reads them from there. Use
+`Parallel` and `AutoResume` from that line, not the defaults below:
 
 - `MAX_ROUNDS = 3` reviewer FAILs per stage before the loop limit.
 - `MAX_GATE_FAILS = 3` mechanical gate FAILs per stage before the loop limit (a separate budget).
@@ -19,8 +27,8 @@ Settings (change here, nowhere else). They are passed once to `init`, stored in
 - `MAX_DECISIONS = 3` in-scope decisions the master may take on its own per work item.
 - `MAX_MODEL = fable` strongest model `pick-model` may choose (`opus` to cap cost; `inherit` to never pass a model).
 - `VERIFY_TIMEOUT_MIN = 20` minutes each build/test/ui-test command may run in a gate before it is killed (FAIL).
-- `PARALLEL = on` develop independent `[group:X]` work in parallel worktrees when the conditions below hold.
-- `AUTO_RESUME = on` resume by schedule after a usage-limit or API-error stop while Claude Code stays open.
+- `PARALLEL = on` (`Parallel`) develop independent `[group:X]` work in parallel worktrees when the conditions below hold.
+- `AUTO_RESUME = on` (`AutoResume`) resume by schedule after a usage-limit or API-error stop while Claude Code stays open.
 
 `<skill-dir>` is the copy of this skill that contains `scripts/ff.ps1`. If
 `<project root>/.claude/skills/feature-flow/scripts/ff.ps1` exists, use that copy even when the
@@ -100,7 +108,7 @@ reviewer any file change.
    and QA gates also run - an existing one, or `none`). Write acceptance criteria that can be
    observed (what is shown, returned, measured after which action), not only looks. In `## Risk` set `level: high` for security, auth,
    concurrency, data migration/persistence formats or a public API; otherwise `normal`.
-5. Show the spec, get explicit approval, log `intake PASS`, then arm Auto resume if `AUTO_RESUME = on`.
+5. Show the spec, get explicit approval, log `intake PASS`, then arm Auto resume if `init` printed `AutoResume=on`.
    Non-interactive runs: if the request itself states scope, out of scope, acceptance criteria and
    verify commands and says the spec is pre-approved, write the spec from it and log `intake PASS`
    with note `pre-approved by request`.
@@ -180,7 +188,7 @@ cannot be exercised automatically, the QA tester returns `BLOCKED_ENV` with
 automation it tried), send the checklist back to the tester; never hand a human an item nobody
 tried to automate. Only then give the checklist to the user.
 
-## Parallel development (PARALLEL = on)
+## Parallel development (Parallel=on)
 
 Use it only when all hold at the start of the dev stage: this is the first dev round of the work
 item; `git status` shows no changes outside `work/`; `02-todo.md` tags D items with at least two
@@ -209,14 +217,15 @@ What happened: <one line>
 What I already tried: <MASTER_FIX taken, or why none was safe>
 Evidence: <file paths>
 What I need from you: <decision / permission / environment fix / manual QA results>
-Resume with: /feature-flow resume <dir>
+Resume with: <the command you were invoked with> resume <dir>
+              (plugin: /peace-skillbank:feature-flow resume <dir>; project or clone: /feature-flow resume <dir>)
 ```
 
 If the user interrupts, refuses a dispatch or asks to stop, log `PAUSE` (note `user stopped`, on the
 stage `status` shows) and delete the schedule before anything else; a scheduled firing then stops on
 its own (`auto-check` returns STOP for a paused run).
 
-## Auto resume (AUTO_RESUME = on)
+## Auto resume (AutoResume=on)
 
 A usage limit ends the turn and a stopped turn cannot schedule anything, so the schedule is armed
 right after `intake PASS` and re-armed on every user resume; `references/auto-resume.md` has the

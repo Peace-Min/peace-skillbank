@@ -3,6 +3,17 @@ description: Analyze a Windows process dump (.dmp) offline and produce an LLM-re
 argument-hint: "<dmp-path> [hang/crash context, e.g. what the app was doing]"
 ---
 
+**Before doing anything else, read the skill's full instructions with the Read tool** (in a plugin
+install this command can shadow the skill, so the Skill tool may return only this text):
+
+1. `${CLAUDE_PLUGIN_ROOT}/skills/dmp-triage/SKILL.md` (plugin install);
+2. if that path is not expanded or does not exist, the newest
+   `~/.claude/plugins/cache/peace-skillbank/peace-skillbank/<version>/skills/dmp-triage/SKILL.md`;
+3. in a clone of the peace-skillbank repository, `skills/dmp-triage/SKILL.md`.
+
+The folder that contains that SKILL.md is the skill directory; resolve its `scripts/` and
+`references/` from there. Then follow SKILL.md; the steps below only summarize it.
+
 Use the `dmp-triage` skill to analyze the following input:
 
 ```text

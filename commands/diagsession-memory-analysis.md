@@ -3,6 +3,17 @@ description: Analyze a VS diagsession or gcdump for managed memory leak candidat
 argument-hint: "<diagsession-or-gcdump-path> [action/count/start-point context]"
 ---
 
+**Before doing anything else, read the skill's full instructions with the Read tool** (in a plugin
+install this command can shadow the skill, so the Skill tool may return only this text):
+
+1. `${CLAUDE_PLUGIN_ROOT}/skills/diagsession-memory-analysis/SKILL.md` (plugin install);
+2. if that path is not expanded or does not exist, the newest
+   `~/.claude/plugins/cache/peace-skillbank/peace-skillbank/<version>/skills/diagsession-memory-analysis/SKILL.md`;
+3. in a clone of the peace-skillbank repository, `skills/diagsession-memory-analysis/SKILL.md`.
+
+The folder that contains that SKILL.md is the skill directory; resolve its `scripts/` and
+`references/` from there. Then follow SKILL.md; the steps below only summarize it.
+
 Use the `diagsession-memory-analysis` skill to analyze the following input:
 
 ```text

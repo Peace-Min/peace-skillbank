@@ -3,6 +3,17 @@ description: Port a C# project to Windows C++17 one unit at a time (inventory ->
 argument-hint: "<C# source root> [scope subdirectory] [C++ output root]"
 ---
 
+**Before doing anything else, read the skill's full instructions with the Read tool** (in a plugin
+install this command can shadow the skill, so the Skill tool may return only this text):
+
+1. `${CLAUDE_PLUGIN_ROOT}/skills/csharp-to-cpp-port/SKILL.md` (plugin install);
+2. if that path is not expanded or does not exist, the newest
+   `~/.claude/plugins/cache/peace-skillbank/peace-skillbank/<version>/skills/csharp-to-cpp-port/SKILL.md`;
+3. in a clone of the peace-skillbank repository, `skills/csharp-to-cpp-port/SKILL.md`.
+
+The folder that contains that SKILL.md is the skill directory; resolve its `scripts/` and
+`references/` from there. Then follow SKILL.md; the steps below only summarize it.
+
 Use the `csharp-to-cpp-port` skill for the following request:
 
 ```text

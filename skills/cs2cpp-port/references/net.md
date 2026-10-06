@@ -43,6 +43,7 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include "TerminateLogger.h"
 #include "Win32.h"
 
 #pragma comment(lib, "Ws2_32.lib")
@@ -171,7 +172,7 @@ public:
         }
         mHandler = std::move(handler);
         mRunning = true;
-        mThread = std::thread(&UdpSocket::ReceiveLoop, this, mSocket);
+        mThread = std::thread([this, s = mSocket] { RunThreadBody([this, s] { ReceiveLoop(s); }); });
         return true;
     }
 

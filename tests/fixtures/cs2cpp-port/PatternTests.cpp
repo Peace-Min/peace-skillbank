@@ -55,9 +55,20 @@ struct StatusMsg : MessageBase {
 int main(int argc, char** argv) {
     // "--terminate": an exception escapes a thread with no handler. Like .NET, the process must end and print the
     // exception first (InstallTerminateLogger). The fixture script checks stderr and the exit code.
+    // MSVC keeps std::set_terminate per thread, so worker threads go through RunThreadBody.
     if (argc > 1 && std::strcmp(argv[1], "--terminate") == 0) {
         InstallTerminateLogger();
-        std::thread([] { throw NetCompat::InvalidOperationException("boom from worker"); }).join();
+        std::thread([] { RunThreadBody([] { throw NetCompat::InvalidOperationException("boom from worker"); }); }).join();
+        return 0;
+    }
+    // "--terminate-queue": a queued job throws and the queue has no handler (ActionQueueThread starts its thread
+    // through RunThreadBody). Same expectation: print, then end abnormally.
+    if (argc > 1 && std::strcmp(argv[1], "--terminate-queue") == 0) {
+        InstallTerminateLogger();
+        ActionQueueThread q("terminate-queue");
+        q.Start();
+        q.Post([] { throw NetCompat::InvalidOperationException("boom from queue"); });
+        std::this_thread::sleep_for(std::chrono::seconds(5));
         return 0;
     }
 

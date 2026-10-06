@@ -163,16 +163,17 @@ bool TryParseInteger(const std::string& s, T& out, bool& overflow) {
         return false;
     }
     if (negative) {
-        if (!std::is_signed<T>::value) {
+        if constexpr (!std::is_signed<T>::value) {
             if (magnitude != 0) {
                 overflow = true;
                 return false;
             }
             out = 0;
             return true;
+        } else {   // 부호 없는 형식에는 단항 '-'를 만들지 않는다 (MSVC C4146)
+            out = (magnitude == 0) ? T(0) : static_cast<T>(-static_cast<T>(magnitude - 1) - 1);
+            return true;
         }
-        out = (magnitude == 0) ? T(0) : static_cast<T>(-static_cast<T>(magnitude - 1) - 1);
-        return true;
     }
     out = static_cast<T>(magnitude);
     return true;

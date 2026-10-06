@@ -45,6 +45,8 @@
 #include <thread>
 #include <utility>
 
+#include "TerminateLogger.h"
+
 // C#: csharp-helpers.md 1절 ActionQueueThread와 같은 동작.
 class ActionQueueThread {
 public:
@@ -85,7 +87,7 @@ public:
         }
         mState = State::Running;
         mOwnsThread = true;
-        mThread = std::thread(&ActionQueueThread::RunLoop, this);
+        mThread = std::thread([this] { RunThreadBody([this] { RunLoop(); }); });
         mOwnerId = mThread.get_id();
     }
 
@@ -318,6 +320,8 @@ inline ActionQueueThread& MainQueue() {
 #include <thread>
 #include <utility>
 
+#include "TerminateLogger.h"
+
 // C#: csharp-helpers.md 2절 ThreadTimer와 같은 동작.
 class ThreadTimer {
 public:
@@ -325,7 +329,7 @@ public:
 
     explicit ThreadTimer(std::function<void()> callback, bool skipMissedTicks = false)
         : mCallback(std::move(callback)), mSkipMissedTicks(skipMissedTicks) {
-        mThread = std::thread(&ThreadTimer::Run, this);
+        mThread = std::thread([this] { RunThreadBody([this] { Run(); }); });
     }
 
     // C#: Dispose(). 콜백 스레드에서 부르면 기다리지 않고 반환한다.

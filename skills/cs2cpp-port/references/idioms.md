@@ -278,7 +278,7 @@ LINQ는 C# 안에서 반복문으로 바뀌어 있어야 한다(지연 실행·�
 | `Environment.Exit(n)` | `std::exit(n)` — 정적 객체 소멸자가 돈다. 실행 중인 `std::thread`가 있으면 그 전에 멈추고 `join` |
 | `AppDomain.CurrentDomain.ProcessExit` | `std::atexit` 또는 `main` 끝의 정리 코드 |
 | `AppDomain.CurrentDomain.UnhandledException` | `std::set_terminate` (로그만 가능, 계속 실행 불가) |
-| (처리되지 않은 예외로 끝날 때 .NET이 표준 오류에 예외를 출력함) | `main` 첫 줄에서 아래 `InstallTerminateLogger()`를 부른다. C++ `std::terminate`는 아무것도 출력하지 않아 원인을 알 수 없다. 원본에 처리기가 없어도 넣는다 |
+| (처리되지 않은 예외로 끝날 때 .NET이 표준 오류에 예외를 출력함) | `main` 첫 줄에서 아래 `InstallTerminateLogger()`를 부르고, **작업 스레드 본문은 `RunThreadBody`로 감싼다.** C++ `std::terminate`는 아무것도 출력하지 않아 원인을 알 수 없다. MSVC는 `std::set_terminate`가 스레드마다 따로라 `main`에서 설치한 처리기가 작업 스레드에는 듣지 않는다. 원본에 처리기가 없어도 넣는다 |
 | `IsBackground = true` 스레드 | C#은 `Main`이 끝나면 강제 종료된다. C++은 `main` 끝에서 종료 신호 + `join`. 원본에 종료 신호가 없으면 보고 |
 
 ```cpp
@@ -289,6 +289,15 @@ LINQ는 C# 안에서 반복문으로 바뀌어 있어야 한다(지연 실행·�
 #include <exception>
 
 // C#: 처리되지 않은 예외로 프로세스가 끝날 때 예외 내용을 표준 오류에 출력하는 .NET 동작.
+// 출력한 뒤 비정상 종료한다. MSVC에서 std::abort의 종료 코드는 0xC0000409다.
+[[noreturn]] inline void ReportUnhandledAndAbort(const char* what) {
+    std::fprintf(stderr, "Unhandled exception: %s\n", what ? what : "(unknown)");
+    std::fflush(stderr);
+    std::abort();
+}
+
+// main 스레드용. MSVC는 std::set_terminate가 스레드마다 따로라서 작업 스레드에는 효과가 없다.
+// 작업 스레드는 아래 RunThreadBody로 감싼다.
 inline void InstallTerminateLogger() {
     std::set_terminate([] {
         std::exception_ptr error = std::current_exception();
@@ -296,16 +305,28 @@ inline void InstallTerminateLogger() {
             try {
                 std::rethrow_exception(error);
             } catch (const std::exception& ex) {
-                std::fprintf(stderr, "Unhandled exception: %s\n", ex.what());
+                ReportUnhandledAndAbort(ex.what());
             } catch (...) {
-                std::fprintf(stderr, "Unhandled exception: (unknown)\n");
+                ReportUnhandledAndAbort(nullptr);
             }
-        } else {
-            std::fprintf(stderr, "terminate called without an active exception\n");
         }
+        std::fprintf(stderr, "terminate called without an active exception\n");
         std::fflush(stderr);
         std::abort();
     });
+}
+
+// 작업 스레드 본문. 처리되지 않은 예외가 스레드 밖으로 나가면 .NET처럼 출력하고 끝낸다.
+// 컴파일러와 상관없이 같게 동작한다. std::thread를 직접 만들 때는 본문을 이것으로 감싼다.
+template <typename F>
+void RunThreadBody(F&& body) noexcept {
+    try {
+        body();
+    } catch (const std::exception& ex) {
+        ReportUnhandledAndAbort(ex.what());
+    } catch (...) {
+        ReportUnhandledAndAbort(nullptr);
+    }
 }
 ```
 

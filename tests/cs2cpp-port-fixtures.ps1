@@ -140,7 +140,9 @@ $defines = "/DWIN32_LEAN_AND_MEAN /DNOMINMAX /D_WIN32_WINNT=0x0A00 /DUNICODE /D_
 if ($msvc) {
     $warn = "/W4 /we4244 /we4267 /we4018 /we4389 /we4706 /we4715 /we4700"
     $cl = "cl /nologo /std:c++17 /permissive- /utf-8 /Zc:__cplusplus /EHsc /MD $warn $defines PatternTests.cpp /Fe:PatternTests.exe Ws2_32.lib Winmm.lib"
-    $buildLog = & cmd.exe /d /c "call `"$msvc`" x64 >nul && cd /d `"$out`" && $cl" 2>&1 | Out-String
+    # vcvarsall.bat calls vswhere.exe by bare name; put the Installer folder on PATH first (it is not there by default).
+    $installerDir = Split-Path -Parent $vswhere
+    $buildLog = & cmd.exe /d /c "set `"PATH=$installerDir;%PATH%`" && call `"$msvc`" x64 >nul && cd /d `"$out`" && $cl" 2>&1 | Out-String
     $compiler = "MSVC"
 }
 else {
@@ -175,5 +177,10 @@ $termProc = Start-Process -FilePath $exe -ArgumentList "--terminate" -NoNewWindo
 $termText = [System.IO.File]::ReadAllText($termOut)
 Assert-Fixture ($termProc.ExitCode -ne 0) "--terminate: process exited with 0 (exception was swallowed)"
 Assert-Fixture ($termText -match 'Unhandled exception: boom from worker') "--terminate: exception text not printed: $termText"
-Write-Host "cs2cpp-port fixtures: terminate logger passed."
+$termOut2 = Join-Path $out "terminate-queue.txt"
+$termProc2 = Start-Process -FilePath $exe -ArgumentList "--terminate-queue" -NoNewWindow -Wait -PassThru -RedirectStandardError $termOut2
+$termText2 = [System.IO.File]::ReadAllText($termOut2)
+Assert-Fixture ($termProc2.ExitCode -ne 0) "--terminate-queue: process exited with 0 (exception was swallowed)"
+Assert-Fixture ($termText2 -match 'Unhandled exception: boom from queue') "--terminate-queue: exception text not printed: $termText2"
+Write-Host "cs2cpp-port fixtures: terminate logger passed (raw thread and queue thread)."
 

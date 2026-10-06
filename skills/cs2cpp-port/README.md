@@ -27,7 +27,8 @@ C# 코드를 C++17로 1:1 포팅하는 스킬. C++에 대응이 없는 기능(Di
 
 - 2026-10-01: `references/`의 C++ 헤더 15개를 추출했다. `ActionQueueThread`, `ThreadTimer`, `WaitHandle`, `Stopwatch`, `Event`, `StrFormat`, `Logger`, `Win32`, `UdpSocket`, `NetCompat`, `ByteStream`, `MsgFactory`, `TextEncoding`, `FieldVisit`, `TerminateLogger`이다. g++ 13.1(MinGW) `-std=c++17 -pedantic -Wall -Wextra -Wshadow -Wconversion -Wsign-conversion -Werror`로 빌드했고, 동작 시험 56개와 스레드 예외 종료 시험(예외를 출력한 뒤 비정상 종료)이 통과했다.
 - 같은 날 `csharp-helpers.md`의 C# 대체 클래스 3개를 C# 7.3 `-warnaserror`로 빌드했고(VS2022 Roslyn csc, .NET Framework 4.7.2 참조 어셈블리), C++과 같은 시나리오의 동작 시험 18개가 통과했다. 둘 다 `tests/cs2cpp-port-fixtures.ps1`이 돌린다.
-- **MSVC v143 빌드는 아직 검증하지 않았다.** 시험 스크립트는 C++ 워크로드가 온전한 MSVC가 있으면 env.md의 경고 설정으로 먼저 빌드한다.
+- 2026-10-02(사내): VS2022 Professional, MSVC 14.44 v143에서 패턴 헤더 15개와 시험이 env.md 경고 설정으로 빌드됐고 동작 시험 55/55가 통과했다. 스레드 예외 종료 시험만 실패했다(예외 출력 없이 `0xC0000409`). 원인은 MSVC의 `std::set_terminate`가 스레드마다 따로라 `main`에서 설치한 처리기가 작업 스레드에 듣지 않는 것이다.
+- 2026-10-06: 위 문제를 고쳤다. 작업 스레드 본문을 `RunThreadBody`로 감싸 처리되지 않은 예외를 출력하고 끝낸다. `ActionQueueThread`, `ThreadTimer`, `UdpSocket`의 스레드도 이것으로 시작한다. 큐 스레드 예외 종료 시험(`--terminate-queue`)을 더했다. `NetCompat.h`의 C4146 경고(부호 없는 형식에 단항 `-`)를 `if constexpr`로 없앴다. 시험 스크립트가 `vcvarsall.bat` 호출 전에 Visual Studio Installer 폴더를 PATH에 넣는다(`vswhere.exe`를 이름만으로 불러 실패하던 문제). g++ 13.1로 정적 검사, C# 18/18, 동작 56/56, 종료 시험 2개가 통과했다. **MSVC 재확인은 아직이다.**
 
 ## 설치
 

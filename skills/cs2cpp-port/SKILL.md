@@ -58,7 +58,7 @@ description: C# 코드(.NET Framework 4.7.2/4.8 콘솔)를 C++17 콘솔 코드�
 13. **인덱서·파싱·반올림·예외는 `NetCompat`로.** `dict[k]` 읽기 → `NetCompat::DictAt`, `list[i]` → `ListAt`, `int.Parse` → `ParseInteger<int32_t>`, `Math.Round` → `MathRound`, C# 예외 형식 → 같은 이름의 `NetCompat` 예외 (`netcompat.md`).
 14. **`lock`은 `std::recursive_mutex`로.** C# `lock`은 같은 스레드가 다시 잡아도 된다. 호출 사슬을 거친 재진입은 코드만 보고 판단하기 어려우므로 항상 `recursive_mutex`를 쓴다(`Monitor.Wait`는 `condition_variable_any`).
 15. **나중에 실행되는 람다는 캡처를 정한다.** `Post`·타이머·구독·스레드 람다에 `[&]`·`[=]` 금지. 지역 변수는 이름을 적어 값으로, `this`는 수명이 보장될 때만(`idioms.md` 3절 "람다 캡처").
-16. **스레드 예외·종료는 원본과 같게.** 원본 스레드 본문에 `catch`가 있으면 같게 옮긴다. 없으면 C#도 프로세스가 끝나므로 그대로 두고 보고에 적는다. 이벤트 핸들러 호출부에 원본에 없는 `catch`를 추가하지 않는다. `main` 첫 줄에서 `InstallTerminateLogger()`를 불러 .NET처럼 죽기 전에 예외를 출력한다(`idioms.md` 12절). C# `IsBackground` 스레드는 `Main`이 끝나면 그냥 죽지만 C++ 스레드는 `join`해야 하므로, 종료 신호가 없는 배경 루프는 보고한다.
+16. **스레드 예외·종료는 원본과 같게.** 원본 스레드 본문에 `catch`가 있으면 같게 옮긴다. 없으면 C#도 프로세스가 끝나므로 그대로 두고 보고에 적는다. 이벤트 핸들러 호출부에 원본에 없는 `catch`를 추가하지 않는다. `main` 첫 줄에서 `InstallTerminateLogger()`를 불러 .NET처럼 죽기 전에 예외를 출력한다. `std::thread`를 직접 만들면 본문을 `RunThreadBody`로 감싼다. MSVC는 `std::set_terminate`가 스레드마다 따로라 `main`의 처리기가 작업 스레드에 듣지 않는다(`idioms.md` 12절). 패턴 헤더의 스레드는 이미 감싸 두었다. C# `IsBackground` 스레드는 `Main`이 끝나면 그냥 죽지만 C++ 스레드는 `join`해야 하므로, 종료 신호가 없는 배경 루프는 보고한다.
 17. **전문은 필드 단위.** 원본 `Write`/`Read`를 같은 순서로 `ByteWriter`/`ByteReader`에 옮긴다. 구조체 `memcpy` 금지.
 18. **버그처럼 보여도 고치지 않는다.** `// TODO(PORT-BUG?): 내용`.
 19. **없는 API를 만들지 않는다.** 확신이 없으면 `TODO(PORT)`.

@@ -53,7 +53,7 @@
 - E4 `detach()`를 쓰지 않았다
 - E5 나중에 실행되는 람다(`Post`·타이머·구독·스레드)에 `[&]`·`[=]`가 없고, 지역 변수를 이름을 적어 값 캡처했다. 람다를 넘긴 뒤 바뀌는 변수는 `shared_ptr`로 공유했다
 - E11 나중에 실행되는 람다의 `this`는 수명이 보장된다(파괴 전 `Stop`·`Dispose`·`Unsubscribe`, 또는 `shared_from_this`). 아니면 보고했다
-- E12 `main`에서 `InstallTerminateLogger()`를 부르고, 원본에 없는 `catch`로 작업 예외를 삼키지 않았다
+- E12 `main`에서 `InstallTerminateLogger()`를 부르고, 직접 만든 `std::thread` 본문은 `RunThreadBody`로 감쌌고, 원본에 없는 `catch`로 작업 예외를 삼키지 않았다
 - E6 스레드·타이머 예외 처리가 원본과 같다 (원본에 없는 `catch`를 추가하지 않았다)
 - E7 `Invoke<T>`를 `InvokeWithResult<T>`로 옮겼다
 - E8 타이머 모드(기본/건너뛰기)가 입력 C#과 같다

@@ -1,6 +1,6 @@
 ---
 description: Take a request end to end - interview, spec, plan, develop, QA, wiki - with evidence-gated read-only review at every stage.
-argument-hint: "<what to build or change>  |  resume <work-dir> [--auto]"
+argument-hint: "<만들거나 바꿀 내용>  |  resume <작업 폴더> [--auto]"
 ---
 
 Run the feature-flow workflow for the following request:

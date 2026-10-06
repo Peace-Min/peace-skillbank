@@ -9,6 +9,16 @@ You are the **master**. The user talks only to you. You never write feature code
 interview, write the spec, dispatch subagents, run the gates, fix what blocks the run when you
 safely can, record state, and escalate only what needs the user.
 
+**Talking to the user.** Write every message to the user in the user's language (the language of
+their request; Korean request -> Korean), including interview questions, the spec summary,
+escalations and the final report; keep commands, paths, IDs and status codes as they are. Files in
+the work folder may stay in English. **Every question with choices goes through the
+`AskUserQuestion` tool** (load it with ToolSearch `select:AskUserQuestion` if it is deferred): at
+most 4 questions per call, 2-4 options each, your recommendation first with "(Recommended)" in its
+label (in the user's language), a one-line trade-off per option; the user can always type another
+answer. Use plain chat only for an open question with no sensible options, or when the tool is not
+available (a scheduled `--auto` firing never asks anything).
+
 **Windows only:** `ff.ps1` needs Windows PowerShell 5.1+ and runs gate commands through `cmd.exe`.
 On macOS or Linux, stop and tell the user this skill does not run there.
 
@@ -104,12 +114,15 @@ reviewer any file change.
    stress, measurement or loop runner, and what cannot run here (no build environment, field-only
    hardware). The planner picks QA methods from this.
 4. Interview the user until nothing is ambiguous: scope, explicit non-goals, edge cases, acceptance
-   criteria. Ask in small batches. Write `01-spec.md` (Out of scope is mandatory; Verify commands
+   criteria. Ask in batches of up to 4 through `AskUserQuestion` (see Talking to the user); put your
+   findings from the code first in one short message, then the question call. Write `01-spec.md` (Out of scope is mandatory; Verify commands
    `- build:` / `- test:` are what `gate` runs; `- ui-test:` is an unattended runner command the dev
    and QA gates also run - an existing one, or `none`). Write acceptance criteria that can be
    observed (what is shown, returned, measured after which action), not only looks. In `## Risk` set `level: high` for security, auth,
    concurrency, data migration/persistence formats or a public API; otherwise `normal`.
-5. Show the spec, get explicit approval, log `intake PASS`, then arm Auto resume if `init` printed `AutoResume=on`.
+5. Show the spec (a short summary in the user's language plus the path of `01-spec.md`), ask for
+   approval with `AskUserQuestion` (options: approve / change something), log `intake PASS` only
+   after an explicit approve, then arm Auto resume if `init` printed `AutoResume=on`.
    Non-interactive runs: if the request itself states scope, out of scope, acceptance criteria and
    verify commands and says the spec is pre-approved, write the spec from it and log `intake PASS`
    with note `pre-approved by request`.
@@ -210,7 +223,9 @@ dev gate and review on the combined change. In every other case develop sequenti
 
 ## Escalation and pause
 
-Stop, delete the schedule (`references/auto-resume.md`), report in this shape, then wait:
+Stop, delete the schedule (`references/auto-resume.md`), report in this shape (labels translated into
+the user's language), then wait; when the user must choose (a decision, permission), add the
+choices as an `AskUserQuestion` call right after the report:
 
 ```text
 [feature-flow] <stage> <STATUS> (round N)

@@ -657,6 +657,7 @@ $ffReviewerFront = Get-FrontMatter -Path (Join-Path $RepositoryRoot "agents\ff-r
 Assert-Condition ($ffReviewerFront -match "(?m)^tools:\s*Read, Grep, Glob\s*$") "ff-reviewer must be read-only (tools: Read, Grep, Glob)"
 $ffCommandContent = Get-Content -Raw -LiteralPath (Join-Path $RepositoryRoot "commands\feature-flow.md")
 Assert-Condition ($ffCommandContent -match [regex]::Escape('$ARGUMENTS')) "commands/feature-flow.md must pass `$ARGUMENTS to the skill"
+Assert-Condition ($ffSkillContent -match "AskUserQuestion" -and $ffSkillContent -match "user's language") "feature-flow SKILL.md must ask choices through AskUserQuestion and talk in the user's language"
 # A plugin command can shadow its skill (the Skill tool then returns only the command text), so every
 # command must tell the model to Read the real SKILL.md first.
 foreach ($cmdFile in Get-ChildItem -LiteralPath (Join-Path $RepositoryRoot "commands") -Filter "*.md") {

@@ -104,13 +104,14 @@ try {
     Check "format: any method the model picks (measure, review) is accepted with a reason" ($r.Code -eq 0) $r.Out
 
     # 4b. [fix] needs a revert log; a manual Q item is closed only by the user's report.
-    Set-Content -LiteralPath (Join-Path $work "evidence\dev\revert-1.log") -Value "FAIL with fix reverted" -Encoding ASCII
+    Set-Content -LiteralPath (Join-Path $work "evidence\dev\revert-1.log") -Value @("dotnet test", "Failed: 1", "EXIT 1") -Encoding ASCII
+    Set-Content -LiteralPath (Join-Path $work "evidence\dev\revert-2.log") -Value @("dotnet test", "Passed!", "EXIT 0") -Encoding ASCII
     Set-Content -LiteralPath (Join-Path $work "evidence\qa\Q2-manual.log") -Value "checked-by: user" -Encoding ASCII
-    Set-Content -LiteralPath (Join-Path $work "02-todo.md") -Value @("## Dev", "- [x] D1: null check [fix]", "  - evidence: src/Lockout.cs:7", "- [x] D2: other [fix]", "  - evidence: src/Lockout.cs:7 | evidence/dev/revert-1.log", "## QA", "- [x] Q1: dpi", "  - method: manual - real 150% scaling", "  - evidence: src/Lockout.cs:7", "- [x] Q2: dpi again", "  - method: manual - real 150% scaling", "  - evidence: evidence/qa/Q2-manual.log") -Encoding UTF8
+    Set-Content -LiteralPath (Join-Path $work "02-todo.md") -Value @("## Dev", "- [x] D1: null check [fix]", "  - evidence: src/Lockout.cs:7", "- [x] D2: other [fix]", "  - evidence: src/Lockout.cs:7 | evidence/dev/revert-1.log", "- [x] D3: passing revert [fix]", "  - evidence: src/Lockout.cs:7 | evidence/dev/revert-2.log", "## QA", "- [x] Q1: dpi", "  - method: manual - real 150% scaling", "  - evidence: src/Lockout.cs:7", "- [x] Q2: dpi again", "  - method: manual - real 150% scaling", "  - evidence: evidence/qa/Q2-manual.log") -Encoding UTF8
     $r = Invoke-Ff $project @("check-todo", "-WorkDir", $work)
-    Check "[fix] without revert log -> NO-REVERT; with it -> OK" (($r.Out -match '(?m)^NO-REVERT\s+D1') -and ($r.Out -match '(?m)^OK\s+D2')) $r.Out
+    Check "[fix] without revert log -> NO-REVERT; failing revert run -> OK; passing revert run (EXIT 0) -> NO-REVERT" (($r.Out -match '(?m)^NO-REVERT\s+D1') -and ($r.Out -match '(?m)^OK\s+D2') -and ($r.Out -match '(?m)^NO-REVERT\s+D3')) $r.Out
     Check "manual Q without Q<n>-manual.log -> NO-MANUAL; with it -> OK" (($r.Out -match '(?m)^NO-MANUAL\s+Q1') -and ($r.Out -match '(?m)^OK\s+Q2')) $r.Out
-    Remove-Item -LiteralPath (Join-Path $work "evidence\dev\revert-1.log"), (Join-Path $work "evidence\qa\Q2-manual.log") -Force
+    Remove-Item -LiteralPath (Join-Path $work "evidence\dev\revert-1.log"), (Join-Path $work "evidence\dev\revert-2.log"), (Join-Path $work "evidence\qa\Q2-manual.log") -Force
 
     # 5. -AllowOpen (qa gate): open Q without proof fails; with a proof file it passes as OPEN-OK.
     Set-Content -LiteralPath (Join-Path $work "02-todo.md") -Value $todoOk -Encoding UTF8

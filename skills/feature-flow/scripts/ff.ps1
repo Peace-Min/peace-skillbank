@@ -330,6 +330,16 @@ function Get-MaxRound([object[]]$Events, [string]$ForStage) {
     return $max
 }
 
+function Test-RevertLog([string]$Evidence, [string]$Dir) {
+    # 0. A [fix] item's revert log must exist in the work folder and record the reverted run failing
+    #    ("EXIT <non-zero>" line); whether the right test failed is still the reviewer's call.
+    $m = [regex]::Match($Evidence, 'evidence/dev/revert-[^\s|;,:]+')
+    if (-not $m.Success) { return $false }
+    $path = Join-Path $Dir ($m.Value -replace '/', '\')
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return $false }
+    return ([System.IO.File]::ReadAllText($path) -match '(?m)^\s*EXIT\s+-?[1-9]\d*\s*$')
+}
+
 function Get-TodoItems([string]$Dir) {
     return (Read-TodoFile (Join-Path $Dir "02-todo.md"))
 }
@@ -713,7 +723,7 @@ switch ($Command) {
             elseif ($refs -eq 0) { Write-Output "NO-REF    $($item.Id)  evidence has no file ref (path or path:line)"; $bad++ }
             # 3. A bug fix is proven by its test failing without the fix; a manual item is closed only by
             #    the user's report the master saved.
-            elseif ($item.Id -like "D*" -and $item.Text -match '\[fix\]' -and $item.Evidence -notmatch 'evidence/dev/revert-\S+') { Write-Output "NO-REVERT $($item.Id)  [fix] item needs evidence/dev/revert-<n>.log (the test fails with the fix reverted)"; $bad++ }
+            elseif ($item.Id -like "D*" -and $item.Text -match '\[fix\]' -and -not (Test-RevertLog $item.Evidence $dir)) { Write-Output "NO-REVERT $($item.Id)  [fix] item needs evidence/dev/revert-<n>.log ending with the failing run's 'EXIT <non-zero>' (the test fails with the fix reverted)"; $bad++ }
             elseif ($item.Id -like "Q*" -and $item.Method -eq "manual" -and $item.Evidence -notmatch ('evidence/qa/' + [regex]::Escape($item.Id) + '-manual\.log')) { Write-Output "NO-MANUAL $($item.Id)  manual item is closed only by evidence/qa/$($item.Id)-manual.log (the user's report)"; $bad++ }
             else { Write-Output "OK        $($item.Id)" }
         }

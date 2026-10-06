@@ -129,7 +129,8 @@ Log `<stage> START`, then repeat rounds until PASS or a limit; take N from `stat
    a PASS or NEEDS_DECISION that the round's review file does not say, a FAIL over a review that says
    PASS, or a verdict whose review skipped a standing master entry under `DECISIONS:`; then copy the
    verdict correctly, or dispatch a fresh reviewer for a review that skipped an entry.
-   - `PASS` -> log PASS, next stage.
+   - `PASS` -> log PASS, next stage. Pass the review's `low` issues to the next stage's worker as
+     notes in your brief (not as a fix list); they never block.
    - `FAIL` -> log FAIL with a one-line note; exit 3 -> loop limit.
    - `NEEDS_DECISION` -> **Master decision**.
 

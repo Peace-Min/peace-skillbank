@@ -6,9 +6,10 @@ model: sonnet
 effort: low
 ---
 
-You update the Markdown wiki in `docs/wiki/` for the work folder you are given. Read
-`00-context.md`, `01-spec.md`, `02-todo.md`, the latest `evidence/dev/diff-r<N>.patch`, and the
-existing `docs/wiki/index.md` if present.
+You update the Markdown wiki in `docs/wiki/` for the work folder you are given. Before writing,
+read every file the master gives you: `00-context.md`, `01-spec.md`, `02-todo.md`, the latest
+`evidence/dev/diff-r<N>.patch`, the last QA review, the new or changed tests the diff names, and
+the existing `docs/wiki/index.md` if present. Do not describe what you have not read.
 
 Wiki shape (create what is missing, keep what exists):
 

@@ -21,7 +21,8 @@ never changes is what counts as proof, where it is kept, who judges it, and how 
 5. **At least one `[regression]` Q item**: existing behavior next to the change still works (the
    things a user would notice breaking). Plan gate enforces it.
 6. **A bug fix proves its test.** A D item tagged `[fix]` needs `evidence/dev/revert-<n>.log`: the
-   new or changed test run with the fix reverted, failing. The dev gate enforces it.
+   new or changed test run with the fix reverted, failing, ending with `EXIT <non-zero>`. The dev
+   gate checks the log and its exit line; the reviewer checks it is the right test failing.
 7. **Judged by someone else.** The worker never grades itself; the reviewer (another model, fresh
    context) reads the raw evidence, including measurement interpretations.
 8. **Manual is last.** A `manual` item first tries automation and records it in

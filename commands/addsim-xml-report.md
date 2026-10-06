@@ -3,6 +3,17 @@ description: Analyze AddSIM (BSM/Player/Component) XML into a fixed-format self-
 argument-hint: "<xml-file-or-folder> [extra context, e.g. what to focus on]"
 ---
 
+**Before doing anything else, read the skill's full instructions with the Read tool** (in a plugin
+install this command can shadow the skill, so the Skill tool may return only this text):
+
+1. `${CLAUDE_PLUGIN_ROOT}/skills/addsim-xml-report/SKILL.md` (plugin install);
+2. if that path is not expanded or does not exist, the newest
+   `~/.claude/plugins/cache/peace-skillbank/peace-skillbank/<version>/skills/addsim-xml-report/SKILL.md`;
+3. in a clone of the peace-skillbank repository, `skills/addsim-xml-report/SKILL.md`.
+
+The folder that contains that SKILL.md is the skill directory; resolve its `scripts/` and
+`references/` from there. Then follow SKILL.md; the steps below only summarize it.
+
 Use the `addsim-xml-report` skill to analyze the following input:
 
 ```text

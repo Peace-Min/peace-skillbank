@@ -657,6 +657,14 @@ $ffReviewerFront = Get-FrontMatter -Path (Join-Path $RepositoryRoot "agents\ff-r
 Assert-Condition ($ffReviewerFront -match "(?m)^tools:\s*Read, Grep, Glob\s*$") "ff-reviewer must be read-only (tools: Read, Grep, Glob)"
 $ffCommandContent = Get-Content -Raw -LiteralPath (Join-Path $RepositoryRoot "commands\feature-flow.md")
 Assert-Condition ($ffCommandContent -match [regex]::Escape('$ARGUMENTS')) "commands/feature-flow.md must pass `$ARGUMENTS to the skill"
+# A plugin command can shadow its skill (the Skill tool then returns only the command text), so every
+# command must tell the model to Read the real SKILL.md first.
+foreach ($cmdFile in Get-ChildItem -LiteralPath (Join-Path $RepositoryRoot "commands") -Filter "*.md") {
+    $cmdName = [System.IO.Path]::GetFileNameWithoutExtension($cmdFile.Name)
+    $cmdText = Get-Content -Raw -Encoding UTF8 -LiteralPath $cmdFile.FullName
+    Assert-Condition ($cmdText.Contains('${CLAUDE_PLUGIN_ROOT}/skills/' + $cmdName + '/SKILL.md')) "commands/$($cmdFile.Name) must tell the model to Read skills/$cmdName/SKILL.md first (command can shadow the skill)"
+    Assert-Condition (Test-Path -LiteralPath (Join-Path $RepositoryRoot "skills\$cmdName\SKILL.md")) "commands/$($cmdFile.Name) has no matching skills/$cmdName/SKILL.md"
+}
 $ffProjectContent = Get-Content -Raw -LiteralPath (Join-Path $RepositoryRoot ".claude\skills\feature-flow\SKILL.md")
 Assert-Condition ((Get-FrontMatter -Path (Join-Path $RepositoryRoot ".claude\skills\feature-flow\SKILL.md")) -match "(?m)^name:\s*feature-flow\s*$") "feature-flow project entrypoint must expose /feature-flow"
 Assert-Condition ($ffProjectContent -match "skills/feature-flow/SKILL.md") "feature-flow project entrypoint must delegate to the canonical skill"

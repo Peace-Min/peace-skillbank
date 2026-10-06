@@ -3,6 +3,17 @@ description: Package the current stuck situation (code, problem, what was tried,
 argument-hint: "<what you're stuck on / what to ask the frontier model>"
 ---
 
+**Before doing anything else, read the skill's full instructions with the Read tool** (in a plugin
+install this command can shadow the skill, so the Skill tool may return only this text):
+
+1. `${CLAUDE_PLUGIN_ROOT}/skills/frontier-handoff/SKILL.md` (plugin install);
+2. if that path is not expanded or does not exist, the newest
+   `~/.claude/plugins/cache/peace-skillbank/peace-skillbank/<version>/skills/frontier-handoff/SKILL.md`;
+3. in a clone of the peace-skillbank repository, `skills/frontier-handoff/SKILL.md`.
+
+The folder that contains that SKILL.md is the skill directory; resolve its `scripts/` and
+`references/` from there. Then follow SKILL.md; the steps below only summarize it.
+
 Use the `frontier-handoff` skill to package the following stuck situation into ONE clean, self-contained prompt that a stronger frontier model on a different machine can act on with zero access to these files:
 
 ```text

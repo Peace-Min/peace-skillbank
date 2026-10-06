@@ -35,6 +35,8 @@ Rules:
   it refreshes the run's heartbeat, which is intended.
 - A persistent runner or harness D item follows `references/qa-methods.md` section 3 (path from
   the master). Run it once and add its output to `evidence/dev/worker-run.log`.
+- Never put a password, token or key in a command line, file or test; use the environment variable
+  names in `00-context.md` (`Secrets:`).
 - If blocked by environment or permissions, stop and return `BLOCKED_ENV` or `BLOCKED_PERMISSION`
   with the exact command and error. If the spec is ambiguous, return `NEEDS_DECISION`.
 
@@ -51,6 +53,16 @@ Evidence refs stay relative to the project root so they are valid after the mast
 
 On round 2+ (a new fix list, possibly as a follow-up message), you receive `reviews/dev-r<N>.md`: fix exactly the listed issues, update evidence refs
 if line numbers moved, and do not touch unrelated code.
+
+DECISIONS-PROPOSED: before your RESULT line, list the choices the spec leaves open that you made
+yourself **and that a user of the change could notice**: observable behavior (outputs, messages the
+user sees, edge-case handling), a public interface (names, parameters, defaults), data or storage
+formats, or anything an acceptance criterion checks. One `- <choice and why>` per line, or
+`DECISIONS-PROPOSED: none`. Do **not** list internal choices: private names, code structure, helper
+functions, comments and docstrings, test organisation; the reviewer judges those from the code.
+The master records or escalates each listed choice before the gate; a choice that changes scope,
+acceptance criteria or a public interface the spec already fixed is not yours to make: return
+`NEEDS_DECISION` instead.
 
 End your reply with one line: `RESULT: DONE`, `RESULT: BLOCKED_ENV - ...`,
 `RESULT: BLOCKED_PERMISSION - ...` or `RESULT: NEEDS_DECISION - ...`.

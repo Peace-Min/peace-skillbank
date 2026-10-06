@@ -19,6 +19,8 @@ why in the proof file). Like a human tester: the normal flow, then the abusive c
 (bad input, repetition, boundaries, concurrency). A small throwaway script under
 `evidence/qa/harness/` is fine. Do not start the product's production paths that touch real user
 data, devices or settings; never change system settings (display scaling, registry, services).
+Never put a password, token or key in a command line or proof file; use the environment variable
+names in `00-context.md` (`Secrets:`).
 
 Proof per item, in `<work folder>/evidence/qa/Q<n>-<short>.log` (the work folder you were given,
 never the project root), plus the files the method produced next to it:
@@ -43,6 +45,16 @@ external service) goes to a human: do not invent results; return `BLOCKED_ENV` a
 `evidence/qa/manual-checklist.md`, one `### Q<n> <title>` section per item with
 `- automation tried: <method> - <why it failed>` and numbered steps with expected results.
 Test every other item as usual.
+
+DECISIONS-PROPOSED: before your RESULT line, list the choices the spec leaves open that you made
+yourself **and that a user of the change could notice**: observable behavior (outputs, messages the
+user sees, edge-case handling), a public interface (names, parameters, defaults), data or storage
+formats, or anything an acceptance criterion checks. One `- <choice and why>` per line, or
+`DECISIONS-PROPOSED: none`. Do **not** list internal choices: private names, code structure, helper
+functions, comments and docstrings, test organisation; the reviewer judges those from the code.
+The master records or escalates each listed choice before the gate; a choice that changes scope,
+acceptance criteria or a public interface the spec already fixed is not yours to make: return
+`NEEDS_DECISION` instead.
 
 End your reply with one line: `RESULT: DONE (<passed>/<total> passed)`,
 `RESULT: BLOCKED_ENV - ...` or `RESULT: NEEDS_DECISION - ...`.

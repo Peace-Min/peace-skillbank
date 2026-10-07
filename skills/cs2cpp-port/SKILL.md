@@ -20,15 +20,15 @@ description: C# 코드(.NET Framework 4.7.2/4.8 콘솔)를 C++17 콘솔 코드�
 | 도구 | 검색은 **Grep·Glob·Read**, 파일 작성은 **Write·Edit** 도구. 셸은 빌드에만 쓴다 |
 | 빌드 | 파일마다 빌드한다(6절). **빌드가 성공하기 전에는 완료라고 하지 않는다** |
 
-대상 저장소에 `PORT_CONFIG.md`가 있으면 작업 전에 읽는다. 추가 허용 라이브러리, 설정·XML·서식·정규식 방식, 코드페이지, 대체 클래스 이름, 폴더만 바꿀 수 있고 위 표의 나머지는 고정이다(`references/project.md` 5절).
+대상 저장소에 `PORT_CONFIG.md`가 있으면 작업 전에 읽는다. 추가 허용 라이브러리, 설정·XML·서식·정규식 방식, 코드페이지, 대체 클래스 이름, 폴더, 포팅 제외, 입력 점검 예외, 정리 단계 결정만 바꿀 수 있고 위 표의 나머지는 고정이다(`references/project.md` 5절).
 
 ## 2. 작업 절차
 
 한 번에 **C# 파일 하나(또는 클래스 하나)**만 옮긴다. 순서는 프로젝트 **하위→상위**, 프로젝트 안에서는 열거형·구조체 → 메시지 → 서비스 → 관리자 → `Program` (`references/project.md`).
 
-1. **입력 확인** (`references/input-contract.md`). 코드 줄(주석이 아닌 부분)에 아래가 남아 있으면 변환하지 말고, 위치와 "C#에서 먼저 바꿀 형태"를 계약서 2절 형식으로 보고하고 멈춘다. C# 원본은 고치지 않는다.
+1. **입력 확인** (`references/input-contract.md`). 코드 줄(주석이 아닌 부분)에 아래가 남아 있으면 변환하지 말고, 위치와 "C#에서 먼저 바꿀 형태"를 계약서 2절 형식으로 보고하고 멈춘다. C# 원본은 고치지 않는다. 단, `PORT_CONFIG.md`의 "포팅 제외"에 든 코드와 "입력 점검 예외"에 적힌 위치는 멈추지 않는다(계약서 1절 끝).
    `Dispatcher`, `DispatcherTimer`, `SynchronizationContext`, `System.Windows`, `INotifyPropertyChanged`, `ObservableCollection`, `ICommand`, `DevExpress`, `Messenger.`, `GetCustomAttribute`, `Activator.`, `GetProperties(`, `GetTypes()`, `DynamicMethod`, `ILGenerator`, `Type.GetType(`, `async `, `await `, `Task.Run`, `Task.Factory`, `yield return`, `new Timer(`, `System.Timers`, `Enum.GetValues`, `Enum.GetNames`, `Enum.IsDefined`, `ConfigurationManager`, LINQ 메서드(`.Where(`, `.Select(`, `.OrderBy(`, `.ToList(` 등)
-   **보고 대상**(`Thread.Abort`, `Parallel.`, `ThreadPool`, `[ThreadStatic]`, `MethodInfo.Invoke`, `Enum.Parse`, `Regex`, `decimal`, `XmlDocument`, 런타임 예외 `catch` 등, 계약서 3절)이 있는데 그 위치에 `// PREPORT-DECISION:` 표식이 없으면, 그 부분만 변환하지 말고 `// TODO(PORT): 정리 단계 결정 필요`를 남긴다.
+   **보고 대상**(`Thread.Abort`, `Parallel.`, `ThreadPool`, `[ThreadStatic]`, `MethodInfo.Invoke`, `Enum.Parse`, `Regex`, `decimal`, `XmlDocument`, 런타임 예외 `catch` 등, 계약서 3절)이 있는데 그 위치에 `// PREPORT-DECISION:` 표식이 없고 `PORT_CONFIG.md` "정리 단계 결정"에도 없으면, 그 부분만 변환하지 말고 `// TODO(PORT): 정리 단계 결정 필요`를 남긴다.
    포팅하지 않는 파일: `// PREPORT-VERIFY`가 붙은 파일, 검증 도구 프로젝트, **C# 대체 클래스 파일**(`ActionQueueThread.cs`·`ThreadTimer.cs`·`Event.cs`, 또는 `PORT_CONFIG.md`의 대응 이름). 대체 클래스는 같은 이름의 C++ 패턴 헤더를 넣는다.
 2. **의존 확인.** 이 파일이 쓰는 형식을 전부 적는다.
    - **이미 포팅됨**: 그 C++ 헤더와 해당 라이브러리의 `API_MAP.md`를 읽고 **거기 적힌 선언대로** 호출한다. C# 시그니처를 짐작해 쓰지 않는다.

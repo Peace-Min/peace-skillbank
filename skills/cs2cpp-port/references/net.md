@@ -40,6 +40,7 @@
 #include <atomic>
 #include <cstdint>
 #include <functional>
+#include <span>
 #include <string>
 #include <thread>
 #include <vector>
@@ -65,10 +66,10 @@ private:
     bool mOk = false;
 };
 
-// C#: UdpClient. 수신 콜백 인자는 (데이터, 길이, 송신자 IP, 송신자 포트)
+// C#: UdpClient. 수신 콜백 인자는 (데이터, 송신자 IP, 송신자 포트). 데이터는 콜백 안에서만 유효하다
 class UdpSocket {
 public:
-    using RecvHandler = std::function<void(const uint8_t*, size_t, const std::string&, uint16_t)>;
+    using RecvHandler = std::function<void(std::span<const uint8_t>, const std::string&, uint16_t)>;
 
     UdpSocket() = default;
     ~UdpSocket() { Close(); }
@@ -134,7 +135,7 @@ public:
     }
 
     // C#: Send(bytes, length, endPoint). 보낸 바이트 수, 실패 시 -1
-    int SendTo(const std::vector<uint8_t>& data, const std::string& destIp, uint16_t destPort) {
+    int SendTo(std::span<const uint8_t> data, const std::string& destIp, uint16_t destPort) {
         sockaddr_in dest{};
         dest.sin_family = AF_INET;
         dest.sin_port = htons(destPort);
@@ -172,7 +173,7 @@ public:
         }
         mHandler = std::move(handler);
         mRunning = true;
-        mThread = std::thread([this, s = mSocket] { RunThreadBody([this, s] { ReceiveLoop(s); }); });
+        mThread = std::jthread([this, s = mSocket] { RunThreadBody([this, s] { ReceiveLoop(s); }); });
         return true;
     }
 
@@ -208,7 +209,7 @@ private:
             char ip[INET_ADDRSTRLEN] = {};
             inet_ntop(AF_INET, &from.sin_addr, ip, sizeof(ip));
             if (mHandler) {
-                mHandler(buf.data(), static_cast<size_t>(n), ip, ntohs(from.sin_port));
+                mHandler(std::span<const uint8_t>(buf.data(), static_cast<size_t>(n)), ip, ntohs(from.sin_port));
             }
         }
     }
@@ -216,7 +217,7 @@ private:
     SOCKET mSocket = INVALID_SOCKET;
     std::atomic<bool> mRunning{false};
     RecvHandler mHandler;
-    std::thread mThread;
+    std::jthread mThread;
 };
 ```
 

@@ -22,9 +22,11 @@ C#의 `BinaryWriter`는 문자열 앞에 7비트 가변 길이를 붙이고 bool
 ```cpp
 // ByteStream.h
 #pragma once
+#include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <span>
 #include <vector>
 
 enum class ByteOrder { Big, Little };
@@ -42,17 +44,9 @@ public:
     void WriteI32(int32_t v) { WriteInt(static_cast<uint32_t>(v)); }
     void WriteU64(uint64_t v) { WriteInt(v); }
     void WriteI64(int64_t v) { WriteInt(static_cast<uint64_t>(v)); }
-    void WriteF32(float v) {
-        uint32_t u = 0;
-        std::memcpy(&u, &v, sizeof(u));
-        WriteInt(u);
-    }
-    void WriteF64(double v) {
-        uint64_t u = 0;
-        std::memcpy(&u, &v, sizeof(u));
-        WriteInt(u);
-    }
-    void WriteBytes(const uint8_t* p, size_t n) { mBuf.insert(mBuf.end(), p, p + n); }
+    void WriteF32(float v) { WriteInt(std::bit_cast<uint32_t>(v)); }
+    void WriteF64(double v) { WriteInt(std::bit_cast<uint64_t>(v)); }
+    void WriteBytes(std::span<const uint8_t> bytes) { mBuf.insert(mBuf.end(), bytes.begin(), bytes.end()); }
     void WriteZeros(size_t n) { mBuf.insert(mBuf.end(), n, 0); }   // 예약 필드 채우기
 
     size_t Size() const { return mBuf.size(); }
@@ -81,7 +75,8 @@ private:
 // C#은 이 경우 예외를 던진다 → 원본의 catch 동작(버림/로그)을 호출부에서 같게 만든다.
 class ByteReader {
 public:
-    ByteReader(const uint8_t* p, size_t n, ByteOrder order) : mData(p), mSize(n), mOrder(order) {}
+    // 데이터는 Reader보다 오래 살아야 한다(복사하지 않는다).
+    ByteReader(std::span<const uint8_t> data, ByteOrder order) : mData(data), mOrder(order) {}
 
     bool ReadU8(uint8_t& v) { return ReadInt(v); }
     bool ReadI8(int8_t& v) { return ReadSigned<uint8_t>(v); }
@@ -96,7 +91,7 @@ public:
         if (!ReadInt(u)) {
             return false;
         }
-        std::memcpy(&v, &u, sizeof(v));
+        v = std::bit_cast<float>(u);
         return true;
     }
     bool ReadF64(double& v) {
@@ -104,15 +99,15 @@ public:
         if (!ReadInt(u)) {
             return false;
         }
-        std::memcpy(&v, &u, sizeof(v));
+        v = std::bit_cast<double>(u);
         return true;
     }
-    bool ReadBytes(uint8_t* out, size_t n) {
-        if (Remaining() < n) {
+    bool ReadBytes(std::span<uint8_t> out) {
+        if (Remaining() < out.size()) {
             return false;
         }
-        std::memcpy(out, mData + mPos, n);
-        mPos += n;
+        std::memcpy(out.data(), mData.data() + mPos, out.size());
+        mPos += out.size();
         return true;
     }
     bool Skip(size_t n) {
@@ -124,7 +119,7 @@ public:
     }
 
     size_t Position() const { return mPos; }
-    size_t Remaining() const { return mSize - mPos; }
+    size_t Remaining() const { return mData.size() - mPos; }
 
 private:
     template <typename U>
@@ -151,8 +146,7 @@ private:
         return true;
     }
 
-    const uint8_t* mData;
-    size_t mSize;
+    std::span<const uint8_t> mData;
     ByteOrder mOrder;
     size_t mPos = 0;
 };
@@ -167,8 +161,9 @@ C# `Read`/`Write` 메서드 대응:
 | `x = reader.ReadUInt16()` | `if (!r.ReadU16(x)) return false;` |
 | `public override void Write(XxxWriter writer)` | `void Write(ByteWriter& w) const override` |
 | `public override void Read(XxxReader reader)` | `bool Read(ByteReader& r) override` (실패 시 false) |
-| `byte[] Reserved = new byte[4]` | `std::array<uint8_t, 4> Reserved{};` + `WriteBytes(Reserved.data(), 4)` |
-| `new MemoryStream(buffer, offset, count)` + Reader | `ByteReader r(buffer + offset, count, order);` |
+| `byte[] Reserved = new byte[4]` | `std::array<uint8_t, 4> Reserved{};` + `w.WriteBytes(Reserved)` |
+| `new MemoryStream(buffer, offset, count)` + Reader | `ByteReader r(std::span<const uint8_t>(buffer).subspan(offset, count), order);` |
+| `writer.Write(bytes, offset, count)` | `w.WriteBytes(std::span<const uint8_t>(bytes).subspan(offset, count))` |
 
 ## 3. 메시지 기반 클래스와 팩토리
 
@@ -233,6 +228,7 @@ inline std::shared_ptr<MessageBase> CreateMsg(uint16_t msgId) {
 ```cpp
 // TextEncoding.h
 #pragma once
+#include <filesystem>
 #include <string>
 #include "Win32.h"
 
@@ -268,6 +264,9 @@ inline std::string FromWide(const std::wstring& w, UINT codePage) {
 inline std::string Utf8ToAnsi(const std::string& utf8) { return FromWide(ToWide(utf8, CP_UTF8), CP_ACP); }
 inline std::string AnsiToUtf8(const std::string& ansi) { return FromWide(ToWide(ansi, CP_ACP), CP_UTF8); }
 
+// UTF-8 경로 문자열 → 파일 경로. std::string 그대로 넘기면 MSVC가 ACP로 해석해 한글이 깨진다.
+inline std::filesystem::path PathFromUtf8(const std::string& utf8) { return std::filesystem::path(ToWide(utf8, CP_UTF8)); }
+
 }  // namespace TextEncoding
 ```
 
@@ -300,8 +299,9 @@ struct FieldWriter {
     void operator()(double v) { w.WriteF64(v); }
     void operator()(bool v) { w.WriteU8(v ? 1 : 0); }   // TODO(PORT): 원본 bool 기록 형식 확인
     template <size_t N>
-    void operator()(const std::array<uint8_t, N>& a) { w.WriteBytes(a.data(), N); }
-    template <typename E, typename = std::enable_if_t<std::is_enum<E>::value>>
+    void operator()(const std::array<uint8_t, N>& a) { w.WriteBytes(a); }
+    template <typename E>
+        requires std::is_enum_v<E>
     void operator()(E e) { (*this)(static_cast<std::underlying_type_t<E>>(e)); }
 };
 
@@ -328,8 +328,9 @@ struct FieldReader {
         }
     }
     template <size_t N>
-    void operator()(std::array<uint8_t, N>& a) { ok = ok && r.ReadBytes(a.data(), N); }
-    template <typename E, typename = std::enable_if_t<std::is_enum<E>::value>>
+    void operator()(std::array<uint8_t, N>& a) { ok = ok && r.ReadBytes(a); }
+    template <typename E>
+        requires std::is_enum_v<E>
     void operator()(E& e) {
         std::underlying_type_t<E> u{};
         (*this)(u);

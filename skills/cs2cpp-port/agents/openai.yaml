@@ -1,8 +1,8 @@
 interface:
-  display_name: "C# → C++ Porting Rules"
-  short_description: "C# 콘솔 코드를 C++(C++17 범위, VS2022 x64)로 하위부터 1:1 포팅하는 규칙"
+  display_name: "C# → C++20 Porting Rules"
+  short_description: "C# 콘솔 코드를 C++20(VS2022 x64)으로 하위부터 1:1 포팅하는 규칙"
   brand_color: "#7C3AED"
-  default_prompt: "Use $cs2cpp-port to port this C# file to C++ (C++17-subset code) following the fixed environment, mapping tables, pattern code, checklist, and output format. Do not invent behavior of binary-only dependencies; leave TODO(PORT)."
+  default_prompt: "Use $cs2cpp-port to port this C# file to C++20 following the fixed environment, mapping tables, pattern code, checklist, and output format. Do not invent behavior of binary-only dependencies; leave TODO(PORT)."
 
 policy:
   allow_implicit_invocation: true

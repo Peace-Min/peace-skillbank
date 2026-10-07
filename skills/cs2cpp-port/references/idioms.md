@@ -16,7 +16,7 @@
 | `readonly` 필드 | **`const`를 붙이지 않고** `// C#: readonly` 주석만 단다. C#은 생성자 본문·`out` 인자로도 대입할 수 있어서 `const`로 옮기면 구조를 바꾸게 된다. 예: `readonly object mLock` → `std::recursive_mutex mLock; // C#: readonly` |
 | `const int X = 5;` | `static constexpr int32_t X = 5;` |
 | `const string X = "a";` | `static constexpr const char* X = "a";` |
-| 가변 `static int sCount;` | `inline static int32_t sCount = 0;` (C++17) |
+| 가변 `static int sCount;` | `inline static int32_t sCount = 0;` |
 | `static readonly` 객체 | 함수 안 `static` 지역 변수로 반환 (초기화 순서 문제 방지) |
 | `static class Util` | `namespace Util { ... }` 자유 함수 |
 | 정적 생성자 | 함수 안 `static` 지역 변수 초기화로 |
@@ -24,12 +24,16 @@
 | 복사되면 안 되는 클래스 (스레드·소켓·락 보유) | `Foo(const Foo&) = delete; Foo& operator=(const Foo&) = delete;` |
 | `partial class` | 하나의 클래스로 합친다. 원본 파일별로 추적 주석 |
 | 중첩 클래스 | 중첩 클래스 그대로 |
-| 제네릭 `class Foo<T> where T : class` | `template <typename T> class Foo` (제약 생략) — 정의는 헤더에 |
+| 제네릭 `class Foo<T>` | `template <typename T> class Foo` — 정의는 헤더에 |
+| 제약 `where T : struct, Enum` / `where T : IFoo` / `where T : new()` | `requires std::is_enum_v<T>` / `requires std::derived_from<T, IFoo>` / `requires std::default_initializable<T>` (`<concepts>`). 제약은 옮겨 둔다(잘못 쓰면 컴파일 오류로 잡힌다). `class`·`struct` 제약은 옮기지 않는다 |
 | 확장 메서드 `static void X(this Foo f)` | 자유 함수 `void X(Foo& f)` |
 | `ref int x` / `out int x` | `int32_t& x` |
 | 여러 `out` | 그대로 참조 인자들 (구조 변경 금지) |
 | 기본 인자 `int x = 0` | 선언(헤더)에만 `int32_t x = 0` |
 | 메서드 오버로드 | 그대로 오버로드 |
+| 객체 초기화 `new Foo { A = 1, B = 2 }` | 집합체(생성자 없는 struct)면 지정 초기화 `Foo{ .A = 1, .B = 2 }` — **멤버 선언 순서대로만** 적을 수 있다. 순서가 다르거나 생성자가 있으면 생성 후 `SetA(1); SetB(2);`를 원본 순서대로 |
+| struct의 기본 `Equals`·`==` (모든 필드 비교) | `bool operator==(const Foo&) const = default;` |
+| `Equals`·`==` 재정의 | `bool operator==(const Foo& other) const` 하나만(**`const` 멤버, `const&` 인자**). 비대칭으로 쓰면 C++20의 뒤집힌 후보 때문에 모호성 오류가 난다. `!=`는 만들지 않는다(자동 생성) |
 
 ## 2. 객체 수명과 소유 (GC 대체)
 
@@ -70,7 +74,7 @@ C#은 람다가 잡은 변수와 객체를 GC가 람다가 끝날 때까지 살�
 | 호출이 끝나기 전에 실행 | `Invoke`, `InvokeWithResult`, 정렬 비교자, 그 자리에서 부르는 람다 | `[&]`, `[this]` 가능 |
 | 나중에 실행 | `Post`, 타이머 콜백, `Subscribe` 핸들러, 스레드 본문 | 지역 변수는 **이름을 적어 값 캡처** `[a, b]`. `this`는 아래 표 |
 
-- 나중에 실행되는 람다에 `[&]`와 `[=]`를 쓰지 않는다. C++17의 `[=]`는 `this`를 몰래 잡는다.
+- 나중에 실행되는 람다에 `[&]`와 `[=]`를 쓰지 않는다. `[=]`는 `this`를 몰래 잡는다(C++20에서 사용 중지 경고).
 - C#은 지역 변수 **자체**를 공유한다. 람다를 넘긴 뒤 원본이 그 변수를 바꾸거나 람다 안에서 바꾸면 값 캡처와 결과가 달라진다. 그 변수는 `auto x = std::make_shared<T>(초기값);`로 만들고 `x`를 값 캡처한다.
 
 나중에 실행되는 람다의 `this`:
@@ -90,7 +94,6 @@ C#은 람다가 잡은 변수와 객체를 GC가 람다가 끝날 때까지 살�
 #include <mutex>
 #include <utility>
 #include <vector>
-#include <algorithm>
 
 template <typename... Args>
 class Event {
@@ -106,9 +109,7 @@ public:
 
     void Unsubscribe(int id) {
         std::lock_guard<std::mutex> lock(mMutex);
-        mHandlers.erase(std::remove_if(mHandlers.begin(), mHandlers.end(),
-                                       [id](const auto& p) { return p.first == id; }),
-                        mHandlers.end());
+        std::erase_if(mHandlers, [id](const auto& p) { return p.first == id; });
     }
 
     // 핸들러 목록을 복사한 뒤 락 밖에서 호출한다 (핸들러 안에서 Subscribe해도 교착 없음)
@@ -146,7 +147,7 @@ private:
 
 ## 5. 리플렉션·속성(Attribute)
 
-C++17에는 실행 중 리플렉션이 없다. 리플렉션은 **C# 안에서 명시 코드로 바뀌어 있어야 한다**(`input-contract.md` 1절) (가상 속성, 팩토리 표, 명시 등록, 생성된 `Write`/`Read`). 포팅에서는 그 명시 코드를 1:1로 옮긴다.
+C++20에도 실행 중 리플렉션이 없다. 리플렉션은 **C# 안에서 명시 코드로 바뀌어 있어야 한다**(`input-contract.md` 1절) (가상 속성, 팩토리 표, 명시 등록, 생성된 `Write`/`Read`). 포팅에서는 그 명시 코드를 1:1로 옮긴다.
 
 | 정리된 C# | C++ |
 |---|---|
@@ -173,51 +174,29 @@ C++17에는 실행 중 리플렉션이 없다. 리플렉션은 **C# 안에서 �
 
 ## 7. 문자열 포맷
 
-`std::format`은 C++20이라 금지. 아래 헬퍼를 쓴다.
+`std::format`(`<format>`)을 쓴다. 인자 형식을 컴파일할 때 검사하므로 printf의 `%d`/`%lld` 실수가 생기지 않는다. 형식 문자열은 문자열 리터럴이어야 한다(실행 중에 만든 형식은 `std::vformat`). C# 위치 지정 `{0}`은 그대로 쓸 수 있고, 한 형식 문자열 안에서 `{}`와 `{0}`을 섞지 않는다. `{{`, `}}`도 C#과 같다.
 
-```cpp
-// StrFormat.h
-#pragma once
-#include <cstdarg>
-#include <cstdio>
-#include <string>
-#include <vector>
+**숫자·bool의 기본 문자열은 C#과 다르다.** 아래 표의 `NetCompat` 함수로 먼저 문자열로 바꾼 뒤 넣는다(`netcompat.md`).
 
-inline std::string StrFormat(const char* fmt, ...) {
-    va_list args;
-    va_start(args, fmt);
-    va_list copy;
-    va_copy(copy, args);
-    const int len = std::vsnprintf(nullptr, 0, fmt, copy);
-    va_end(copy);
-    if (len <= 0) {
-        va_end(args);
-        return std::string();
-    }
-    std::vector<char> buf(static_cast<size_t>(len) + 1);
-    std::vsnprintf(buf.data(), buf.size(), fmt, args);
-    va_end(args);
-    return std::string(buf.data(), static_cast<size_t>(len));
-}
-```
-
-| C# 서식 | printf 서식 |
+| C# | C++ |
 |---|---|
-| `{0}` (int) | `%d` (`int32_t`) |
-| `{0}` (long) | `%lld` + `static_cast<long long>(v)` |
-| `{0}` (uint) | `%u` |
-| `{0}` (ulong) | `%llu` + `static_cast<unsigned long long>(v)` |
-| `{0}` (double) | `%.15g` |
-| `{0:F3}` | `%.3f` |
-| `{0:X2}` | `%02X` (`byte`는 `static_cast<unsigned>(b)`) |
-| `{0:X4}` | `%04X` |
-| `{0:D5}` | `%05d` — 음수는 C# `-00042`, printf `-0042`로 다름. 음수가 올 수 있으면 부호를 따로 붙인다 |
-| `{0,-10}` / `{0,10}` (정렬) | `%-10s` / `%10s` |
-| `BitConverter.ToString(bytes)` (`0A-0B-FF`) | 헬퍼로 `%02X`를 `-`로 이어 붙임 |
-| `{0:F3}`, `{0}` (double) | 로그용이면 허용. 값 비교·전문·파일에 쓰면 마지막 자리 차이 가능 → `TODO(PORT)` |
-| `{0}` (string) | `%s` + `s.c_str()` |
-| `{0}` (bool) | `%s` + `(b ? "True" : "False")` — C#은 `True`/`False` 대문자 |
-| `{0}` (enum) | `%s` + `ToString(e)` 이름 표 |
+| `string.Format("{0} {1}", a, b)`, `$"{a} {b}"` | `std::format("{0} {1}", a, b)` |
+| `{0}` (정수: `int`·`long`·`uint`·`byte` 등) | `{0}` 그대로 (결과 같음) |
+| `{0}` (`string`) | `{0}` + `std::string`. 원본이 `null`을 넘길 수 있으면 `optional`을 풀어 빈 문자열로(C#은 `null`을 빈 문자열로 출력) |
+| `{0}` (`double`) | `{0}` + `NetCompat::ToString(d)` |
+| `{0}` (`float`) | `{0}` + `NetCompat::ToString(f)` |
+| `{0}` (`bool`) | `{0}` + `NetCompat::ToString(b)` (`True`/`False`) |
+| `{0}` (`enum`) | `{0}` + `ToString(e)` 이름 표 (`types.md` 6절) |
+| `{0}` (`char`) | `char16_t`는 `std::format`이 받지 않는다. 원본 문자를 UTF-8 `std::string`으로 바꿔 넣는다 |
+| `{0:F3}` | `{0}` + `NetCompat::ToStringF(d, 3)` |
+| `{0:D5}` | `{0}` + `NetCompat::ToStringD(n, 5)` |
+| `{0:X2}`, `{0:X}` | `{0}` + `NetCompat::ToStringX(n, 2)`, `NetCompat::ToStringX(n)` (`byte`도 그대로 넘긴다) |
+| `{0,10}` / `{0,-10}` (정렬) | `{0:>10}` / `{0:<10}`. **방향을 항상 적는다**(`std::format`은 문자열을 왼쪽, 숫자를 오른쪽에 붙여 C#과 다르다) |
+| `{0,8:F2}` (정렬 + 서식) | `{0:>8}` + `NetCompat::ToStringF(d, 2)` |
+| `BitConverter.ToString(bytes)` (`0A-0B-FF`) | 바이트마다 `std::format("{:02X}", b)`를 `-`로 이어 붙이는 헬퍼 |
+| 사용자 지정 서식 `"0.00"`, `"#,##0"`, `"N2"`, `"E3"` 등 | 대응 없음. 로그용이면 가까운 서식으로 옮기고 `TODO(PORT): 서식 확인`, 값 비교·전문·파일이면 보고 |
+| `"Count: " + n` (문자열 + 숫자·bool·enum) | `std::format("Count: {}", n)` (`+`로 옮기면 포인터 연산이 된다) |
+| 형식 문자열에 지역화 `L` 지정자 | 쓰지 않는다 (문화권 고정 "C") |
 
 ## 8. 로그
 
@@ -227,8 +206,8 @@ inline std::string StrFormat(const char* fmt, ...) {
 // Logger.h
 #pragma once
 #include <cstdint>
+#include <format>
 #include <string>
-#include "StrFormat.h"
 
 enum class LogLevel : int32_t { Debug, Info, Warn, Error };
 
@@ -236,10 +215,11 @@ namespace Logger {
 void Write(LogLevel level, const std::string& message);   // 콘솔 + 파일, 내부에서 mutex로 직렬화
 }
 
-#define LOG_DEBUG(...) Logger::Write(LogLevel::Debug, StrFormat(__VA_ARGS__))
-#define LOG_INFO(...)  Logger::Write(LogLevel::Info,  StrFormat(__VA_ARGS__))
-#define LOG_WARN(...)  Logger::Write(LogLevel::Warn,  StrFormat(__VA_ARGS__))
-#define LOG_ERROR(...) Logger::Write(LogLevel::Error, StrFormat(__VA_ARGS__))
+// 형식은 std::format과 같다: LOG_INFO("수신 {}바이트", n). 숫자·bool은 7절 표대로 NetCompat 함수로 넣는다.
+#define LOG_DEBUG(...) Logger::Write(LogLevel::Debug, std::format(__VA_ARGS__))
+#define LOG_INFO(...)  Logger::Write(LogLevel::Info,  std::format(__VA_ARGS__))
+#define LOG_WARN(...)  Logger::Write(LogLevel::Warn,  std::format(__VA_ARGS__))
+#define LOG_ERROR(...) Logger::Write(LogLevel::Error, std::format(__VA_ARGS__))
 ```
 
 `main` 시작 시 `SetConsoleOutputCP(CP_UTF8);`를 호출해 한글 콘솔 출력이 깨지지 않게 한다.
@@ -265,9 +245,9 @@ LINQ는 C# 안에서 반복문으로 바뀌어 있어야 한다(지연 실행·�
 
 | 정리된 C# | C++ |
 |---|---|
-| `new Thread(() => X()) { IsBackground = true }.Start()` | `std::thread` 멤버 + 종료 시 `join`. 호출마다 만드는 일회성 스레드면 보관 목록에 넣고 종료 때 `join`. **`detach()` 금지** |
+| `new Thread(() => X()) { IsBackground = true }.Start()` | `std::jthread` 멤버, 본문은 `RunThreadBody`로 감싼다. 원본의 종료 플래그·`Join` 순서를 그대로 옮긴다(`stop_token`은 쓰지 않는다). 호출마다 만드는 일회성 스레드면 보관 목록(`std::vector<std::jthread>`)에 넣는다. **`detach()` 금지** |
 | `CancellationTokenSource` / `ct.WaitHandle.WaitOne(n)` | `WaitHandle`(`concurrency.md` 3절) 또는 `std::atomic<bool>` + `condition_variable` 대기 |
-| `Thread.Join()` | `std::thread::join()` |
+| `Thread.Join()` | `join()` (자기 스레드에서 부르면 교착이므로 원본이 그럴 수 있으면 보고) |
 
 ## 12. 프로세스 수명
 
@@ -275,7 +255,7 @@ LINQ는 C# 안에서 반복문으로 바뀌어 있어야 한다(지연 실행·�
 |---|---|
 | `[STAThread] static void Main` | `int wmain(int argc, wchar_t* argv[])` 또는 `int main`. COM을 쓰지 않으면 STA 처리 없음. COM을 쓰면 `CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED)` |
 | `Console.CancelKeyPress += (s, e) => { … }` | `SetConsoleCtrlHandler(Handler, TRUE)`. 처리기는 **별도 스레드**에서 불린다. C#의 `e.Cancel = true`는 `return TRUE`, 아니면 `FALSE` |
-| `Environment.Exit(n)` | `std::exit(n)` — 정적 객체 소멸자가 돈다. 실행 중인 `std::thread`가 있으면 그 전에 멈추고 `join` |
+| `Environment.Exit(n)` | `std::exit(n)` — 정적 객체 소멸자가 돈다. 실행 중인 스레드가 있으면 그 전에 멈추고 `join` |
 | `AppDomain.CurrentDomain.ProcessExit` | `std::atexit` 또는 `main` 끝의 정리 코드 |
 | `AppDomain.CurrentDomain.UnhandledException` | `std::set_terminate` (로그만 가능, 계속 실행 불가) |
 | (처리되지 않은 예외로 끝날 때 .NET이 표준 오류에 예외를 출력함) | `main` 첫 줄에서 아래 `InstallTerminateLogger()`를 부르고, **작업 스레드 본문은 `RunThreadBody`로 감싼다.** C++ `std::terminate`는 아무것도 출력하지 않아 원인을 알 수 없다. MSVC는 `std::set_terminate`가 스레드마다 따로라 `main`에서 설치한 처리기가 작업 스레드에는 듣지 않는다. 원본에 처리기가 없어도 넣는다 |
@@ -317,7 +297,7 @@ inline void InstallTerminateLogger() {
 }
 
 // 작업 스레드 본문. 처리되지 않은 예외가 스레드 밖으로 나가면 .NET처럼 출력하고 끝낸다.
-// 컴파일러와 상관없이 같게 동작한다. std::thread를 직접 만들 때는 본문을 이것으로 감싼다.
+// 컴파일러와 상관없이 같게 동작한다. 스레드(std::jthread)를 직접 만들 때는 본문을 이것으로 감싼다.
 template <typename F>
 void RunThreadBody(F&& body) noexcept {
     try {

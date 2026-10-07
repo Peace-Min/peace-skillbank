@@ -1,12 +1,18 @@
 #include "UdpSocket.h"
 #include <atomic>
+#include <bit>
+#include <cfloat>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
-#include <thread>
+#include <format>
+#include <limits>
 #include <map>
 #include <memory>
+#include <numbers>
+#include <span>
 #include <string>
+#include <thread>
 #include <vector>
 #include "ActionQueueThread.h"
 #include "ByteStream.h"
@@ -16,7 +22,6 @@
 #include "MsgFactory.h"
 #include "NetCompat.h"
 #include "Stopwatch.h"
-#include "StrFormat.h"
 #include "TerminateLogger.h"
 #include "TextEncoding.h"
 #include "ThreadTimer.h"
@@ -73,6 +78,7 @@ int main(int argc, char** argv) {
     }
 
     SetConsoleOutputCP(CP_UTF8);
+    Check(__cplusplus >= 202002L, "compiled as C++20");
 
     // ---- NetCompat: parsing ----
     using NetCompat::ParseInteger;
@@ -104,9 +110,30 @@ int main(int argc, char** argv) {
     Check(NetCompat::ArrayAt(arr, 1) == 8 && Throws<NetCompat::IndexOutOfRangeException>([&] { NetCompat::ArrayAt(arr, 2); }), "ArrayAt");
     Check(Throws<NetCompat::ArgumentException>([] { throw NetCompat::ArgumentNullException("x"); }) && !Throws<NetCompat::ArgumentException>([] { throw NetCompat::FormatException(); }) && Throws<NetCompat::ArithmeticException>([] { throw NetCompat::OverflowException(); }) && Throws<std::exception>([] { throw NetCompat::IOException(); }), "exception hierarchy like .NET");
 
-    // ---- StrFormat / Logger / Event ----
-    Check(StrFormat("%02X-%s-%.3f", 10u, "a", 1.5) == "0A-a-1.500", "StrFormat");
-    LOG_DEBUG("디버그 %d", 1);
+    // ---- NetCompat: number/bool -> string, expected values printed by .NET Framework 4.8 (InvariantCulture) ----
+    using NetCompat::ToString;
+    using NetCompat::ToStringD;
+    using NetCompat::ToStringF;
+    using NetCompat::ToStringX;
+    Check(ToString(0.1 + 0.2) == "0.3" && std::format("{}", 0.1 + 0.2) != "0.3", "ToString(double): 15 digits like .NET (std::format differs)");
+    Check(ToString(1e15) == "1E+15" && ToString(1234567890123456.0) == "1.23456789012346E+15" && ToString(123456789012345.0) == "123456789012345", "ToString(double): exponent switch at 15 digits");
+    Check(ToString(0.0001) == "0.0001" && ToString(0.00001) == "1E-05" && ToString(1.0 / 3) == "0.333333333333333" && ToString(-1.5e-10) == "-1.5E-10", "ToString(double): small values");
+    Check(ToString(-0.0) == "0" && ToString(std::nan("")) == "NaN" && ToString(std::numeric_limits<double>::infinity()) == "Infinity" && ToString(-std::numeric_limits<double>::infinity()) == "-Infinity", "ToString(double): -0, NaN, infinities");
+    Check(ToString(DBL_MAX) == "1.79769313486232E+308" && ToString(std::numeric_limits<double>::denorm_min()) == "4.94065645841247E-324", "ToString(double): max, denormal min");
+    Check(ToString(1234567890123465.0) == "1.23456789012347E+15" && ToString(123456789012344.5) == "123456789012345", "ToString(double): exact tie rounds away from zero like .NET");
+    Check(ToString(16777216.0f) == "1.677722E+07" && ToString(1.0f / 3) == "0.3333333" && ToString(0.1f) == "0.1" && ToString(3.4028235e38f) == "3.402823E+38", "ToString(float): 7 digits");
+    Check(ToStringF(2.675, 2) == "2.68" && std::format("{:.2f}", 2.675) == "2.67" && ToStringF(1.0005, 3) == "1.001", "ToStringF: 15 digits then away from zero (std::format differs)");
+    Check(ToStringF(-0.004, 2) == "0.00" && ToStringF(-0.005, 2) == "-0.01" && ToStringF(0.5, 0) == "1" && ToStringF(2.5, 0) == "3", "ToStringF: sign dropped when rounded to zero, away from zero");
+    Check(ToStringF(999999.9995, 3) == "1000000.000" && ToStringF(1e16, 2) == "10000000000000000.00" && ToStringF(0.125, 2) == "0.13", "ToStringF: carry, beyond 15 digits");
+    Check(ToStringD(-42, 5) == "-00042" && ToStringD(42, 5) == "00042" && ToStringD(std::numeric_limits<int32_t>::min(), 5) == "-2147483648", "ToStringD: sign outside the digits");
+    Check(ToStringX(-1) == "FFFFFFFF" && ToStringX(std::numeric_limits<int32_t>::min(), 8) == "80000000" && ToStringX(static_cast<uint8_t>(10), 2) == "0A", "ToStringX: two's complement of the type width");
+    Check(ToString(true) == "True" && ToString(false) == "False" && std::format("{}", true) == "true", "ToString(bool): True/False");
+    Check(std::format("[{0:>5}][{0:<5}][{1:>8}]", 42, ToStringF(3.14159, 2)) == "[   42][42   ][    3.14]", "alignment {0,5} {0,-5} {1,8:F2}");
+    Check(std::numbers::pi == 3.141592653589793 && std::bit_cast<uint64_t>(0.1) == 0x3FB999999999999Aull, "std::numbers::pi = Math.PI, bit_cast = DoubleToInt64Bits");
+
+    // ---- std::format / Logger / Event ----
+    Check(std::format("{:02X}-{}-{}", 10u, "a", ToStringF(1.5, 3)) == "0A-a-1.500", "std::format");
+    LOG_DEBUG("디버그 {}", 1);
     Event<int> ev; int got = 0; int id = ev.Subscribe([&](int x) { got += x; }); ev.Invoke(3); ev.Unsubscribe(id); ev.Invoke(3);
     Check(got == 3, "Event subscribe/unsubscribe");
 
@@ -228,7 +255,7 @@ int main(int argc, char** argv) {
         w.PatchU16(0, 0xABCD);
         const auto& b = w.Buffer();
         bool layout = (o == ByteOrder::Big) ? (b[0] == 0xAB && b[1] == 0xCD && b[4] == 1 && b[7] == 4) : (b[0] == 0xCD && b[1] == 0xAB && b[4] == 4 && b[7] == 1);
-        ByteReader r(b.data(), b.size(), o); uint16_t u16; int16_t i16; uint32_t u32; float f; double d; int64_t i64; uint8_t u8;
+        ByteReader r(b, o); uint16_t u16; int16_t i16; uint32_t u32; float f; double d; int64_t i64; uint8_t u8;
         bool rt = r.ReadU16(u16) && u16 == 0xABCD && r.ReadI16(i16) && i16 == -2 && r.ReadU32(u32) && u32 == 0x01020304 && r.ReadF32(f) && f == 1.5f && r.ReadF64(d) && d == -2.25 && r.ReadI64(i64) && i64 == -5 && r.ReadU8(u8) && u8 == 7 && r.Skip(4) && r.Remaining() == 0 && !r.ReadU8(u8);
         Check(layout && rt, o == ByteOrder::Big ? "ByteStream big-endian round trip" : "ByteStream little-endian round trip");
     }
@@ -236,9 +263,9 @@ int main(int argc, char** argv) {
         StatusMsg m; m.Id = 0x0102; m.Lat = 37.5; m.State = Mode::Test; m.Reserved = {{1, 2, 3, 4}};
         ByteWriter w(ByteOrder::Big); m.Write(w);
         const auto& b = w.Buffer();
-        StatusMsg back; ByteReader r(b.data(), b.size(), ByteOrder::Big);
+        StatusMsg back; ByteReader r(b, ByteOrder::Big);
         bool ok = back.Read(r) && back.Id == 0x0102 && back.Lat == 37.5 && back.State == Mode::Test && back.Reserved[3] == 4 && b.size() == 2 + 8 + 1 + 4 && b[10] == 200;
-        StatusMsg cut; ByteReader rc(b.data(), b.size() - 1, ByteOrder::Big);
+        StatusMsg cut; ByteReader rc(std::span<const uint8_t>(b).first(b.size() - 1), ByteOrder::Big);
         Check(ok && !cut.Read(rc), "VisitFields write/read round trip + truncated -> false");
         Check(CreateMsg(0x0101) == nullptr, "factory unknown id -> nullptr");
     }
@@ -256,14 +283,14 @@ int main(int argc, char** argv) {
         UdpSocket rx, tx;
         Check(rx.Open("127.0.0.1", 45123) && tx.Open("", 0) && rx.DisableConnReset() && tx.EnableBroadcast(), "Open / DisableConnReset / EnableBroadcast");
         WaitHandle got2(false, false); std::vector<uint8_t> rcv;
-        Check(rx.StartReceive([&](const uint8_t* p, size_t n, const std::string&, uint16_t) { rcv.assign(p, p + n); got2.Set(); }), "StartReceive");
-        Check(!rx.StartReceive([](const uint8_t*, size_t, const std::string&, uint16_t) {}), "StartReceive twice rejected");
+        Check(rx.StartReceive([&](std::span<const uint8_t> d, const std::string&, uint16_t) { rcv.assign(d.begin(), d.end()); got2.Set(); }), "StartReceive");
+        Check(!rx.StartReceive([](std::span<const uint8_t>, const std::string&, uint16_t) {}), "StartReceive twice rejected");
         ByteWriter w(ByteOrder::Big); w.WriteU32(0xDEADBEEF);
         Check(tx.SendTo(w.Buffer(), "127.0.0.1", 45123) == 4 && got2.WaitOne(2000) && rcv == w.Buffer(), "loopback send/receive");
         UdpSocket dup;
         Check(!dup.Open("127.0.0.1", 45123), "bind same port without reuseAddress fails");
         UdpSocket mc; Check(mc.Open("", 45124) && mc.JoinMulticastGroup("239.1.1.1", ""), "multicast join");
-        UdpSocket notOpen; Check(!notOpen.StartReceive([](const uint8_t*, size_t, const std::string&, uint16_t) {}), "StartReceive on closed socket rejected");
+        UdpSocket notOpen; Check(!notOpen.StartReceive([](std::span<const uint8_t>, const std::string&, uint16_t) {}), "StartReceive on closed socket rejected");
         rx.Close(); rx.Close();
         Check(true, "Close idempotent");
     }
@@ -282,7 +309,7 @@ int main(int argc, char** argv) {
         Check(disposed.load(), "ThreadTimer::Dispose inside callback returns");
         StatusMsg keep; keep.State = Mode::On; keep.Id = 7;
         std::vector<uint8_t> two{0x00, 0x09};
-        ByteReader rr(two.data(), two.size(), ByteOrder::Big);
+        ByteReader rr(two, ByteOrder::Big);
         bool okRead = keep.Read(rr);
         Check(!okRead && keep.Id == 9 && keep.State == Mode::On, "FieldReader: failed field keeps previous value");
     }

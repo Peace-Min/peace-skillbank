@@ -87,7 +87,7 @@ public:
         }
         mState = State::Running;
         mOwnsThread = true;
-        mThread = std::thread([this] { RunThreadBody([this] { RunLoop(); }); });
+        mThread = std::jthread([this] { RunThreadBody([this] { RunLoop(); }); });
         mOwnerId = mThread.get_id();
     }
 
@@ -285,7 +285,7 @@ private:
     bool mLoopExited = false;
     std::atomic<std::thread::id> mOwnerId{std::thread::id()};
     std::mutex mJoinMutex;
-    std::thread mThread;
+    std::jthread mThread;   // 마지막 멤버. 소멸 순서상 먼저 파괴되지만 위 소멸자에서 이미 join했다
 };
 
 // C#: MainQueue.Instance
@@ -329,7 +329,7 @@ public:
 
     explicit ThreadTimer(std::function<void()> callback, bool skipMissedTicks = false)
         : mCallback(std::move(callback)), mSkipMissedTicks(skipMissedTicks) {
-        mThread = std::thread([this] { RunThreadBody([this] { Run(); }); });
+        mThread = std::jthread([this] { RunThreadBody([this] { Run(); }); });
     }
 
     // C#: Dispose(). 콜백 스레드에서 부르면 기다리지 않고 반환한다.
@@ -427,7 +427,7 @@ private:
     uint64_t mGeneration = 0;
     Clock::time_point mNext;
     std::mutex mJoinMutex;
-    std::thread mThread;   // 마지막 멤버 (다른 멤버 초기화 후 시작)
+    std::jthread mThread;   // 마지막 멤버 (다른 멤버 초기화 후 시작)
 };
 ```
 
@@ -503,7 +503,9 @@ private:
 | `Interlocked.Read(ref x)` | `x.load()` | |
 | `Interlocked.Increment(ref x)` | `++x` (새 값) | |
 | `Interlocked.CompareExchange(ref x, value, comparand)` | `T expected = comparand; x.compare_exchange_strong(expected, value); T original = expected;` | **인자 순서와 반환이 다르다** |
-| `Thread` + `IsBackground = true` | `std::thread` 멤버 + 종료 플래그 + `join` | `detach` 금지 |
+| `Thread` + `IsBackground = true` | `std::jthread` 멤버 + 원본의 종료 플래그 + 원본처럼 `Join` | `detach` 금지. `jthread`의 `stop_token`은 쓰지 않는다(원본 플래그를 그대로 옮긴다). 소멸 때 자동 `join`은 안전망일 뿐 원본의 종료 순서를 대신하지 않는다 |
+| `SemaphoreSlim(n, max)` / `Wait()` / `Wait(ms)` / `Release()` | `std::counting_semaphore<max>` / `acquire()` / `try_acquire_for(ms)` / `release()` | `CurrentCount`와 `Release`의 반환값(이전 개수)이 없다. 원본이 쓰면 `mutex` + `condition_variable`로 직접 세고 보고 |
+| `CountdownEvent(n)` / `Signal()` / `Wait()` | `std::latch` / `count_down()` / `wait()` | `Reset`·`AddCount`·`CurrentCount`가 없다. 원본이 쓰면 `mutex` + `condition_variable`로 |
 | `Concurrent*` 컬렉션 | `std::recursive_mutex`로 감싼 표준 컬렉션 (`types.md` 4절) | 열거는 잠금 안에서 복사본으로 |
 
 ## 5. Stopwatch · 시각

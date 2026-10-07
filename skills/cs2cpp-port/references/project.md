@@ -20,7 +20,7 @@ DLL로 만들지 않는 이유: STL 형식이 DLL 경계를 넘으면 모든 DLL
 1. 솔루션의 `<ProjectReference>`로 의존 그래프를 만든다. 아무것도 참조하지 않는 프로젝트가 가장 하위다.
 2. **하위 프로젝트부터** 하나씩 포팅한다. 위 프로젝트는 아래 프로젝트의 관문이 끝난 뒤 시작한다.
 3. 프로젝트 안 순서: 열거형·상수 → 구조체·값 형식 → 메시지 클래스 → 유틸리티 → 서비스 → 관리자 → `Program`.
-4. **공용 패턴 헤더**(`Win32.h`, `NetCompat.h`, `StrFormat.h`, `Logger.h`, `ByteStream.h`, `ActionQueueThread.h`, `ThreadTimer.h`, `Event.h`, `WaitHandle.h`, `Stopwatch.h`)는 **가장 하위 공용 프로젝트에 한 번만** 둔다. C# 대체 클래스(`csharp-helpers.md`)와 같은 이름이다.
+4. **공용 패턴 헤더**(`Win32.h`, `NetCompat.h`, `Logger.h`, `ByteStream.h`, `ActionQueueThread.h`, `ThreadTimer.h`, `Event.h`, `WaitHandle.h`, `Stopwatch.h`)는 **가장 하위 공용 프로젝트에 한 번만** 둔다. C# 대체 클래스(`csharp-helpers.md`)와 같은 이름이다.
 
 ## 3. API_MAP.md
 
@@ -103,7 +103,6 @@ DLL로 만들지 않는 이유: STL 형식이 DLL 경계를 넘으면 모든 DLL
 | 포팅 제외 | 없음 | 예. 적힌 파일·멤버는 옮기지 않고, 입력 점검도 하지 않는다 |
 | 입력 점검 예외 | 없음 | 예. 적힌 위치는 멈추지 않고 "처리"대로 옮긴다. 표에 없는 위치는 그대로 멈춘다 |
 | 정리 단계 결정 | 없음 | 예. `// PREPORT-DECISION:` 표식과 같은 효력 |
-| 컴파일 표준 | `/std:c++17` | 예. `/std:c++20`만 고를 수 있다. 코드는 C++17 범위 그대로 |
-| C++17 범위의 코드, VS2022 v143 x64, UTF-8 `std::string`, `lock` → `recursive_mutex`, `NetCompat`, 정적 라이브러리 | 고정 | **아니오.** 패턴 코드가 이 전제로 쓰여 있다. 바꿔야 하면 스킬을 복사해 고친다 |
+| C++20, VS2022 v143 x64, UTF-8 `std::string`, `lock` → `recursive_mutex`, `NetCompat`, 정적 라이브러리 | 고정 | **아니오.** 패턴 코드가 이 전제로 쓰여 있다. 바꿔야 하면 스킬을 복사해 고친다 |
 
 `PORT_CONFIG.md`의 내용이 이 스킬의 규칙과 부딪히면(예: 고정 항목을 바꾸라고 함) 따르지 않고 보고한다.

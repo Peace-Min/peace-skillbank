@@ -4,7 +4,8 @@
 
 ## A. 환경
 
-- A1 C++20 기능을 쓰지 않았다 (`contains`, `starts_with`, `std::format`, `std::span`, 지정 초기화 등)
+- A1 `env.md` 4절 금지 기능을 쓰지 않았다 (모듈, 코루틴, `ranges` 뷰, `u8` 문자열, `u8path`, `std::string::contains` 등 C++23, 시간대)
+- A7 `env.md` 4-1절 C++20에서 바뀐 것을 확인했다 (생성자 있는 struct의 `{}` 초기화, `operator==`는 `const` 멤버·`const&` 인자 하나)
 - A2 표준 라이브러리·Win32 외 라이브러리를 쓰지 않았다
 - A3 `using namespace std;`가 없다
 - A4 Win32 헤더는 `Win32.h`로만 include했다
@@ -24,7 +25,8 @@
 
 - C1 `long`/`unsigned long`을 쓰지 않았다
 - C2 모든 멤버 필드에 초기값이 있다
-- C3 문자열에 숫자·bool·enum을 `+`로 잇지 않았다 (`StrFormat`)
+- C3 문자열은 `std::format`으로 만들고, 숫자·bool·enum을 `+`로 잇지 않았다
+- C12 `double`·`float`·`bool`의 문자열과 `F`·`D`·`X` 서식을 `NetCompat::ToString`·`ToStringF`·`ToStringD`·`ToStringX`로 옮겼다. 정렬 `{0,n}`은 방향(`>`·`<`)을 적었다
 - C4 `int`와 `uint` 섞인 비교·연산을 `int64_t`로 맞췄다
 - C5 축소 변환에 `static_cast`가 있다
 - C6 부호 있는 overflow, 시프트 수 초과, 음수 왼쪽 시프트를 처리했다
@@ -50,10 +52,10 @@
 - E1 인자·피연산자 둘 이상에 부작용이 있으면 지역 변수로 나눴다
 - E2 C# `lock`을 `std::recursive_mutex`로 옮겼다 (`Monitor.Wait`는 `condition_variable_any`)
 - E3 `volatile` → `std::atomic`, `Interlocked.CompareExchange` 인자 순서
-- E4 `detach()`를 쓰지 않았다
+- E4 스레드는 `std::jthread`이고 `detach()`를 쓰지 않았다
 - E5 나중에 실행되는 람다(`Post`·타이머·구독·스레드)에 `[&]`·`[=]`가 없고, 지역 변수를 이름을 적어 값 캡처했다. 람다를 넘긴 뒤 바뀌는 변수는 `shared_ptr`로 공유했다
 - E11 나중에 실행되는 람다의 `this`는 수명이 보장된다(파괴 전 `Stop`·`Dispose`·`Unsubscribe`, 또는 `shared_from_this`). 아니면 보고했다
-- E12 `main`에서 `InstallTerminateLogger()`를 부르고, 직접 만든 `std::thread` 본문은 `RunThreadBody`로 감쌌고, 원본에 없는 `catch`로 작업 예외를 삼키지 않았다
+- E12 `main`에서 `InstallTerminateLogger()`를 부르고, 직접 만든 스레드(`std::jthread`) 본문은 `RunThreadBody`로 감쌌고, 원본에 없는 `catch`로 작업 예외를 삼키지 않았다
 - E6 스레드·타이머 예외 처리가 원본과 같다 (원본에 없는 `catch`를 추가하지 않았다)
 - E7 `Invoke<T>`를 `InvokeWithResult<T>`로 옮겼다
 - E8 타이머 모드(기본/건너뛰기)가 입력 C#과 같다

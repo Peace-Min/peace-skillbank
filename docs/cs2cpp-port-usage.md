@@ -1,6 +1,6 @@
 # cs2cpp-port 사용 가이드
 
-C# 콘솔 코드(.NET Framework 4.7.2/4.8)를 **C++17로 1:1 포팅**하는 스킬이다. 약한 로컬 모델이 즉흥 변환하지 않도록, 환경·매핑·패턴 코드·점검표·출력 형식을 고정해 둔다.
+C# 콘솔 코드(.NET Framework 4.7.2/4.8)를 **C++20으로 1:1 포팅**하는 스킬이다. 약한 로컬 모델이 즉흥 변환하지 않도록, 환경·매핑·패턴 코드·점검표·출력 형식을 고정해 둔다.
 
 ## 입력 조건
 
@@ -20,14 +20,15 @@ C++에 대응이 없는 기능은 **C# 안에서 먼저** 같은 동작의 형�
 - `Encoding.Default` 코드페이지
 - 대체 클래스 이름 대응
 - 폴더 대응
+- 포팅 제외, 입력 점검 예외, 정리 단계 결정
 
-C++17, VS2022 x64, UTF-8 `std::string`, `recursive_mutex`, `NetCompat`, 정적 라이브러리는 고정이다. 패턴 코드가 이 전제로 쓰여 있기 때문이다.
+C++20, VS2022 x64, UTF-8 `std::string`, `recursive_mutex`, `NetCompat`, 정적 라이브러리는 고정이다. 패턴 코드가 이 전제로 쓰여 있기 때문이다.
 
 ## 고정 환경
 
 | 항목 | 값 |
 |---|---|
-| 언어 | C++17 (C++20 기능 금지) |
+| 언어 | C++20 (`/std:c++20`). 쓰는 기능과 금지 목록은 `references/env.md` 3·4절 |
 | 컴파일러 | VS2022 v143, x64, `.vcxproj`. 축소 변환·부호 비교·조건 대입 등 경고를 오류로 |
 | 라이브러리 | C++ 표준 라이브러리 + Win32(Winsock2 포함)만 |
 | 형태 | 콘솔. C# 클래스 라이브러리 → 정적 라이브러리 |
@@ -96,16 +97,16 @@ plugin으로 설치했으면 `/peace-skillbank:cs2cpp-port`로 부른다. **한 
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\cs2cpp-port-fixtures.ps1
 ```
 
-- **정적 검사:** 패턴 헤더 15개가 모두 있는지, C++20 기능이 없는지, Win32 헤더를 `Win32.h`로만 include하는지 확인한다. 검사기 자체를 나쁜 예시로 먼저 시험한다.
-- **빌드와 동작 시험:** 컴파일러가 있으면 헤더를 뽑아 `tests/fixtures/cs2cpp-port/PatternTests.cpp`와 함께 C++17로 빌드한다. MSVC는 C++ 워크로드가 온전할 때만 쓰고, 아니면 MinGW g++를 쓴다. 경고는 오류로 취급한다. 시험 항목은 이렇다.
-  - NetCompat: 파싱·반올림·인덱서·예외 상속
+- **정적 검사:** 패턴 헤더 14개가 모두 있는지, `env.md` 4절 금지 기능(모듈, 코루틴, `ranges` 뷰, `u8` 문자열, C++23 등)과 맨 `std::thread`가 없는지, Win32 헤더를 `Win32.h`로만 include하는지 확인한다. 검사기 자체를 나쁜 예시로 먼저 시험한다.
+- **빌드와 동작 시험:** 컴파일러가 있으면 헤더를 뽑아 `tests/fixtures/cs2cpp-port/PatternTests.cpp`와 함께 C++20으로 빌드한다. MSVC는 C++ 워크로드가 온전할 때만 쓰고, 아니면 MinGW g++를 쓴다. 경고는 오류로 취급한다. 시험 항목은 이렇다.
+  - NetCompat: 파싱·반올림·인덱서·예외 상속, 숫자·bool 문자열(.NET Framework 출력값과 비교)
   - 큐: 큐 16개 `RunOnCurrentThread`
   - 타이머: 두 모드와 콜백 안 `Dispose`
   - 바이트 순서 왕복, `FieldVisit`, 인코딩 변환
   - UDP: 루프백·동기 수신·멀티캐스트
   - 스레드 예외 종료: 예외를 출력하고 0이 아닌 코드로 끝나는지
 - **C# 대체 클래스:** C# 컴파일러가 있으면 `csharp-helpers.md`의 코드를 뽑아 C# 7.3·경고 오류로 빌드하고, `tests/fixtures/cs2cpp-port/HelperTests.cs`로 C++과 같은 시나리오를 돌린다. 컴파일러는 VS2022 Roslyn `csc.exe`를 먼저 쓰고, 없으면 .NET SDK의 `csc.dll`을 쓴다.
-- g++ 경로를 직접 줄 때는 `-Gpp <경로>` 또는 환경변수 `CS2CPP_GPP`를 쓴다.
+- g++ 경로를 직접 줄 때는 `-Gpp <경로>` 또는 환경변수 `CS2CPP_GPP`를 쓴다. 이때는 MSVC가 있어도 g++로 빌드한다.
 
 ## 한계
 

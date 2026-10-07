@@ -4,10 +4,11 @@ param(
 )
 
 # Behavioural fixtures for the cs2cpp-port skill:
-#   1. static checks (no tools needed): every pattern header in references/*.md is found, none uses C++20 library
-#      or language features, and Win32 headers are included only through Win32.h (checker tested on a bad sample).
+#   1. static checks (no tools needed): every pattern header in references/*.md is found, none uses a feature banned in
+#      references/env.md section 4 (modules, coroutines, ranges views, u8 strings, u8path, C++23, time zones, raw
+#      std::thread), and Win32 headers are included only through Win32.h (checker tested on a bad sample).
 #   2. when a compiler exists (MSVC via vswhere with a complete C++ workload, else MinGW g++): the headers are extracted,
-#      tests/fixtures/cs2cpp-port/PatternTests.cpp is compiled as C++17 with the warning set from references/env.md
+#      tests/fixtures/cs2cpp-port/PatternTests.cpp is compiled as C++20 with the warning set from references/env.md
 #      treated as errors, and the behaviour tests are run (NetCompat parsing/rounding/indexers/exception hierarchy,
 #      ActionQueueThread incl. 16 queues on RunOnCurrentThread, ThreadTimer modes and Dispose, ByteStream both orders,
 #      FieldVisit, TextEncoding, UdpSocket loopback/Receive/multicast, terminate logger).
@@ -37,21 +38,23 @@ foreach ($md in Get-ChildItem -LiteralPath (Join-Path $skill "references") -Filt
         if ($hm.Success) { $headers[$hm.Groups[1].Value] = $code }
     }
 }
-foreach ($required in @("ActionQueueThread.h", "ThreadTimer.h", "WaitHandle.h", "Stopwatch.h", "Event.h", "StrFormat.h", "Logger.h", "Win32.h", "UdpSocket.h", "NetCompat.h", "ByteStream.h", "MsgFactory.h", "TextEncoding.h", "FieldVisit.h", "TerminateLogger.h")) {
+foreach ($required in @("ActionQueueThread.h", "ThreadTimer.h", "WaitHandle.h", "Stopwatch.h", "Event.h", "Logger.h", "Win32.h", "UdpSocket.h", "NetCompat.h", "ByteStream.h", "MsgFactory.h", "TextEncoding.h", "FieldVisit.h", "TerminateLogger.h")) {
     Assert-Fixture ($headers.ContainsKey($required)) "pattern header not found in references: $required"
 }
 
-# --- 2. C++17 guard (negative path first) ---
+# --- 2. C++20 guard: features banned in references/env.md section 4 (negative path first) ---
 $forbidden = @(
-    '\.contains\s*\(', '\.starts_with\s*\(', '\.ends_with\s*\(', 'std::format\b', '<format>', 'std::span\b',
-    'std::bit_cast\b', 'std::jthread\b', 'std::stop_token\b', '<=>', '\bconsteval\b', '\bconstinit\b',
-    'std::ranges::', 'std::source_location\b', 'std::erase_if\b', '\bconcept\s+\w+', '\brequires\s*\('
+    '(?m)^\s*import\s', '\bexport\s+module\b', '\bco_await\b', '\bco_yield\b', '\bco_return\b',
+    'std::views::', 'std::ranges::views', '\bu8"', '\bchar8_t\b', '\bu8path\b', 'std::print\b', 'std::to_underlying\b',
+    'current_zone\b', 'zoned_time\b', 'locate_zone\b', 'std::source_location\b', '\bconsteval\b', '\bconstinit\b',
+    'std::thread\b(?!::id)', '\bStrFormat\b'
 )
-$badSample = "if (m.contains(k)) { auto s = std::format(""{}"", 1); std::span<int> v; }"
-Assert-Fixture (@($forbidden | Where-Object { $badSample -match $_ }).Count -ge 3) "C++17 guard did not flag the bad sample"
+$badSample = "co_await x; auto p = std::filesystem::u8path(s); std::thread t; auto v = r | std::views::filter(f);"
+Assert-Fixture (@($forbidden | Where-Object { $badSample -match $_ }).Count -ge 4) "C++20 guard did not flag the bad sample"
+Assert-Fixture (-not ('std::thread::id x; std::jthread t;' -match 'std::thread\b(?!::id)')) "C++20 guard flags std::thread::id or std::jthread"
 foreach ($name in $headers.Keys) {
     $code = $headers[$name]
-    foreach ($f in $forbidden) { Assert-Fixture (-not ($code -match $f)) "header $name uses a C++20 feature: $f" }
+    foreach ($f in $forbidden) { Assert-Fixture (-not ($code -match $f)) "header $name uses a banned feature (env.md 4): $f" }
     Assert-Fixture (-not ($code -match 'using\s+namespace\s+std\s*;')) "header $name uses 'using namespace std;'"
     if ($name -ne "Win32.h") {
         Assert-Fixture (-not ($code -match '#include\s*<(windows|winsock2|ws2tcpip)\.h>')) "header $name includes Win32 headers directly (use Win32.h)"
@@ -106,7 +109,7 @@ else {
 # --- 3. find a compiler ---
 $msvc = $null
 $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
-if (Test-Path -LiteralPath $vswhere) {
+if (-not $Gpp -and (Test-Path -LiteralPath $vswhere)) {   # an explicit -Gpp / CS2CPP_GPP forces g++
     $vsPath = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath 2>$null
     if ($vsPath) {
         $vcvarsall = Join-Path $vsPath "VC\Auxiliary\Build\vcvarsall.bat"
@@ -139,7 +142,7 @@ $exe = Join-Path $out "PatternTests.exe"
 $defines = "/DWIN32_LEAN_AND_MEAN /DNOMINMAX /D_WIN32_WINNT=0x0A00 /DUNICODE /D_UNICODE"
 if ($msvc) {
     $warn = "/W4 /we4244 /we4267 /we4018 /we4389 /we4706 /we4715 /we4700"
-    $cl = "cl /nologo /std:c++17 /permissive- /utf-8 /Zc:__cplusplus /EHsc /MD $warn $defines PatternTests.cpp /Fe:PatternTests.exe Ws2_32.lib Winmm.lib"
+    $cl = "cl /nologo /std:c++20 /permissive- /utf-8 /Zc:__cplusplus /EHsc /MD $warn $defines PatternTests.cpp /Fe:PatternTests.exe Ws2_32.lib Winmm.lib"
     # vcvarsall.bat calls vswhere.exe by bare name; put the Installer folder on PATH first (it is not there by default).
     $installerDir = Split-Path -Parent $vswhere
     $buildLog = & cmd.exe /d /c "set `"PATH=$installerDir;%PATH%`" && call `"$msvc`" x64 >nul && cd /d `"$out`" && $cl" 2>&1 | Out-String
@@ -149,7 +152,7 @@ else {
     Push-Location $out
     try {
         $env:PATH = (Split-Path -Parent $Gpp) + ";" + $env:PATH
-        $buildLog = & $Gpp -std=c++17 -pedantic -Wall -Wextra -Wshadow -Wconversion -Wsign-conversion -Wno-unknown-pragmas -Werror -O1 -DUNICODE -D_UNICODE -D_WIN32_WINNT=0x0A00 PatternTests.cpp -o PatternTests.exe -lws2_32 -lwinmm 2>&1 | Out-String
+        $buildLog = & $Gpp -std=c++20 -pedantic -Wall -Wextra -Wshadow -Wconversion -Wsign-conversion -Wno-unknown-pragmas -Werror -O1 -DUNICODE -D_UNICODE -D_WIN32_WINNT=0x0A00 PatternTests.cpp -o PatternTests.exe -lws2_32 -lwinmm 2>&1 | Out-String
     }
     finally { Pop-Location }
     $compiler = "g++"

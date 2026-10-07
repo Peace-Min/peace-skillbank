@@ -1,6 +1,6 @@
 # cs2cpp-port
 
-C# 코드를 C++17로 1:1 포팅하는 스킬. C++에 대응이 없는 기능(Dispatcher·리플렉션·async·LINQ·Timer 등)은 C# 안에서 먼저 정리된 코드를 받는다. 입력 조건은 `references/input-contract.md`, 그 정리에 쓰는 C# 대체 클래스는 `references/csharp-helpers.md`에 있다. 런타임 규칙은 `SKILL.md`, 매핑표·패턴 코드는 `references/`에 있다. 사람용 안내는 [사용 가이드](../../docs/cs2cpp-port-usage.md).
+C# 코드를 C++로 1:1 포팅하는 스킬(C++17 범위 코드, 컴파일은 C++17 또는 C++20). C++에 대응이 없는 기능(Dispatcher·리플렉션·async·LINQ·Timer 등)은 C# 안에서 먼저 정리된 코드를 받는다. 입력 조건은 `references/input-contract.md`, 그 정리에 쓰는 C# 대체 클래스는 `references/csharp-helpers.md`에 있다. 런타임 규칙은 `SKILL.md`, 매핑표·패턴 코드는 `references/`에 있다. 사람용 안내는 [사용 가이드](../../docs/cs2cpp-port-usage.md).
 
 스킬에는 **C#→C++ 번역 규칙만** 둔다. 바이트 순서·헤더 구성·메시지 목록 같은 대상 프로젝트 고유 사실은 넣지 않고, 변환할 C# 원본에서 읽게 한다.
 
@@ -8,7 +8,7 @@ C# 코드를 C++17로 1:1 포팅하는 스킬. C++에 대응이 없는 기능(Di
 
 | 항목 | 기본값 | 위치 |
 |---|---|---|
-| 환경 | C++17, VS2022 v143 x64, 표준 라이브러리 + Win32만 | env.md |
+| 환경 | C++17 범위 코드(컴파일 /std:c++17 기본, PORT_CONFIG로 /std:c++20), VS2022 v143 x64, 표준 라이브러리 + Win32만 | env.md |
 | 프로젝트 형태 | 클래스 라이브러리 → 정적 라이브러리, 하위→상위 순서, `API_MAP.md`, 라이브러리 관문 | project.md |
 | 문자열 | UTF-8 `std::string`, 바이트 변환 지점에서만 원본 인코딩 | serialization.md 4절 |
 | 경고 | `/W4` + 축소 변환·부호 비교·조건 대입·반환 누락·미초기화 경고를 오류로 | env.md 1절 |

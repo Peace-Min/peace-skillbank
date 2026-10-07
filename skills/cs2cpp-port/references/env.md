@@ -8,7 +8,7 @@
 | Platform | `x64` | Win32(x86) 구성은 만들지 않는다 |
 | ConfigurationType | 실행 파일 `Application`, 라이브러리 `StaticLibrary` | `project.md` |
 | SubSystem | `Console` | |
-| LanguageStandard | `stdcpp17` | |
+| LanguageStandard | `stdcpp17` | `PORT_CONFIG.md`가 C++20을 고르면 `stdcpp20`. 코드는 어느 쪽이든 C++17 범위(4절) |
 | ConformanceMode | `true` | `/permissive-` |
 | CharacterSet | `Unicode` | |
 | WarningLevel | `Level4` | `/W4` |

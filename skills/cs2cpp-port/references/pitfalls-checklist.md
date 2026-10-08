@@ -11,6 +11,7 @@
 - A4 Win32 헤더는 `Win32.h`로만 include했다
 - A5 헤더에 `#pragma once`, 포인터·참조로만 쓰는 형식은 전방 선언
 - A6 공용 패턴 헤더를 새로 만들지 않고 기존 것을 include했다
+- A8 `.vcxproj.filters`가 있고, `.vcxproj`의 모든 파일이 디스크 폴더와 같은 이름의 필터에 들어 있다 (`project.md` 1절)
 
 ## B. 동작 보존
 

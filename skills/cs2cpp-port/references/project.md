@@ -8,6 +8,7 @@
 | 콘솔 실행 프로젝트 | 콘솔 `.vcxproj` (`Application`) |
 | `<ProjectReference>` | vcxproj `<ProjectReference>` + 상대 include 경로 |
 | 어셈블리 폴더 구조 | 같은 폴더 구조 |
+| 솔루션 탐색기의 폴더 | `<프로젝트>.vcxproj.filters`를 같이 만든다. 필터 이름 = 디스크 폴더 경로(`Collection`, `Collection\Sub`), 파일마다 자기 폴더의 필터. C++ 프로젝트는 이 파일이 없으면 VS에서 모든 파일이 한 줄로 보인다 |
 | `public` 형식·멤버 | 헤더에 선언 |
 | `internal` 형식·멤버 | 헤더에 노출하지 않음 (`.cpp` 안 익명 네임스페이스, 또는 `detail` 네임스페이스) |
 | `InternalsVisibleTo` (시험용) | 시험 프로젝트가 `detail` 헤더를 include |

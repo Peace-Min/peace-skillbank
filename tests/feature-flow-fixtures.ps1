@@ -551,6 +551,25 @@ try {
     $r = Invoke-Ff $project @("status", "-WorkDir", $bw)
     Check "after the refused fix, NEXT is escalated (not another round)" ($r.Out -match 'NEXT\s+escalated') $r.Out
 
+    # 20a2. Stage round cap: every round that did not pass counts, a loop MASTER_FIX does not reset it,
+    #       and only the user's RESUME does.
+    $cw = Get-WorkDirLine (Invoke-Ff $project @("init", "-Title", "stage cap", "-MaxRounds", "9", "-MaxGateFails", "9", "-MaxStageRounds", "3")).Out
+    Check "settings.txt stores MaxStageRounds" ([System.IO.File]::ReadAllText((Join-Path $cw "settings.txt")) -match 'MaxStageRounds=3') ""
+    $null = Invoke-Ff $project @("event", "-WorkDir", $cw, "-Stage", "plan", "-Status", "START")
+    $null = Invoke-Ff $project @("event", "-WorkDir", $cw, "-Stage", "plan", "-Status", "FAIL", "-Round", "1", "-Note", "review: a")
+    $null = Invoke-Ff $project @("event", "-WorkDir", $cw, "-Stage", "plan", "-Status", "FAIL", "-Round", "2", "-Note", "gate: check-todo")
+    $r = Invoke-Ff $project @("event", "-WorkDir", $cw, "-Stage", "plan", "-Status", "MASTER_FIX", "-Round", "2", "-Note", "loop: consolidated")
+    Check "loop MASTER_FIX below the stage cap is accepted" ($r.Code -eq 0) $r.Out
+    $r = Invoke-Ff $project @("event", "-WorkDir", $cw, "-Stage", "plan", "-Status", "FAIL", "-Round", "3", "-Note", "review: b")
+    Check "third non-passing round hits MaxStageRounds=3 -> exit 3 even after a loop fix, LOOP_LIMIT logged" (($r.Code -eq 3) -and ($r.Out -match 'MaxStageRounds=3') -and ($r.Out -match 'no MASTER_FIX') -and ([System.IO.File]::ReadAllText((Join-Path $cw "events.log")) -match '\| plan \| LOOP_LIMIT \| r3 \| stage')) $r.Out
+    $r = Invoke-Ff $project @("status", "-WorkDir", $cw)
+    Check "status shows the stage round count and an escalated NEXT" (($r.Out -match 'stage rounds 3/3') -and ($r.Out -match 'NEXT\s+escalated')) $r.Out
+    $r = Invoke-Ff $project @("event", "-WorkDir", $cw, "-Stage", "plan", "-Status", "MASTER_FIX", "-Round", "3", "-Note", "loop: again")
+    Check "loop MASTER_FIX at the stage cap -> LOOP_LIMIT logged instead, exit 3" (($r.Code -eq 3) -and ([System.IO.File]::ReadAllText((Join-Path $cw "events.log")) -notmatch 'MASTER_FIX \| r3 \| loop: again')) $r.Out
+    $null = Invoke-Ff $project @("event", "-WorkDir", $cw, "-Stage", "plan", "-Status", "RESUME", "-Note", "user go on")
+    $r = Invoke-Ff $project @("event", "-WorkDir", $cw, "-Stage", "plan", "-Status", "FAIL", "-Round", "4", "-Note", "review: c")
+    Check "user RESUME resets the stage round count" ($r.Code -eq 0) $r.Out
+
     # 20b. block fixes have their own budget and do not reset the FAIL counters; the model never drops after a fix.
     $kw = Get-WorkDirLine (Invoke-Ff $project @("init", "-Title", "fix kinds")).Out
     Set-Content -LiteralPath (Join-Path $kw "02-todo.md") -Value @("## Dev", "- [ ] D1: a", "  - evidence:", "- [ ] D2: b", "  - evidence:") -Encoding UTF8
@@ -596,7 +615,7 @@ try {
     Set-Content -LiteralPath (Join-Path $pc "evidence\plan\worker-r2.md") -Value @("Wrote the plan.", "DECISIONS-PROPOSED:", "- exclusions live until the report window closes", "- daily hours input stays bound to the real task", "", "RESULT: DONE") -Encoding UTF8
     $r = Invoke-Ff $gp @("proposed-check", "-WorkDir", $pc, "-Stage", "plan", "-Round", "2")
     Check "unrecorded DECISIONS-PROPOSED entries -> exit 1, each named" (($r.Code -eq 1) -and ($r.Out -match 'NOT RECORDED.*exclusions live') -and ($r.Out -match 'NOT RECORDED.*daily hours')) $r.Out
-    $null = Invoke-Ff $gp @("decision", "-WorkDir", $pc, "-Kind", "decided", "-Stage", "plan", "-Note", "exclusions live until the report window closes (planner proposal; spec leaves it open)")
+    $null = Invoke-Ff $gp @("decision", "-WorkDir", $pc, "-Kind", "decided", "-Stage", "plan", "-Note", "Exclusions live until the report-window closes (planner proposal; spec leaves it open)")
     $null = Invoke-Ff $gp @("decision", "-WorkDir", $pc, "-Kind", "decided", "-Stage", "plan", "-Note", "daily hours input stays bound to the real task (planner proposal)")
     $r = Invoke-Ff $gp @("proposed-check", "-WorkDir", $pc, "-Stage", "plan", "-Round", "2")
     Check "recorded proposals -> exit 0" (($r.Code -eq 0) -and ($r.Out -match '2 proposed decision')) $r.Out

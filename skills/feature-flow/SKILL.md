@@ -1,6 +1,7 @@
 ---
 name: feature-flow
-description: Takes a feature or change end to end in the current project - interview, approved spec, plan, develop, QA, wiki - with Claude subagents, a read-only reviewer on a different model, mechanical build/test/evidence gates, records under work/<id>/ and automatic resume. Windows only (PowerShell 5.1+). Use when the user asks to build something end to end with planning, review, tests and docs, or invokes /feature-flow. Not for small one-file fixes. Korean triggers - 기획부터 위키까지, 워크플로로 개발해줘, 기획 개발 QA 위키, 에이전트 워크플로.
+description: Takes a feature or change end to end in the current project - interview, approved spec, plan, develop, QA, wiki - with Claude subagents, a read-only reviewer on a different model, mechanical build/test/evidence gates, records under work/<id>/ and automatic resume. Windows only (PowerShell 5.1+). Runs only when the user invokes it explicitly (/peace-skillbank:feature-flow or /feature-flow); never start it on your own because a request mentions planning, QA or a wiki. Not for small one-file fixes.
+disable-model-invocation: true
 ---
 
 # Feature Flow (master procedure)
@@ -31,7 +32,7 @@ On macOS or Linux, stop and tell the user this skill does not run there.
 
 Settings (defaults; pass them to `init` exactly as below). A project changes them with
 `.claude/feature-flow-settings.txt` (`Key=value` lines: MaxRounds, MaxGateFails, MaxQaCycles,
-MaxFixes, MaxDecisions, MaxModel, VerifyTimeoutMin, Parallel=on|off, AutoResume=on|off); `init`
+MaxFixes, MaxDecisions, MaxStageRounds, MaxModel, VerifyTimeoutMin, Parallel=on|off, AutoResume=on|off); `init`
 applies it over these defaults. That is the only way for a plugin install, whose SKILL.md must not
 be edited. `init` prints the effective values on its `SETTINGS` line and stores them in
 `<dir>/settings.txt`; every later ff.ps1 call (also scheduled firings) reads them from there. Use
@@ -41,6 +42,8 @@ be edited. `init` prints the effective values on its `SETTINGS` line and stores 
 - `MAX_GATE_FAILS = 3` mechanical gate FAILs per stage before the loop limit (a separate budget).
 - `MAX_QA_CYCLES = 2` times QA may send work back to dev/plan.
 - `MAX_FIXES = 1` master interventions per stage and kind (`block:` and `loop:` each) before escalating.
+- `MAX_STAGE_ROUNDS = 6` rounds that did not pass (any FAIL or NEEDS_DECISION) per stage in total; a loop
+  MASTER_FIX does not reset it, only the user's RESUME does. At the cap: no more fixes, escalate.
 - `MAX_DECISIONS = 5` in-scope decisions the master may take on its own per work item (one per proposal or choice; never merge several into one entry).
 - `MAX_MODEL = fable` strongest model `pick-model` may choose (`opus` to cap cost; `inherit` to never pass a model).
 - `VERIFY_TIMEOUT_MIN = 20` minutes each build/test/ui-test command may run in a gate before it is killed (FAIL).
@@ -54,7 +57,7 @@ to the current folder; never run it from inside the work folder):
 
 ```text
 $ff = "<skill-dir>/scripts/ff.ps1"
-powershell -NoProfile -ExecutionPolicy Bypass -File $ff init -Title "<short title>" -MaxRounds 3 -MaxGateFails 3 -MaxQaCycles 2 -MaxFixes 1 -MaxDecisions 5 -MaxModel fable -VerifyTimeoutMin 20
+powershell -NoProfile -ExecutionPolicy Bypass -File $ff init -Title "<short title>" -MaxRounds 3 -MaxGateFails 3 -MaxQaCycles 2 -MaxFixes 1 -MaxDecisions 5 -MaxStageRounds 6 -MaxModel fable -VerifyTimeoutMin 20
 powershell -NoProfile -ExecutionPolicy Bypass -File $ff status -WorkDir <dir>
 powershell -NoProfile -ExecutionPolicy Bypass -File $ff pick-model -WorkDir <dir> -Role <planner|developer|qa|wiki|reviewer> [-Stage <stage>]
 powershell -NoProfile -ExecutionPolicy Bypass -File $ff gate -WorkDir <dir> -Stage <plan|dev|qa|wiki> -Round <N>
@@ -92,7 +95,10 @@ paths only, never your reasoning or a worker's transcript.
 to the agent you already dispatched (SendMessage with its id) instead of starting a fresh one, as
 long as `pick-model` still returns the same model; it keeps its context and cache. Start a fresh
 worker after a new `START` (e.g. dev after a QA send-back), after parallel development (its
-worktrees are gone), when the model changes, or when SendMessage is unavailable. The reviewer is
+worktrees are gone), when the model changes, when SendMessage is unavailable, or when the worker's
+context has grown large: it already did two rounds in a row, or the Agent result reports more than
+150k tokens for it. Every later call re-reads a large context, so a fresh worker with the fix list and
+the file paths is cheaper than continuing it. The reviewer is
 always a fresh agent.
 
 The `ff-*` agents come from the plugin, or from `.claude/agents/` in a repo checkout or a
@@ -156,9 +162,13 @@ Log `<stage> START`, then repeat rounds until PASS or a limit; take N from `stat
    If the reply lists `DECISIONS-PROPOSED:` (open choices the worker made itself that a user could
    notice: behavior, public interface, data formats, what acceptance criteria check; internal names,
    structure and comments are not listed and are not decisions), treat each as a
-   **Master decision** before the gate: record it with `decision -Kind decided` quoting the proposal,
+   **Master decision** before the gate: record it with `decision -Kind decided` whose `-Note` starts
+   with the proposal text copied as written (the gate matches its first 20 letters and digits; replace
+   any double quote in a `-Note` with a single quote, or the argument breaks),
    or escalate it if it changes scope, acceptance criteria or a public interface; the gate fails
-   while one is unrecorded.
+   while one is unrecorded. If a gate failed only because of your own mistake (a decision not
+   recorded, a command run from the wrong folder), fix it and run the next round with
+   `worker skipped: master error - <what>` instead of dispatching the worker again.
    `RESULT: DONE...` -> gate. `BLOCKED_*` -> **Master fix** below. `NEEDS_DECISION` -> save the
    worker's reply as `reviews/<stage>-r<N>.md` (`event` checks it), then **Master decision** below. No `RESULT:` line -> treat as a failed gate (write `VERDICT: FAIL (no RESULT
    line)` as the round's review, log FAIL with note `gate: no RESULT line`).

@@ -16,6 +16,9 @@ Format and rules are in the skill's `references/work-folder-layout.md`. In short
 
 Guidelines:
 
+- Large files (over about 1,500 lines, e.g. a single-file app or a long spec): find the place with
+  Grep, then Read only the needed line ranges (`offset`/`limit`); never read the whole file, and do
+  not re-read ranges you already have. Every later step re-reads everything you loaded.
 - Each D item is one verifiable change (a class, a method, a test file, a config entry). If you
   cannot imagine what file:line would prove it done, split it.
 - Include test-writing D items for new behavior. If the project has no test setup, add a D item to

@@ -643,6 +643,7 @@ foreach ($ffAgent in $ffAgents) {
 $ffEntryFront = Get-FrontMatter -Path (Join-Path $RepositoryRoot ".claude\skills\feature-flow\SKILL.md")
 $ffDescCanon = [regex]::Match($ffFrontMatter, "(?m)^description:.*$").Value
 Assert-Condition ($ffEntryFront.Contains($ffDescCanon)) "Clone-time feature-flow entrypoint description must match the canonical SKILL.md"
+Assert-Condition ($ffFrontMatter -match "(?m)^disable-model-invocation:\s*true\s*$" -and $ffEntryFront -match "(?m)^disable-model-invocation:\s*true\s*$" -and (Get-Content -Raw -Encoding UTF8 -LiteralPath (Join-Path $RepositoryRoot "commands\feature-flow.md")) -match "(?m)^disable-model-invocation:\s*true\s*$") "feature-flow skill, entrypoint and command must be user-invoked only (disable-model-invocation: true)"
 Assert-Condition ($ffSkillContent -match "gate -WorkDir") "feature-flow SKILL.md must run the stage gate through ff.ps1 gate"
 Assert-Condition ($ffSkillContent -match "decision -Kind decided" -and $ffSkillContent -match "MAX_DECISIONS = \d") "feature-flow SKILL.md must record master decisions through ff.ps1 decision with a MAX_DECISIONS cap"
 $ffReviewerBody = Get-Content -Raw -Encoding UTF8 -LiteralPath (Join-Path $RepositoryRoot "agents\ff-reviewer.md")
@@ -657,6 +658,8 @@ $ffReviewerFront = Get-FrontMatter -Path (Join-Path $RepositoryRoot "agents\ff-r
 Assert-Condition ($ffReviewerFront -match "(?m)^tools:\s*Read, Grep, Glob\s*$") "ff-reviewer must be read-only (tools: Read, Grep, Glob)"
 $ffCommandContent = Get-Content -Raw -LiteralPath (Join-Path $RepositoryRoot "commands\feature-flow.md")
 Assert-Condition ($ffCommandContent -match [regex]::Escape('$ARGUMENTS')) "commands/feature-flow.md must pass `$ARGUMENTS to the skill"
+Assert-Condition ($ffSkillContent -match "MAX_STAGE_ROUNDS = \d" -and $ffSkillContent -match "150k tokens") "feature-flow SKILL.md must cap total stage rounds and restart bloated workers"
+foreach ($ffA in @("ff-planner", "ff-developer", "ff-qa-tester", "ff-reviewer", "ff-wiki-writer")) { Assert-Condition ((Get-Content -Raw -Encoding UTF8 -LiteralPath (Join-Path $RepositoryRoot "agents\$ffA.md")) -match "Large files") "$ffA must read large files by line ranges" }
 Assert-Condition ($ffSkillContent -match "AskUserQuestion" -and $ffSkillContent -match "user's language") "feature-flow SKILL.md must ask choices through AskUserQuestion and talk in the user's language"
 Assert-Condition ($ffSkillContent -match "DECISIONS-PROPOSED" -and $ffSkillContent -match "Never reuse an existing folder" -and $ffSkillContent -match "\*\*Secrets\.\*\*" -and $ffSkillContent -match "git reset --merge") "feature-flow SKILL.md must route worker proposals, forbid folder reuse, guard secrets and abort squash with reset --merge"
 foreach ($ffA in @("ff-planner", "ff-developer", "ff-qa-tester")) { Assert-Condition ((Get-Content -Raw -Encoding UTF8 -LiteralPath (Join-Path $RepositoryRoot "agents\$ffA.md")) -match "DECISIONS-PROPOSED") "$ffA must report DECISIONS-PROPOSED" }

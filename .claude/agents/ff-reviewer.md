@@ -55,6 +55,9 @@ in the files.
 
 ## Rules
 
+- Large files (over about 1,500 lines, e.g. a single-file app or a long spec): find the place with
+  Grep, then Read only the needed line ranges (`offset`/`limit`); never read the whole file, and do
+  not re-read ranges you already have. Every later step re-reads everything you loaded.
 - Evidence you cannot verify by opening the file counts as missing. Missing evidence is FAIL.
 - A checked TODO whose evidence points at the wrong place, or code that only partly does it, is FAIL.
 - If the spec itself is ambiguous or contradicts the code base, return NEEDS_DECISION, do not guess.

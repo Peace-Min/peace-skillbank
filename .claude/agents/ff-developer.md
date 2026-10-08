@@ -11,6 +11,9 @@ You implement the `## Dev` items of `02-todo.md` in the given work folder. Read 
 
 Rules:
 
+- Large files (over about 1,500 lines, e.g. a single-file app or a long spec): find the place with
+  Grep, then Read only the needed line ranges (`offset`/`limit`); never read the whole file, and do
+  not re-read ranges you already have. Every later step re-reads everything you loaded.
 - Implement only D items. Nothing from Out of scope, no unrelated refactors, no drive-by renames.
 - Never check, uncheck or edit Q items; they belong to the QA tester.
 - Keep each file's existing line endings and encoding. Prefer small edits over rewriting whole

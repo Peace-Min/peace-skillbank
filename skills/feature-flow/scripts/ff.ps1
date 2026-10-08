@@ -65,6 +65,7 @@ param(
     [int]$MaxFixes = 1,
     [int]$MaxDecisions = 5,
     [double]$VerifyTimeoutMin = 20,
+    [int]$MaxStageRounds = 6,
     [ValidateSet("", "decided", "created", "user", "upheld")]
     [string]$Kind = "",
     [string]$Overrides = ""
@@ -86,7 +87,7 @@ function Import-WorkSettings {
     $file = Join-Path $dirPath "settings.txt"
     if (-not (Test-Path -LiteralPath $file)) { return }
     foreach ($line in [System.IO.File]::ReadAllLines($file)) {
-        $m = [regex]::Match($line, '^\s*(MaxRounds|MaxGateFails|MaxQaCycles|MaxFixes|MaxDecisions|MaxModel|VerifyTimeoutMin)\s*=\s*(\S+)\s*$')
+        $m = [regex]::Match($line, '^\s*(MaxRounds|MaxGateFails|MaxQaCycles|MaxFixes|MaxDecisions|MaxModel|VerifyTimeoutMin|MaxStageRounds)\s*=\s*(\S+)\s*$')
         if (-not $m.Success -or $script:BoundNames -contains $m.Groups[1].Value) { continue }
         switch ($m.Groups[1].Value) {
             "MaxRounds" { $script:MaxRounds = [int]$m.Groups[2].Value }
@@ -94,6 +95,7 @@ function Import-WorkSettings {
             "MaxGateFails" { $script:MaxGateFails = [int]$m.Groups[2].Value }
             "MaxFixes" { $script:MaxFixes = [int]$m.Groups[2].Value }
             "MaxDecisions" { $script:MaxDecisions = [int]$m.Groups[2].Value }
+            "MaxStageRounds" { $script:MaxStageRounds = [int]$m.Groups[2].Value }
             "VerifyTimeoutMin" { $script:VerifyTimeoutMin = [double]::Parse($m.Groups[2].Value, [System.Globalization.CultureInfo]::InvariantCulture) }
             "MaxModel" { if ($m.Groups[2].Value -in @("haiku", "sonnet", "opus", "fable", "inherit")) { $script:MaxModel = $m.Groups[2].Value } }
         }
@@ -178,6 +180,34 @@ function Get-FixCount([object[]]$Events, [string]$ForStage, [string]$Kind) {
         elseif ($e.Status -eq "MASTER_FIX" -and $e.Note -match "^$Kind") { $count++ }
     }
     return $count
+}
+
+function Get-MatchText([string]$Text) {
+    # 0. Text compared when matching a quoted proposal: letters and digits only, lower case, so quotes,
+    #    backticks, spaces and punctuation the master changed while copying do not matter.
+    return ([regex]::Replace($Text, '[^\p{L}\p{Nd}]', '')).ToLowerInvariant()
+}
+
+function Get-StageRoundCount([object[]]$Events, [string]$ForStage) {
+    # 0. Every round that did not pass (gate or review FAIL, NEEDS_DECISION) since the stage's START or
+    #    the user's last RESUME. A MASTER_FIX does not reset it: this caps the whole stage, so a stage
+    #    cannot loop for ever through consolidated fix lists.
+    $count = 0
+    foreach ($e in $Events) {
+        if (Test-UserResume $e) { $count = 0; continue }
+        if ($e.Stage -ne $ForStage) { continue }
+        if ($e.Status -eq "START") { $count = 0; continue }
+        if ($e.Status -eq "NEEDS_DECISION") { $count++; continue }
+        if ($e.Status -ne "FAIL" -or $e.Note -match '^sendback=' -or $e.Note -match '^review: master entry upheld') { continue }
+        $count++
+    }
+    return $count
+}
+
+function Test-StageRoundCap([object[]]$Events, [string]$ForStage) {
+    $n = Get-StageRoundCount -Events $Events -ForStage $ForStage
+    if ($n -ge $MaxStageRounds) { return "stage '$ForStage' has had $n rounds that did not pass (MaxStageRounds=$MaxStageRounds)" }
+    return $null
 }
 
 function Test-StageOverLimit([object[]]$Events, [string]$ForStage) {
@@ -427,6 +457,7 @@ function Get-NextAction([object[]]$Events) {
                 if ($kind -eq "IMPL") { return "dev START (QA send-back; fix list = latest reviews/qa-r*.md)" }
                 return "plan START (QA send-back; fix list = latest reviews/qa-r*.md)"
             }
+            if (Test-StageRoundCap -Events $Events -ForStage $last.Stage) { return "escalated (stage round cap MaxStageRounds=$MaxStageRounds; no MASTER_FIX)$wait" }
             if (Test-StageOverLimit -Events $Events -ForStage $last.Stage) { return "escalated (loop limit; one MASTER_FIX may be tried first)$wait" }
             return "$($last.Stage) round $nextRound"
         }
@@ -589,7 +620,7 @@ switch ($Command) {
                 $m = [regex]::Match($line, '^\s*([A-Za-z]+)\s*=\s*(\S+)\s*$')
                 if (-not $m.Success) { Fail-Usage "Bad line in .claude/feature-flow-settings.txt: '$line' (expected Key=value)" }
                 $key = $m.Groups[1].Value; $val = $m.Groups[2].Value
-                $intKeys = @("MaxRounds", "MaxGateFails", "MaxQaCycles", "MaxFixes", "MaxDecisions")
+                $intKeys = @("MaxRounds", "MaxGateFails", "MaxQaCycles", "MaxFixes", "MaxDecisions", "MaxStageRounds")
                 if ($key -in $intKeys) {
                     if ($val -notmatch '^[1-9]\d*$') { Fail-Usage "$key must be a positive integer in .claude/feature-flow-settings.txt (got '$val')" }
                     Set-Variable -Scope Script -Name $key -Value ([int]$val)
@@ -607,7 +638,7 @@ switch ($Command) {
                     if ($val -notin @("on", "off")) { Fail-Usage "$key must be on or off (got '$val')" }
                     Set-Variable -Name $key -Value $val
                 }
-                else { Fail-Usage "Unknown key '$key' in .claude/feature-flow-settings.txt (MaxRounds, MaxGateFails, MaxQaCycles, MaxFixes, MaxDecisions, MaxModel, VerifyTimeoutMin, Parallel, AutoResume)" }
+                else { Fail-Usage "Unknown key '$key' in .claude/feature-flow-settings.txt (MaxRounds, MaxGateFails, MaxQaCycles, MaxFixes, MaxDecisions, MaxStageRounds, MaxModel, VerifyTimeoutMin, Parallel, AutoResume)" }
             }
         }
         $slug = ([regex]::Replace($Title.ToLowerInvariant(), '[^\p{L}\p{Nd}]+', '-')).Trim('-')
@@ -647,9 +678,9 @@ switch ($Command) {
         [System.IO.File]::WriteAllText((Join-Path $dir "00-context.md"), $context, $utf8)
         [System.IO.File]::WriteAllText((Join-Path $dir "01-spec.md"), $spec, $utf8)
         [System.IO.File]::WriteAllText((Join-Path $dir "events.log"), "", $utf8)
-        $settings = "MaxRounds=$MaxRounds`nMaxGateFails=$MaxGateFails`nMaxQaCycles=$MaxQaCycles`nMaxFixes=$MaxFixes`nMaxDecisions=$MaxDecisions`nMaxModel=$MaxModel`nVerifyTimeoutMin=$VerifyTimeoutMin`nParallel=$Parallel`nAutoResume=$AutoResume`n"
+        $settings = "MaxRounds=$MaxRounds`nMaxGateFails=$MaxGateFails`nMaxQaCycles=$MaxQaCycles`nMaxFixes=$MaxFixes`nMaxDecisions=$MaxDecisions`nMaxModel=$MaxModel`nVerifyTimeoutMin=$VerifyTimeoutMin`nMaxStageRounds=$MaxStageRounds`nParallel=$Parallel`nAutoResume=$AutoResume`n"
         [System.IO.File]::WriteAllText((Join-Path $dir "settings.txt"), $settings, $utf8)
-        Write-Output "SETTINGS  MaxRounds=$MaxRounds MaxGateFails=$MaxGateFails MaxQaCycles=$MaxQaCycles MaxFixes=$MaxFixes MaxDecisions=$MaxDecisions MaxModel=$MaxModel VerifyTimeoutMin=$VerifyTimeoutMin Parallel=$Parallel AutoResume=$AutoResume (from $settingsSource)"
+        Write-Output "SETTINGS  MaxRounds=$MaxRounds MaxGateFails=$MaxGateFails MaxQaCycles=$MaxQaCycles MaxFixes=$MaxFixes MaxDecisions=$MaxDecisions MaxModel=$MaxModel VerifyTimeoutMin=$VerifyTimeoutMin MaxStageRounds=$MaxStageRounds Parallel=$Parallel AutoResume=$AutoResume (from $settingsSource)"
         Write-Output "WORKDIR   $dir"
         exit 0
     }
@@ -687,6 +718,14 @@ switch ($Command) {
             $mk = [regex]::Match($clean, '^(block|loop)\s*:')
             if (-not $mk.Success) { Fail-Usage "MASTER_FIX needs a note starting with 'block:' (fixed a blocker) or 'loop:' (consolidated reviews at the loop limit)." }
             $used = Get-FixCount -Events @(Read-Events $dir) -ForStage $Stage -Kind $mk.Groups[1].Value
+            $capHit = $(if ($mk.Groups[1].Value -eq "loop") { Test-StageRoundCap -Events @(Read-Events $dir) -ForStage $Stage } else { $null })
+            if ($capHit) {
+                $halt = "{0} | {1} | LOOP_LIMIT | r{2} | {3}; not applied: {4}" -f (Get-Date -Format "yyyy-MM-ddTHH:mm:ss"), $Stage, $Round, $capHit, $clean
+                [System.IO.File]::AppendAllText((Join-Path $dir "events.log"), $halt + "`n", $utf8)
+                Write-Output $halt
+                Write-Output "LOOP_LIMIT: $capHit; no more loop fixes. Escalate to the user."
+                exit 3
+            }
             if ($used -ge $MaxFixes) {
                 $haltName = $(if ($mk.Groups[1].Value -eq "block") { "BLOCKED_ENV" } else { "LOOP_LIMIT" })
                 $halt = "{0} | {1} | {2} | r{3} | master fix budget used ({4} {5}/{6}); not applied: {7}" -f (Get-Date -Format "yyyy-MM-ddTHH:mm:ss"), $Stage, $haltName, $Round, $mk.Groups[1].Value, $used, $MaxFixes, $clean
@@ -711,6 +750,14 @@ switch ($Command) {
             exit 0
         }
         if ($Status -eq "FAIL") {
+            $cap = Test-StageRoundCap -Events $events -ForStage $Stage
+            if ($cap) {
+                $halt = "{0} | {1} | LOOP_LIMIT | r{2} | {3}" -f (Get-Date -Format "yyyy-MM-ddTHH:mm:ss"), $Stage, $Round, $cap
+                [System.IO.File]::AppendAllText((Join-Path $dir "events.log"), $halt + "`n", $utf8)
+                Write-Output $halt
+                Write-Output "LOOP_LIMIT: $cap. Logged LOOP_LIMIT; no MASTER_FIX; escalate to the user."
+                exit 3
+            }
             $over = Test-StageOverLimit -Events $events -ForStage $Stage
             if ($over) {
                 Write-Output "LOOP_LIMIT: stage '$Stage' $over. Try one MASTER_FIX if allowed, otherwise escalate to the user."
@@ -868,7 +915,7 @@ switch ($Command) {
         $reviewFails = Get-FailCount -Events $events -ForStage $last.Stage -Kind "review"
         $gateFails = Get-FailCount -Events $events -ForStage $last.Stage -Kind "gate"
         Write-Output "STAGE     $($last.Stage)  last=$($last.Status) $($last.Round)"
-        Write-Output "FAILS     $reviewFails review (max $MaxRounds), $gateFails gate (max $MaxGateFails); master fixes block $(Get-FixCount -Events $events -ForStage $last.Stage -Kind "block"), loop $(Get-FixCount -Events $events -ForStage $last.Stage -Kind "loop") (max $MaxFixes each)"
+        Write-Output "FAILS     $reviewFails review (max $MaxRounds), $gateFails gate (max $MaxGateFails); master fixes block $(Get-FixCount -Events $events -ForStage $last.Stage -Kind "block"), loop $(Get-FixCount -Events $events -ForStage $last.Stage -Kind "loop") (max $MaxFixes each); stage rounds $(Get-StageRoundCount -Events $events -ForStage $last.Stage)/$MaxStageRounds"
         Write-Output "SENDBACKS $(Get-SendBackCount $events) (max $MaxQaCycles)"
         Write-Output "DECISIONS $(Get-DecisionCount $dir "decided") master-decided (max $MaxDecisions), $(Get-DecisionCount $dir "created") master-created"
         $items = Get-TodoItems $dir
@@ -1040,7 +1087,7 @@ switch ($Command) {
         if (Test-Path -LiteralPath $spec) {
             foreach ($l in [System.IO.File]::ReadAllLines($spec)) {
                 $md = [regex]::Match($l, '^\s*-\s*(master-decided|user|upheld)\s*\([^)]*\):\s*(.+)$')
-                if ($md.Success) { $recorded += $md.Groups[2].Value.ToLowerInvariant() }
+                if ($md.Success) { $recorded += (Get-MatchText $md.Groups[2].Value) }
             }
         }
         $missing = @(); $count = 0
@@ -1052,7 +1099,7 @@ switch ($Command) {
                 $mi = [regex]::Match($l, '^\s*-\s*(.+?)\s*$')
                 if (-not $mi.Success) { $inList = $false; continue }
                 $count++
-                $key = $mi.Groups[1].Value.ToLowerInvariant()
+                $key = Get-MatchText $mi.Groups[1].Value
                 if ($key.Length -gt 20) { $key = $key.Substring(0, 20) }
                 if (@($recorded | Where-Object { $_.Contains($key) }).Count -eq 0) { $missing += ("{0}: {1}" -f $f.Name, $mi.Groups[1].Value) }
             }

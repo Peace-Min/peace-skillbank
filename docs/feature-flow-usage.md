@@ -22,6 +22,9 @@
 
 ## 호출
 
+**직접 입력할 때만 실행된다.** 스킬과 명령 모두 `disable-model-invocation: true`라서, 요청 문장에 "기획 개발 QA 위키" 같은 말이 있어도
+모델이 스스로 이 스킬을 시작하지 않는다. 쓰려면 아래 슬래시 명령을 직접 입력한다.
+
 플러그인 설치 시(권장, 대상 프로젝트에서 실행):
 
 ```text
@@ -71,6 +74,13 @@
 - 작업자가 명세가 열어 둔 선택 중 **사용자가 알아챌 수 있는 것**(동작, 공개 인터페이스, 데이터 형식, 수용 기준이 확인하는 것)을
   스스로 정했으면 답변의 `DECISIONS-PROPOSED:`에 적고(내부 이름·구조·주석은 적지 않음), 마스터가 결정으로 기록(또는
   사람에게 질문)하기 전에는 게이트가 통과하지 않는다. 마스터는 작업자 답변을 `evidence/<단계>/worker-r<N>.md`에 그대로 저장한다.
+
+### 토큰을 아끼는 장치
+
+- **단계 전체 라운드 상한(`MAX_STAGE_ROUNDS`, 기본 6):** 통과하지 못한 라운드(반려, 게이트 실패, 결정 필요)를 단계마다
+  합쳐 센다. 마스터의 지적 정리(MASTER_FIX)로도 초기화되지 않고, 사용자가 재개할 때만 초기화된다. 상한에 닿으면 사람에게 보고한다.
+- **큰 파일은 부분만 읽기:** 모든 서브에이전트는 1,500줄 넘는 파일을 검색으로 위치를 찾은 뒤 필요한 줄 범위만 읽는다.
+- **커진 작업자는 새로 띄우기:** 같은 작업자를 두 라운드 연속 썼거나 15만 토큰을 넘겼으면 이어 쓰지 않고 새로 띄운다.
 
 ### 마스터가 먼저 처리하는 것
 
@@ -187,13 +197,14 @@
 # .claude/feature-flow-settings.txt
 MaxModel=opus
 MaxRounds=2
+MaxStageRounds=4
 VerifyTimeoutMin=30
 Parallel=off
 AutoResume=off
 ```
 
 
-- 기본값은 SKILL.md 상단(`MAX_ROUNDS`, `MAX_GATE_FAILS`, `MAX_QA_CYCLES`, `MAX_FIXES`, `MAX_DECISIONS`, `MAX_MODEL`, `VERIFY_TIMEOUT_MIN`, `PARALLEL`, `AUTO_RESUME`)에 있다. 클론해서 쓸 때만 직접 고친다.
+- 기본값은 SKILL.md 상단(`MAX_ROUNDS`, `MAX_GATE_FAILS`, `MAX_QA_CYCLES`, `MAX_FIXES`, `MAX_STAGE_ROUNDS`, `MAX_DECISIONS`, `MAX_MODEL`, `VERIFY_TIMEOUT_MIN`, `PARALLEL`, `AUTO_RESUME`)에 있다. 클론해서 쓸 때만 직접 고친다.
   상한 값은 마스터가 `init`에 한 번 넘기면 `work/<id>/settings.txt`에 저장되고 이후 모든 호출이 쓴다.
   이미 시작한 작업은 `settings.txt`를 고친다.
 - `MaxModel=inherit`: 모델 자동 선택을 끈다. `Parallel=off`: 항상 순차 개발. `AutoResume=off`: 예약 안 함.

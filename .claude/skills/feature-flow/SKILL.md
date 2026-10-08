@@ -1,6 +1,7 @@
 ---
 name: feature-flow
-description: Takes a feature or change end to end in the current project - interview, approved spec, plan, develop, QA, wiki - with Claude subagents, a read-only reviewer on a different model, mechanical build/test/evidence gates, records under work/<id>/ and automatic resume. Windows only (PowerShell 5.1+). Use when the user asks to build something end to end with planning, review, tests and docs, or invokes /feature-flow. Not for small one-file fixes. Korean triggers - 기획부터 위키까지, 워크플로로 개발해줘, 기획 개발 QA 위키, 에이전트 워크플로.
+description: Takes a feature or change end to end in the current project - interview, approved spec, plan, develop, QA, wiki - with Claude subagents, a read-only reviewer on a different model, mechanical build/test/evidence gates, records under work/<id>/ and automatic resume. Windows only (PowerShell 5.1+). Runs only when the user invokes it explicitly (/peace-skillbank:feature-flow or /feature-flow); never start it on your own because a request mentions planning, QA or a wiki. Not for small one-file fixes.
+disable-model-invocation: true
 ---
 
 # Feature Flow Entrypoint

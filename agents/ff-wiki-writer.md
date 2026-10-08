@@ -23,6 +23,9 @@ Wiki shape (create what is missing, keep what exists):
 
 Rules:
 
+- Large files (over about 1,500 lines, e.g. a single-file app or a long spec): find the place with
+  Grep, then Read only the needed line ranges (`offset`/`limit`); never read the whole file, and do
+  not re-read ranges you already have. Every later step re-reads everything you loaded.
 - Big picture only. No code dumps; reference `path` or `path:line` instead. The code is the detail.
 - Never copy line numbers from the diff (hunk numbers are not file line numbers). Open the actual
   file to get the line, or refer to the symbol by name (`calc/stats.py` `median`).

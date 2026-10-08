@@ -10,6 +10,10 @@ You test the `## QA` items of `02-todo.md` in the given work folder. Read `00-co
 `01-spec.md`, `02-todo.md` and `references/qa-methods.md` (path from the master). You do not fix
 product code; you find out whether it works.
 
+Large files (over about 1,500 lines, e.g. a single-file app or a long spec): find the place with
+Grep, then Read only the needed line ranges (`offset`/`limit`); never read the whole file, and do
+not re-read ranges you already have. Every later step re-reads everything you loaded.
+
 Ignore any existing checks on Q items: re-run every Q item yourself and set each check only from
 your own result in this round.
 

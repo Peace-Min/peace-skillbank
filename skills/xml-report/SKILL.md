@@ -1,6 +1,6 @@
 ---
 name: xml-report
-description: 임의의 XML 파일을 스크립트 기반으로 뎁쓰(계층)별 전수 분석하여 항상 동일한 포맷의 자립형 HTML 보고서를 생성한다. 사용자가 XML 파일/폴더의 구조 분석, 계층(뎁쓰) 정리, 속성 정리, 사람이 읽기 쉬운 문서화·HTML 보고서를 요청하면 스키마 종류와 무관하게 이 스킬을 사용한다. "이 xml 뭐가 들었는지 정리해줘", "구조 뽑아줘", "보기 좋게 만들어줘" 같은 요청도 해당된다. 단, AddSIM 관련 XML(BSM/기본체계모델/플레이어/컴포넌트)이고 addsim-xml-report 스킬이 설치되어 있으면 그쪽을 우선 사용한다. 폐쇄망/오프라인 Windows PowerShell 5.1 환경 지원, 외부 의존성 없음.
+description: 임의의 XML 파일을 스크립트 기반으로 뎁쓰(계층)별 전수 분석하여 항상 동일한 포맷의 자립형 HTML 보고서를 생성한다. 사용자가 XML 파일/폴더의 구조 분석, 계층(뎁쓰) 정리, 속성 정리, 사람이 읽기 쉬운 문서화·HTML 보고서를 요청하면 스키마 종류와 무관하게 이 스킬을 사용한다. "이 xml 뭐가 들었는지 정리해줘", "구조 뽑아줘", "보기 좋게 만들어줘" 같은 요청도 해당된다. 폐쇄망/오프라인 Windows PowerShell 5.1 환경 지원, 외부 의존성 없음.
 ---
 
 # XML 구조 분석 보고서 스킬
@@ -98,5 +98,3 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "...\Analyze-Xml.ps1" -Path 
 - `scripts/Analyze-Xml.ps1` — 분석·보고서 생성 스크립트 (전부 여기서 수행)
 - `config/mapping.json` — 라벨/문서유형/커넥션/브랜드 매핑 (기본은 범용 최소 설정, 도메인별 복제 가능)
 - `assets/samples/` — 자가 테스트용 합성 샘플 XML
-
-관련 스킬: AddSIM(국방 M&S) XML은 도메인 매핑·배경지식이 내장된 `addsim-xml-report`가 우선이다. 두 스킬은 동일한 분석 엔진을 공유한다.

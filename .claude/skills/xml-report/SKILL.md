@@ -1,7 +1,7 @@
 ---
 name: xml-report
 description: Clone-time Claude Code entrypoint for schema-agnostic XML structure analysis. Runs the bundled deterministic PowerShell analyzer on any XML file/folder and produces a fixed-format, self-contained HTML report with depth-tagged hierarchy tree, per-depth summaries, attribute tables, connection tables, verification stats, and a clearly-badged model-written interpretation as the final section. Requires Windows PowerShell 5.1+.
-when_to_use: Use when the user asks to analyze the structure of any XML file, summarize what an XML contains, organize it by depth/hierarchy, or turn XML into a human-readable HTML report. Korean triggers - xml 분석, xml 구조 뽑아줘, 계층 정리, 뎁쓰별 분석, xml을 html 보고서로. If the XML is AddSIM-related (BSM/Player/Component), prefer addsim-xml-report.
+when_to_use: Use when the user asks to analyze the structure of any XML file, summarize what an XML contains, organize it by depth/hierarchy, or turn XML into a human-readable HTML report. Korean triggers - xml 분석, xml 구조 뽑아줘, 계층 정리, 뎁쓰별 분석, xml을 html 보고서로.
 ---
 
 # XML Report Entrypoint

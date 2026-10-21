@@ -1,8 +1,7 @@
 # xml-report 사용 가이드
 
 임의의 XML을 **항상 동일한 포맷**의 자립형 HTML 보고서로 분석하는 범용 스킬. 특정 스키마에
-의존하지 않는다. AddSIM 특화판은 [`addsim-xml-report`](addsim-xml-report-usage.md) — 두 스킬은
-동일한 분석 엔진을 공유한다.
+의존하지 않는다.
 
 ## 왜 이 스킬인가
 

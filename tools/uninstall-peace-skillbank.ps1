@@ -36,7 +36,7 @@ $BankSkills = @(
     'frontier-handoff',
     'lightningchart-72',
     'sparrow-static-analysis',
-    'addsim-xml-report',
+    'addsim-xml-report',  # removed in 0.7.6, kept so older installs are still cleaned up
     'xml-report',
     'feature-flow'
 )

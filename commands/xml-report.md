@@ -31,8 +31,7 @@ Treat this command as a terse entry point:
 3. Report back: report path, verification stats (element count / max depth / count match),
    and any unmapped element names. For recurring domains, offer a domain mapping file via
    `-MappingPath`.
-4. Do not edit source code or the original XML in this command. If the XML is AddSIM-related
-   (BSM/Player/Component), prefer `/addsim-xml-report`.
+4. Do not edit source code or the original XML in this command.
 
 If both this command and the namespaced plugin skill are available, this command is only a short
 alias for the skill.

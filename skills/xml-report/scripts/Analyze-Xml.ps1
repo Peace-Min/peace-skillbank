@@ -1,14 +1,14 @@
 ﻿#requires -Version 5.1
 <#
 .SYNOPSIS
-  AddSIM XML(BSM/플레이어/컴포넌트) 결정적 분석 및 표준 HTML 보고서 생성.
+  임의 XML 결정적 분석 및 표준 HTML 보고서 생성.
 .DESCRIPTION
   XML을 뎁쓰(계층)별로 전수 분석하여 항상 동일한 포맷의 자립형 HTML 보고서와
   분석 다이제스트(data.json)를 생성한다. 외부 의존성 없음(PowerShell 5.1+).
   - 트리에는 모든 요소가 빠짐없이 표시된다(표는 행 수 제한 시 생략 건수를 명시).
   - DTD/외부 엔티티는 보안상 처리하지 않는다.
 .EXAMPLE
-  powershell -NoProfile -ExecutionPolicy Bypass -File .\Analyze-AddsimXml.ps1 -Path C:\data\comp.xml -OutDir C:\reports
+  powershell -NoProfile -ExecutionPolicy Bypass -File .\Analyze-Xml.ps1 -Path C:\data\sample.xml -OutDir C:\reports
 #>
 [CmdletBinding()]
 param(
